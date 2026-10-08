@@ -1,5 +1,6 @@
 #!/bin/sh
 set -e
+VERSION=${GITHUB_REF_NAME#v}
 swift build -c release
 APP=Overdrive.app
 rm -rf "$APP"
@@ -17,7 +18,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>org.delduca.Overdrive</string>
   <key>CFBundleName</key><string>Overdrive</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>LastFMKey</key><string>${LASTFM_KEY:-}</string>
   <key>LastFMSecret</key><string>${LASTFM_SECRET:-}</string>
