@@ -32,6 +32,8 @@ final class LastFM {
             user = result["name"] as! String
             status = ""
             await flush()
+        } catch let failure as Failure where failure.code == 4 && username.contains("@") {
+            status = "Enter the Last.fm username, not the email."
         } catch let failure as Failure {
             status = failure.message
         } catch {
