@@ -5,7 +5,7 @@
 [![Release](https://github.com/skhaz/overdrive/actions/workflows/release.yml/badge.svg)](https://github.com/skhaz/overdrive/actions/workflows/release.yml)
 [![GitHub release](https://img.shields.io/github/v/release/skhaz/overdrive)](https://github.com/skhaz/overdrive/releases/latest)
 
-Music player for macOS 27 or later.
+Music player for macOS 26 or later.
 
 - Reads the music folders in read-only mode. No database. It scans the folders at launch and when they change.
 - Plays all formats that AVFoundation supports: AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.

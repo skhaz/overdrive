@@ -6,7 +6,7 @@ APP=Overdrive.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Overdrive "$APP/Contents/MacOS/"
-xcrun actool Overdrive.icon --compile "$APP/Contents/Resources" --app-icon Overdrive --platform macosx --target-device mac --minimum-deployment-target 27.0 --output-partial-info-plist /dev/null >/dev/null
+xcrun actool Overdrive.icon --compile "$APP/Contents/Resources" --app-icon Overdrive --platform macosx --target-device mac --minimum-deployment-target 26.0 --output-partial-info-plist /dev/null >/dev/null
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
