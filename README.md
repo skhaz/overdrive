@@ -1,4 +1,9 @@
+<p align="center"><img src=".github/icon.png" width="128" alt="Overdrive icon"></p>
+
 # Overdrive
+
+[![Release](https://github.com/skhaz/overdrive/actions/workflows/release.yml/badge.svg)](https://github.com/skhaz/overdrive/actions/workflows/release.yml)
+[![GitHub release](https://img.shields.io/github/v/release/skhaz/overdrive)](https://github.com/skhaz/overdrive/releases/latest)
 
 Music player for macOS 27 or later.
 
