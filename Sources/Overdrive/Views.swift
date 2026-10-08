@@ -309,11 +309,14 @@ struct ContentView: View {
                         } else if library.albums.isEmpty, library.scanning {
                             ProgressView()
                         } else {
-                            switch section {
-                            case .albums: AlbumGrid(albums: library.filtered)
-                            case .artists: ArtistList(artists: library.artists)
-                            case .songs: SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
+                            Group {
+                                switch section {
+                                case .albums: AlbumGrid(albums: library.filtered)
+                                case .artists: ArtistList(artists: library.artists)
+                                case .songs: SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
+                                }
                             }
+                            .id(library.version)
                         }
                     }
                     .navigationTitle(section.rawValue)

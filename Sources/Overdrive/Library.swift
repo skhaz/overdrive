@@ -79,6 +79,7 @@ final class Library {
     private(set) var filtered: [Album] = []
     private(set) var tracks: [Track] = []
     private(set) var artists: [(name: String, albums: [Album])] = []
+    private(set) var version = 0
 
     var folders: [URL] = UserDefaults.standard.stringArray(forKey: Library.key)?.map { URL(filePath: $0) } ?? [] {
         didSet {
@@ -168,6 +169,7 @@ final class Library {
         artists = Dictionary(grouping: filtered, by: \.artist)
             .map { ($0.key, $0.value.sorted { $0.year < $1.year }) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        version += 1
     }
 
     private func watch() {
