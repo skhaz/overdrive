@@ -15,6 +15,10 @@ enum Section: String, CaseIterable, Identifiable {
     }
 }
 
+func count(_ number: Int, _ noun: String) -> String {
+    "\(number) \(noun)\(number == 1 ? "" : "s")"
+}
+
 extension Double {
     var time: String {
         guard isFinite, self > 0 else { return "0:00" }
@@ -117,6 +121,7 @@ struct AlbumGrid: View {
                             Cover(track: album.tracks[0]).shadow(radius: 2, y: 1)
                             Text(album.title).lineLimit(1).padding(.top, 4)
                             Text(album.artist).lineLimit(1).foregroundStyle(.secondary)
+                            Text(count(album.tracks.count, "song")).font(.caption).foregroundStyle(.tertiary)
                         }
                     }
                     .buttonStyle(.plain)
@@ -140,7 +145,7 @@ struct AlbumView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(album.title).font(.largeTitle.bold()).lineLimit(2)
                     Text(album.artist).font(.title2).foregroundStyle(.secondary)
-                    Text([album.year > 0 ? String(album.year) : nil, "\(album.tracks.count) songs", album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
+                    Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
                         .foregroundStyle(.secondary)
 
                     HStack {
@@ -195,7 +200,7 @@ struct ArtistList: View {
                     Cover(track: artist.albums[0].tracks[0]).frame(width: 40)
                     Text(artist.name)
                     Spacer()
-                    Text("\(artist.albums.count)").foregroundStyle(.secondary)
+                    Text(count(artist.albums.count, "album") + " · " + count(artist.albums.reduce(0) { $0 + $1.tracks.count }, "song")).foregroundStyle(.secondary)
                 }
             }
         }
@@ -307,7 +312,7 @@ struct ContentView: View {
                             switch section {
                             case .albums: AlbumGrid(albums: library.filtered)
                             case .artists: ArtistList(artists: library.artists)
-                            case .songs: SongTable(tracks: library.tracks)
+                            case .songs: SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
                             }
                         }
                     }
