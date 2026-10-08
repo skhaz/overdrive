@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <path d="M392 300L760 220V690" fill="none" stroke="#fff" stroke-width="56" stroke-linejoin="round"/>
-  <path d="M392 300V770" stroke="#fff" stroke-width="56"/>
-  <path d="M392 300L760 220V330L392 410Z" fill="#fff"/>
-  <ellipse cx="300" cy="770" rx="120" ry="92" transform="rotate(-20 300 770)" fill="#fff"/>
-  <ellipse cx="668" cy="690" rx="120" ry="92" transform="rotate(-20 668 690)" fill="#fff"/>
-</svg>

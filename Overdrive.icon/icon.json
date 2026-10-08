@@ -1,14 +1,14 @@
 {
   "fill" : {
-    "automatic-gradient" : "extended-srgb:0.96000,0.22000,0.36000,1.00000"
+    "automatic-gradient" : "extended-srgb:0.00000,0.58000,0.56000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
           "glass" : true,
-          "image-name" : "note.svg",
-          "name" : "note"
+          "image-name" : "record.svg",
+          "name" : "record"
         }
       ],
       "shadow" : {
