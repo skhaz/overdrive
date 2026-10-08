@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 nonisolated enum Keychain {
-    private static let service = "org.delduca.Overdrive"
+    private static let service = "org.delduca.Overdrive.lastfm"
 
     static func read(_ account: String) -> String {
         let query: [CFString: Any] = [
@@ -29,6 +29,14 @@ nonisolated enum Keychain {
 
         guard !value.isEmpty else { return }
 
-        SecItemAdd(query.merging([kSecValueData: Data(value.utf8)]) { $1 } as CFDictionary, nil)
+        // An ad-hoc signature changes with each release, so open the item to all apps to prevent a password prompt after each update.
+        var access: SecAccess?
+        SecAccessCreate(service as CFString, [] as CFArray, &access)
+
+        for acl in SecAccessCopyMatchingACLList(access!, kSecACLAuthorizationDecrypt) as! [SecACL] {
+            SecACLSetContents(acl, nil, service as CFString, [])
+        }
+
+        SecItemAdd(query.merging([kSecValueData: Data(value.utf8), kSecAttrAccess: access!]) { $1 } as CFDictionary, nil)
     }
 }
