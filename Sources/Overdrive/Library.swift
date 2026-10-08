@@ -388,6 +388,7 @@ final class Library {
             tags.album = tag(kAFInfoDictionary_Album)
             tags.year = tag(kAFInfoDictionary_Year)
             if tags.year.isEmpty { tags.year = tag(kAFInfoDictionary_RecordedDate) }
+            if tags.year.isEmpty { tags.year = ID3.year(url) }
             tags.number = Int(tag(kAFInfoDictionary_TrackNumber).prefix { $0.isNumber }) ?? 0
         }
 

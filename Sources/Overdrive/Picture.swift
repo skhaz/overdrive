@@ -136,18 +136,18 @@ nonisolated enum Picture {
         let version = header[3]
         guard version == 3 || version == 4 else { return nil }
 
-        let size = syncsafe(header, 6)
+        let size = ID3.syncsafe(header, 6)
         guard let tag = read(file, 10, size) else { return nil }
 
         return tag.withUnsafeBytes { tag -> Data? in
             var offset = 0
 
             if header[5] & 0x40 != 0 {
-                offset = version == 4 ? syncsafe(tag, 0) : Int(UInt32(bigEndian: tag.loadUnaligned(as: UInt32.self))) + 4
+                offset = version == 4 ? ID3.syncsafe(tag, 0) : Int(UInt32(bigEndian: tag.loadUnaligned(as: UInt32.self))) + 4
             }
 
             while offset + 10 <= size, tag[offset] != 0 {
-                let length = version == 4 ? syncsafe(tag, offset + 4) : Int(UInt32(bigEndian: tag.loadUnaligned(fromByteOffset: offset + 4, as: UInt32.self)))
+                let length = version == 4 ? ID3.syncsafe(tag, offset + 4) : Int(UInt32(bigEndian: tag.loadUnaligned(fromByteOffset: offset + 4, as: UInt32.self)))
                 let start = offset + 10
                 let end = min(start + length, size)
 
@@ -219,10 +219,5 @@ nonisolated enum Picture {
         let images = files.filter { (try? $0.resourceValues(forKeys: [.contentTypeKey]).contentType?.conforms(to: .image)) == true }
 
         return images.first { names.contains($0.deletingPathExtension().lastPathComponent.lowercased()) } ?? images.first
-    }
-
-    private static func syncsafe(_ bytes: some RandomAccessCollection<UInt8>, _ offset: Int) -> Int {
-        let start = bytes.index(bytes.startIndex, offsetBy: offset)
-        return bytes[start...].prefix(4).reduce(0) { $0 << 7 | Int($1 & 0x7F) }
     }
 }
