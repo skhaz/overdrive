@@ -26,6 +26,23 @@ brew uninstall --zap --cask overdrive
 ./build.sh
 ```
 
+Use a local build only to debug or to profile.
+
+## Release
+
+Do these steps for each change:
+
+1. Commit the change and push it to `main`.
+2. Push a new tag, for example `v0.1.12`. The GitHub Action builds the app, creates the GitHub release, and updates the cask in `skhaz/homebrew-tap`.
+3. When the action completes, install the release:
+
+```sh
+brew update
+brew upgrade --cask overdrive
+```
+
+Do not run a local build as the installed app.
+
 ## Last.fm
 
 1. Get an API key at https://www.last.fm/api/account/create.
