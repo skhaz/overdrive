@@ -1,6 +1,14 @@
 import SwiftUI
 
 @main
+enum Main {
+    static func main() {
+        guard CommandLine.arguments.count > 1, CommandLine.arguments[1] == "covers" else { return Overdrive.main() }
+
+        Picture.serve()
+    }
+}
+
 struct Overdrive: App {
     @State private var library = Library()
     @State private var lastFM: LastFM

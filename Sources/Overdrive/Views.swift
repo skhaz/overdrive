@@ -81,31 +81,19 @@ struct Marquee: View {
 
 struct Cover: View {
     let track: Track?
-    @State private var image: NSImage?
-
-    init(track: Track?) {
-        self.track = track
-        _image = State(initialValue: track.flatMap(Artwork.cached))
-    }
 
     var body: some View {
         Rectangle()
             .fill(.quaternary)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if let image {
+                if let image = track.flatMap(Artwork.image) {
                     Image(nsImage: image).resizable().scaledToFill()
                 } else {
                     Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
-            .task(id: track?.albumID) {
-                image = track.flatMap(Artwork.cached)
-                guard image == nil, let track else { return }
-
-                image = await Artwork.image(track)
-            }
     }
 }
 
@@ -160,7 +148,9 @@ struct AlbumView: View {
             .listRowSeparator(.hidden)
             .contextMenu { FileMenu(urls: album.tracks.map(\.url)) }
 
-            ForEach(Array(album.tracks.enumerated()), id: \.element.id) { index, track in
+            ForEach(album.tracks.indices, id: \.self) { index in
+                let track = album.tracks[index]
+
                 HStack {
                     Group {
                         if player.current == track {

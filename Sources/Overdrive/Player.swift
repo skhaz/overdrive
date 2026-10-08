@@ -188,20 +188,12 @@ final class Player {
         position = 0
         scrobbled = false
         started = .now
-        artwork = nil
+        artwork = Artwork.image(track)
 
         status = Player.observe(item) { [weak self] in self?.next() }
 
         lastFM.nowPlaying(track)
         update()
-
-        Task {
-            let image = await Artwork.image(track)
-            guard current == track else { return }
-
-            artwork = image
-            update()
-        }
     }
 
     private func tick(_ seconds: Double) {
