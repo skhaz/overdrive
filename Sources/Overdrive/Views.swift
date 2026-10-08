@@ -79,6 +79,27 @@ struct Marquee: View {
     }
 }
 
+struct Stripe: ViewModifier {
+    static let height: CGFloat = 32
+    static let padding: CGFloat = 5
+
+    let index: Int
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 10)
+            .frame(height: Stripe.height)
+            .background(index.isMultiple(of: 2) ? .clear : Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    func stripe(_ index: Int) -> some View {
+        modifier(Stripe(index: index))
+    }
+}
+
 struct Cover: View {
     let track: Track?
 
@@ -126,55 +147,59 @@ struct AlbumView: View {
     @Environment(Player.self) private var player
 
     var body: some View {
-        List {
-            HStack(alignment: .bottom, spacing: 20) {
-                Cover(track: album.tracks[0]).frame(width: 220).shadow(radius: 4, y: 2)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .bottom, spacing: 20) {
+                    Cover(track: album.tracks[0]).frame(width: 220).shadow(radius: 4, y: 2)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(album.title).font(.largeTitle.bold()).lineLimit(2)
-                    Text(album.artist).font(.title2).foregroundStyle(.secondary)
-                    Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(album.title).font(.largeTitle.bold()).lineLimit(2)
+                        Text(album.artist).font(.title2).foregroundStyle(.secondary)
+                        Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
+                            .foregroundStyle(.secondary)
 
-                    HStack {
-                        Button("Play", systemImage: "play.fill") { player.shuffle = false; player.play(album.tracks) }
-                        Button("Shuffle", systemImage: "shuffle") { player.shuffle = true; player.play(album.tracks, at: .random(in: album.tracks.indices)) }
-                    }
-                    .controlSize(.large)
-                    .padding(.top, 8)
-                }
-            }
-            .padding(.vertical, 12)
-            .listRowSeparator(.hidden)
-            .contextMenu { FileMenu(urls: album.tracks.map(\.url)) }
-
-            ForEach(album.tracks.indices, id: \.self) { index in
-                let track = album.tracks[index]
-
-                HStack {
-                    Group {
-                        if player.current == track {
-                            Image(systemName: player.playing ? "speaker.wave.2.fill" : "speaker.fill").foregroundStyle(.tint)
-                        } else {
-                            Text(track.number > 0 ? String(track.number) : "").foregroundStyle(.secondary)
+                        HStack {
+                            Button("Play", systemImage: "play.fill") { player.shuffle = false; player.play(album.tracks) }
+                            Button("Shuffle", systemImage: "shuffle") { player.shuffle = true; player.play(album.tracks, at: .random(in: album.tracks.indices)) }
                         }
+                        .controlSize(.large)
+                        .padding(.top, 8)
                     }
-                    .frame(width: 28, alignment: .trailing)
-
-                    Text(track.title)
-
-                    if album.artist != track.artist {
-                        Text(track.artist).foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Text(track.duration.time).monospacedDigit().foregroundStyle(.secondary)
                 }
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { player.play(album.tracks, at: index) }
-                .contextMenu { FileMenu(urls: [track.url]) }
+                .padding(.bottom, 20)
+                .contextMenu { FileMenu(urls: album.tracks.map(\.url)) }
+
+                LazyVStack(spacing: 0) {
+                    ForEach(album.tracks.indices, id: \.self) { index in
+                        let track = album.tracks[index]
+
+                        HStack {
+                            Group {
+                                if player.current == track {
+                                    Image(systemName: player.playing ? "speaker.wave.2.fill" : "speaker.fill").foregroundStyle(.tint)
+                                } else {
+                                    Text(track.number > 0 ? String(track.number) : "").foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(width: 28, alignment: .trailing)
+
+                            Text(track.title)
+
+                            if album.artist != track.artist {
+                                Text(track.artist).foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Text(track.duration.time).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        .stripe(index)
+                        .onTapGesture(count: 2) { player.play(album.tracks, at: index) }
+                        .contextMenu { FileMenu(urls: [track.url]) }
+                    }
+                }
             }
+            .padding(20)
         }
         .navigationTitle(album.title)
     }
@@ -204,10 +229,10 @@ struct SongTable: View {
 
     var body: some View {
         Table(tracks, selection: $selection) {
-            TableColumn("Title", value: \.title)
-            TableColumn("Artist", value: \.artist)
-            TableColumn("Album", value: \.album)
-            TableColumn("Time") { Text($0.duration.time).monospacedDigit() }.width(60)
+            TableColumn("Title") { Text($0.title).padding(.vertical, Stripe.padding) }
+            TableColumn("Artist") { Text($0.artist).padding(.vertical, Stripe.padding) }
+            TableColumn("Album") { Text($0.album).padding(.vertical, Stripe.padding) }
+            TableColumn("Time") { Text($0.duration.time).monospacedDigit().padding(.vertical, Stripe.padding) }.width(60)
         }
         .contextMenu(forSelectionType: Track.ID.self) { ids in
             FileMenu(urls: Array(ids))
