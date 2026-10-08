@@ -9,7 +9,30 @@ enum Main {
     }
 }
 
+final class Delegate: NSObject, NSApplicationDelegate {
+    var open: OpenWindowAction?
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows { open?(id: "main") }
+        return true
+    }
+}
+
+struct Reopen: ViewModifier {
+    let delegate: Delegate
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onAppear { delegate.open = openWindow }
+    }
+}
+
 struct Overdrive: App {
+    @NSApplicationDelegateAdaptor private var delegate: Delegate
     @State private var library = Library()
     @State private var lastFM: LastFM
     @State private var player: Player
@@ -27,6 +50,7 @@ struct Overdrive: App {
             ContentView()
                 .environment(library)
                 .environment(player)
+                .modifier(Reopen(delegate: delegate))
         }
         .defaultWindowPlacement { _, context in
             let frame = context.defaultDisplay.visibleRect
