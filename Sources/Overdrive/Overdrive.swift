@@ -20,6 +20,11 @@ struct Overdrive: App {
                 .environment(library)
                 .environment(player)
         }
+        .defaultWindowPlacement { _, context in
+            let frame = context.defaultDisplay.visibleRect
+            return WindowPlacement(frame.origin, size: frame.size)
+        }
+        .restorationBehavior(.disabled)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Rescan Library", action: library.scan).keyboardShortcut("r")
