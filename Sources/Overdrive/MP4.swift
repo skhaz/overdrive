@@ -6,6 +6,7 @@ nonisolated enum MP4 {
         var artist = ""
         var album = ""
         var year = ""
+        var original = ""
         var number = 0
         var duration = 0.0
     }
@@ -23,6 +24,10 @@ nonisolated enum MP4 {
     private static let day: UInt32 = 0xA964_6179
     private static let trkn: UInt32 = 0x7472_6B6E
     private static let covr: UInt32 = 0x636F_7672
+    private static let freeform: UInt32 = 0x2D2D_2D2D
+    private static let nameBox: UInt32 = 0x6E61_6D65
+    private static let data: UInt32 = 0x6461_7461
+    private static let originals = ["ORIGINAL YEAR", "ORIGINALYEAR", "ORIGINALDATE", "ORIGINAL DATE"].map { Array($0.utf8) }
 
     static func cover(_ file: Int32, _ size: Int64) -> Data? {
         guard let moov = child(file, moov, 0, size),
@@ -62,6 +67,7 @@ nonisolated enum MP4 {
             case album where tags.album.isEmpty: tags.album = text(file, item)
             case day where tags.year.isEmpty: tags.year = text(file, item)
             case trkn where tags.number == 0: tags.number = number(file, item)
+            case freeform where tags.original.isEmpty: tags.original = original(file, item)
             default: break
             }
         }
@@ -113,6 +119,29 @@ nonisolated enum MP4 {
         guard count > 0 else { return "" }
 
         return String(unsafeUninitializedCapacity: count) { max(pread(file, $0.baseAddress, count, start), 0) }
+    }
+
+    private static func original(_ file: Int32, _ item: Box) -> String {
+        guard let name = child(file, nameBox, item.start, item.end) else { return "" }
+
+        let count = Int(name.end - name.start - 4)
+        guard count > 0, count < 16 else { return "" }
+
+        let matches = withUnsafeTemporaryAllocation(of: UInt8.self, capacity: count) { key in
+            guard pread(file, key.baseAddress, count, name.start + 4) == count else { return false }
+
+            return originals.contains { $0.count == count && zip($0, key).allSatisfy { $0 == $1 & 0xDF || $0 == 0x20 && $1 == 0x20 } }
+        }
+        guard matches else { return "" }
+
+        var offset = item.start
+
+        while offset + 8 <= item.end, let box = header(file, offset, item.end) {
+            if box.type == data { return text(file, (data, offset, item.end)) }
+            offset = box.end
+        }
+
+        return ""
     }
 
     private static func number(_ file: Int32, _ item: Box) -> Int {

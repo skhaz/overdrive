@@ -388,12 +388,16 @@ final class Library {
             tags.album = tag(kAFInfoDictionary_Album)
             tags.year = tag(kAFInfoDictionary_Year)
             if tags.year.isEmpty { tags.year = tag(kAFInfoDictionary_RecordedDate) }
-            if tags.year.isEmpty { tags.year = ID3.year(url) }
+
+            let id3 = ID3.year(url)
+            tags.original = id3.original
+            if tags.year.isEmpty { tags.year = id3.release }
             tags.number = Int(tag(kAFInfoDictionary_TrackNumber).prefix { $0.isNumber }) ?? 0
         }
 
         let directory = url.deletingLastPathComponent()
         let album = tags.album.isEmpty ? directory.lastPathComponent : tags.album
+        let original = Int(tags.original.prefix(4)) ?? 0
 
         return Track(
             url: url,
@@ -401,7 +405,7 @@ final class Library {
             artist: tags.artist.isEmpty ? "Unknown Artist" : tags.artist,
             album: album,
             number: tags.number,
-            year: Int(tags.year.prefix(4)) ?? 0,
+            year: original > 0 ? original : Int(tags.year.prefix(4)) ?? 0,
             duration: tags.duration,
             albumID: "\(directory.path)\n\(album)"
         )
