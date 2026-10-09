@@ -3,6 +3,12 @@ import Foundation
 
 @Observable
 final class Lyrics {
+    nonisolated enum Failure: Error {
+        case offline
+        case busy
+        case status(Int)
+    }
+
     private nonisolated static let cache = URL.applicationSupportDirectory.appending(path: "Overdrive/Lyrics")
     private nonisolated static let agent = "Overdrive/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0") (https://github.com/skhaz/overdrive)"
 
@@ -107,7 +113,7 @@ final class Lyrics {
         text = ""
 
         if let lyrics = Lyrics.read(Lyrics.key(track)) {
-            apply(lyrics)
+            apply(.success(lyrics))
             loading = false
             return
         }
@@ -123,16 +129,20 @@ final class Lyrics {
         }
     }
 
-    private func apply(_ result: String?) {
+    private func apply(_ result: Result<String, Failure>) {
         switch result {
-        case .some(let lyrics) where !lyrics.isEmpty:
+        case .success(let lyrics) where !lyrics.isEmpty:
             original = lyrics
             text = lyrics
             status = "From LRCLIB. Click Save to keep them."
-        case .some:
+        case .success:
             status = "No lyrics found."
-        case .none:
+        case .failure(.offline):
             status = "Could not reach LRCLIB."
+        case .failure(.busy):
+            status = "LRCLIB is busy. Open the song again later."
+        case .failure(.status(let code)):
+            status = "LRCLIB returned HTTP \(code)."
         }
     }
 
@@ -151,16 +161,20 @@ final class Lyrics {
     }
 
     @concurrent
-    private nonisolated static func lookup(_ track: Track) async -> String? {
-        if let lyrics = read(key(track)) { return lyrics }
-        guard let lyrics = await fetch(track) else { return nil }
+    private nonisolated static func lookup(_ track: Track) async -> Result<String, Failure> {
+        if let lyrics = read(key(track)) { return .success(lyrics) }
 
-        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        try? Data(lyrics.utf8).write(to: key(track), options: .atomic)
-        return lyrics
+        let result = await fetch(track)
+
+        if case .success(let lyrics) = result {
+            try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+            try? Data(lyrics.utf8).write(to: key(track), options: .atomic)
+        }
+
+        return result
     }
 
-    private nonisolated static func fetch(_ track: Track) async -> String? {
+    private nonisolated static func fetch(_ track: Track) async -> Result<String, Failure> {
         let get = request("get", [
             "artist_name": track.artist,
             "track_name": track.title,
@@ -169,20 +183,17 @@ final class Lyrics {
         ])
 
         switch await load(get) {
-        case .none:
-            return nil
-        case .some(let json as [String: Any]):
-            if let lyrics = json["plainLyrics"] as? String { return lyrics }
-        default:
-            break
+        case .failure(let failure):
+            return .failure(failure)
+        case .success(let json):
+            if let lyrics = (json as? [String: Any])?["plainLyrics"] as? String { return .success(lyrics) }
         }
 
-        guard let json = await load(request("search", ["artist_name": track.artist, "track_name": track.title])) else { return nil }
-        guard let results = json as? [[String: Any]] else { return "" }
-
-        return results
-            .filter { $0["plainLyrics"] is String }
-            .min { abs(($0["duration"] as? Double ?? 0) - track.duration) < abs(($1["duration"] as? Double ?? 0) - track.duration) }?["plainLyrics"] as? String ?? ""
+        return await load(request("search", ["artist_name": track.artist, "track_name": track.title])).map { json in
+            (json as? [[String: Any]] ?? [])
+                .filter { $0["plainLyrics"] is String }
+                .min { abs(($0["duration"] as? Double ?? 0) - track.duration) < abs(($1["duration"] as? Double ?? 0) - track.duration) }?["plainLyrics"] as? String ?? ""
+        }
     }
 
     private nonisolated static func request(_ endpoint: String, _ parameters: [String: String]) -> URLRequest {
@@ -195,11 +206,18 @@ final class Lyrics {
         return request
     }
 
-    private nonisolated static func load(_ request: URLRequest) async -> Any? {
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let status = (response as? HTTPURLResponse)?.statusCode,
-              status == 200 || status == 404 else { return nil }
+    private nonisolated static func load(_ request: URLRequest) async -> Result<Any, Failure> {
+        for attempt in 1...3 {
+            guard let (data, response) = try? await URLSession.shared.data(for: request) else { return .failure(.offline) }
 
-        return (try? JSONSerialization.jsonObject(with: data)) ?? [:]
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 200 || status == 404 { return .success((try? JSONSerialization.jsonObject(with: data)) ?? [:]) }
+            guard status == 429 || status >= 500 else { return .failure(.status(status)) }
+            guard attempt < 3 else { break }
+
+            try? await Task.sleep(for: .seconds(attempt))
+        }
+
+        return .failure(.busy)
     }
 }
