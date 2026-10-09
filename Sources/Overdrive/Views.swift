@@ -385,12 +385,12 @@ struct ContentView: View {
 
         VStack(spacing: 0) {
             NavigationSplitView {
-                List(Section.allCases, selection: $section) { section in
+                List(Section.allCases, selection: Binding { section } set: { value in lyrics.confirm { section = value } }) { section in
                     Label(section.rawValue, systemImage: section.symbol)
                 }
                 .navigationSplitViewColumnWidth(180)
             } detail: {
-                NavigationStack(path: $path) {
+                NavigationStack(path: Binding { path } set: { navigate($0) }) {
                     Group {
                         if library.folders.isEmpty {
                             ContentUnavailableView {
@@ -436,7 +436,7 @@ struct ContentView: View {
             Divider()
             Controls { track in
                 guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
-                path = NavigationPath([album])
+                navigate(NavigationPath([album]))
             }
             .background(.bar)
         }
@@ -445,8 +445,10 @@ struct ContentView: View {
             library.add(folders)
             return !folders.isEmpty
         }
-        .confirmationDialog("Discard the changes to the lyrics?", isPresented: $lyrics.confirming) {
+        .confirmationDialog("Save the changes to the lyrics?", isPresented: $lyrics.confirming) {
+            Button("Save", action: lyrics.commit)
             Button("Discard", role: .destructive, action: lyrics.discard)
+            Button("Cancel", role: .cancel, action: lyrics.cancel)
         }
         .environment(lyrics)
         .onChange(of: player.current) {
@@ -460,8 +462,16 @@ struct ContentView: View {
         .onChange(of: path) {
             if path.count < depth { lyrics.hide() }
         }
-        .onChange(of: library.query) { path = NavigationPath() }
+        .onChange(of: library.query) { navigate(NavigationPath()) }
         .frame(minWidth: 820, minHeight: 520)
+    }
+
+    private func navigate(_ value: NavigationPath) {
+        if value.count < depth {
+            lyrics.confirm { path = value }
+        } else {
+            path = value
+        }
     }
 }
 

@@ -27,7 +27,7 @@ Click the lyrics button in the toolbar to show the lyrics of the song that plays
 - When you leave the album, the panel closes.
 - If there is no `.lrc` file, the app gets the lyrics from [LRCLIB](https://lrclib.net). It writes nothing until you click Save.
 - Click Save (Command-S) to write the `.lrc` file. Save with an empty text to delete the file.
-- If you close the panel or open other lyrics with unsaved changes, the app asks you to discard them.
+- If the lyrics have unsaved changes, the app asks before it leaves the album, closes the panel, or shows other lyrics. You can save, discard, or cancel and continue to edit.
 
 ## Install
 

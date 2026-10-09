@@ -32,16 +32,26 @@ final class Lyrics {
 
         guard !visible || track != self.track else { return }
 
-        attempt { self.open(track) }
+        confirm { self.open(track) }
     }
 
     func hide() {
-        attempt { self.visible = false }
+        confirm { self.visible = false }
     }
 
     func discard() {
         text = original
         pending?()
+        pending = nil
+    }
+
+    func commit() {
+        save()
+        if !modified { pending?() }
+        pending = nil
+    }
+
+    func cancel() {
         pending = nil
     }
 
@@ -65,7 +75,7 @@ final class Lyrics {
         }
     }
 
-    private func attempt(_ action: @escaping () -> Void) {
+    func confirm(_ action: @escaping () -> Void) {
         if modified {
             pending = action
             confirming = true
