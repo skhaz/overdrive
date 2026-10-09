@@ -24,6 +24,7 @@ Click the lyrics button in the toolbar to show the lyrics of the song that plays
 
 - The app reads the lyrics from the `.lrc` file next to the song, for example `Song.lrc` for `Song.mp3`.
 - When the song changes, the sidebar shows the lyrics of the new song.
+- When you leave the album, the sidebar closes.
 - If there is no `.lrc` file, the app gets the lyrics from [LRCLIB](https://lrclib.net). It writes nothing until you click Save.
 - Click Save (Command-S) to write the `.lrc` file. Save with an empty text to delete the file.
 - If you close the sidebar or open other lyrics with unsaved changes, the app asks you to discard them.

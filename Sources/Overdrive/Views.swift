@@ -61,6 +61,9 @@ struct LyricsView: View {
 
                 TextEditor(text: $lyrics.text)
                     .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                     .disabled(lyrics.loading)
                     .overlay { if lyrics.loading { ProgressView() } }
 
@@ -432,6 +435,7 @@ struct ContentView: View {
         }
         .onChange(of: search) { searching = true }
         .onChange(of: section) { path = NavigationPath() }
+        .onChange(of: path) { lyrics.hide() }
         .onChange(of: library.query) { path = NavigationPath() }
         .frame(minWidth: 820, minHeight: 520)
     }
