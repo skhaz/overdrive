@@ -15,7 +15,7 @@ final class Player {
     private(set) var artwork: NSImage?
 
     var shuffle = false { didSet { reorder() } }
-    var repeatMode = Repeat.off
+    var repeatMode = Repeat.off { didSet { requeue() } }
     var volume = UserDefaults.standard.object(forKey: "volume") as? Float ?? 1 {
         didSet {
             player.volume = volume
@@ -172,9 +172,11 @@ final class Player {
 
     private func finished(_ ended: AVPlayerItem?) {
         guard let ended, ended === item else { return }
-        guard let next = following(index), let upcoming else { return stop() }
+        guard let next = following(index) else { return stop() }
 
         index = next
+        guard let upcoming else { return load() }
+
         item = upcoming
         self.upcoming = following(index).map(enqueue)
 
@@ -224,6 +226,12 @@ final class Player {
             queue = order
             index = order.firstIndex(of: track) ?? 0
         }
+
+        requeue()
+    }
+
+    private func requeue() {
+        guard item != nil else { return }
 
         if let upcoming {
             player.remove(upcoming)
