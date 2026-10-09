@@ -36,6 +36,7 @@ struct Overdrive: App {
     @State private var library = Library()
     @State private var lastFM: LastFM
     @State private var player: Player
+    @FocusedValue(\.search) private var search
 
     init() {
         let lastFM = LastFM()
@@ -60,6 +61,12 @@ struct Overdrive: App {
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Rescan Library", action: library.scan).keyboardShortcut("r")
+            }
+
+            CommandGroup(after: .textEditing) {
+                Button("Search") { search?() }
+                    .keyboardShortcut("p", modifiers: .control)
+                    .disabled(search == nil)
             }
 
             CommandMenu("Controls") {

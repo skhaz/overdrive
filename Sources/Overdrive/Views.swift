@@ -1,6 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+extension FocusedValues {
+    @Entry var search: (() -> Void)?
+}
+
 enum Section: String, CaseIterable, Identifiable {
     case albums = "Albums", artists = "Artists", songs = "Songs"
 
@@ -300,6 +304,7 @@ struct ContentView: View {
     @Environment(Library.self) private var library
     @State private var section = Section.albums
     @State private var path = NavigationPath()
+    @FocusState private var searching: Bool
 
     var body: some View {
         @Bindable var library = library
@@ -342,6 +347,8 @@ struct ContentView: View {
                 }
             }
             .searchable(text: $library.query)
+            .searchFocused($searching)
+            .focusedSceneValue(\.search) { searching = true }
 
             Divider()
             Controls().background(.bar)
