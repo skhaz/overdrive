@@ -260,13 +260,16 @@ final class Library {
         guard !folders.isEmpty else { return }
 
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
+            let paths = unsafeBitCast(paths, to: NSArray.self)
+            guard (0..<count).contains(where: { !Lyrics.ignored(paths[$0] as! String) }) else { return }
+
             MainActor.assumeIsolated {
                 Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
             }
         }
 
-        stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagNone))
+        stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes))
         FSEventStreamSetDispatchQueue(stream!, .main)
         FSEventStreamStart(stream!)
     }

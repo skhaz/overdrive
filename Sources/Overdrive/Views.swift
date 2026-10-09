@@ -39,6 +39,46 @@ struct FileMenu: View {
     }
 }
 
+struct LyricsButton: View {
+    let track: Track
+    @Environment(Lyrics.self) private var lyrics
+
+    var body: some View {
+        Button("Lyrics") { lyrics.show(track) }
+    }
+}
+
+struct LyricsView: View {
+    @Environment(Lyrics.self) private var lyrics
+
+    var body: some View {
+        @Bindable var lyrics = lyrics
+
+        if let track = lyrics.track {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(track.title).font(.headline).lineLimit(2)
+                Text(track.artist).foregroundStyle(.secondary).lineLimit(1)
+
+                TextEditor(text: $lyrics.text)
+                    .font(.body)
+                    .disabled(lyrics.loading)
+                    .overlay { if lyrics.loading { ProgressView() } }
+
+                HStack {
+                    Text(lyrics.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Spacer()
+                    Button("Save", action: lyrics.save)
+                        .keyboardShortcut("s")
+                        .disabled(!lyrics.changed || lyrics.loading)
+                }
+            }
+            .padding()
+        } else {
+            ContentUnavailableView("No Song", systemImage: "quote.bubble", description: Text("Play a song, or choose Lyrics from the menu of a song."))
+        }
+    }
+}
+
 struct Marquee: View {
     private static let gap: CGFloat = 40
     private static let speed: CGFloat = 30
@@ -195,7 +235,10 @@ struct AlbumView: View {
                         }
                         .stripe(index)
                         .onTapGesture(count: 2) { player.play(album.tracks, at: index) }
-                        .contextMenu { FileMenu(urls: [track.url]) }
+                        .contextMenu {
+                            LyricsButton(track: track)
+                            FileMenu(urls: [track.url])
+                        }
                     }
                 }
             }
@@ -235,6 +278,10 @@ struct SongTable: View {
             TableColumn("Time") { Text($0.duration.time).monospacedDigit().padding(.vertical, Stripe.padding) }.width(60)
         }
         .contextMenu(forSelectionType: Track.ID.self) { ids in
+            if ids.count == 1, let track = tracks.first(where: { ids.contains($0.id) }) {
+                LyricsButton(track: track)
+            }
+
             FileMenu(urls: Array(ids))
         } primaryAction: { ids in
             guard let id = ids.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
@@ -308,6 +355,8 @@ struct Controls: View {
 struct ContentView: View {
     let search: Int
     @Environment(Library.self) private var library
+    @Environment(Player.self) private var player
+    @State private var lyrics = Lyrics()
     @State private var section = Section.albums
     @State private var path = NavigationPath()
     @FocusState private var searching: Bool
@@ -352,6 +401,13 @@ struct ContentView: View {
                     }
                 }
             }
+            .inspector(isPresented: Binding { lyrics.visible } set: { $0 ? lyrics.show(nil) : lyrics.hide() }) {
+                LyricsView()
+                    .inspectorColumnWidth(min: 260, ideal: 320, max: 520)
+                    .toolbar {
+                        Button("Lyrics", systemImage: "quote.bubble") { lyrics.visible ? lyrics.hide() : lyrics.show(player.current ?? lyrics.track) }
+                    }
+            }
             .searchable(text: $library.query)
             .searchFocused($searching)
 
@@ -367,6 +423,10 @@ struct ContentView: View {
             library.add(folders)
             return !folders.isEmpty
         }
+        .confirmationDialog("Discard the changes to the lyrics?", isPresented: $lyrics.confirming) {
+            Button("Discard", role: .destructive, action: lyrics.discard)
+        }
+        .environment(lyrics)
         .onChange(of: search) { searching = true }
         .onChange(of: section) { path = NavigationPath() }
         .onChange(of: library.query) { path = NavigationPath() }

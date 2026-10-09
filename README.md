@@ -9,11 +9,23 @@ Music player for macOS 26 or later.
 
 ![Overdrive plays an album](.github/screenshot.png)
 
-- Reads the music folders in read-only mode. No database. It scans the folders at launch and when they change.
+- No database. It scans the music folders at launch and when they change. It writes to them only when you save lyrics.
 - Plays all formats that AVFoundation supports: AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
 - Shows album covers from the embedded artwork or from an image in the album folder.
+- Shows and edits lyrics in a sidebar.
 - Sends scrobbles to Last.fm.
 - Opens tracks and albums in Mp3tag from the context menu.
+- Press Control-P to clear the search field and type a new search.
+- Click the cover or the title in the player bar to open the album that plays.
+
+## Lyrics
+
+Click the lyrics button in the toolbar to show the lyrics of the song that plays, or choose Lyrics from the context menu of a song.
+
+- The app reads the lyrics from the `.lrc` file next to the song, for example `Song.lrc` for `Song.mp3`.
+- If there is no `.lrc` file, the app gets the lyrics from [LRCLIB](https://lrclib.net). It writes nothing until you click Save.
+- Click Save (Command-S) to write the `.lrc` file. Save with an empty text to delete the file.
+- If you close the sidebar or open other lyrics with unsaved changes, the app asks you to discard them.
 
 ## Install
 
@@ -54,4 +66,4 @@ Do not run a local build as the installed app.
 
 1. Get an API key at https://www.last.fm/api/account/create.
 2. Build with the key: `LASTFM_KEY=... LASTFM_SECRET=... ./build.sh`.
-3. Open Settings, enter the Last.fm username (not the email) and password, and click Connect. The app keeps only the session key.
+3. Open Settings, enter the Last.fm username (not the email) and password, and click Connect. The app keeps only the session key, in `~/Library/Application Support/Overdrive/lastfm.plist`.
