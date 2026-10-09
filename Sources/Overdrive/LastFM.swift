@@ -5,12 +5,14 @@ import CryptoKit
 final class LastFM {
     private static let endpoint = URL(string: "https://ws.audioscrobbler.com/2.0/")!
     private static let defaults = UserDefaults.standard
+    private static let file = URL.applicationSupportDirectory.appending(path: "Overdrive/lastfm.plist")
+    private static let saved = (try? PropertyListDecoder().decode([String: String].self, from: Data(contentsOf: file))) ?? [:]
 
     static let key = Bundle.main.object(forInfoDictionaryKey: "LastFMKey") as? String ?? ""
     static let secret = Bundle.main.object(forInfoDictionaryKey: "LastFMSecret") as? String ?? ""
 
-    var session = Keychain.read("lastfm.session") { didSet { Keychain.write("lastfm.session", session) } }
-    var user = Keychain.read("lastfm.user") { didSet { Keychain.write("lastfm.user", user) } }
+    var session = saved["session"] ?? "" { didSet { save() } }
+    var user = saved["user"] ?? "" { didSet { save() } }
     var pending = defaults.array(forKey: "lastfm.pending") as? [[String: String]] ?? [] { didSet { LastFM.defaults.set(pending, forKey: "lastfm.pending") } }
     var status = ""
     var connecting = false
@@ -39,6 +41,12 @@ final class LastFM {
         } catch {
             status = error.localizedDescription
         }
+    }
+
+    private func save() {
+        let manager = FileManager.default
+        try? manager.createDirectory(at: Self.file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        manager.createFile(atPath: Self.file.path, contents: try? PropertyListEncoder().encode(["session": session, "user": user]), attributes: [.posixPermissions: 0o600])
     }
 
     func disconnect() {
