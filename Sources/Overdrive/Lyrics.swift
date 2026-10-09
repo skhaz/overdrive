@@ -207,17 +207,23 @@ final class Lyrics {
     }
 
     private nonisolated static func load(_ request: URLRequest) async -> Result<Any, Failure> {
-        for attempt in 1...3 {
-            guard let (data, response) = try? await URLSession.shared.data(for: request) else { return .failure(.offline) }
+        var failure = Failure.busy
+
+        for retry in 0...3 {
+            if retry > 0 { try? await Task.sleep(for: .seconds(Double.random(in: 1...3))) }
+
+            guard let (data, response) = try? await URLSession.shared.data(for: request) else {
+                failure = .offline
+                continue
+            }
 
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status == 200 || status == 404 { return .success((try? JSONSerialization.jsonObject(with: data)) ?? [:]) }
             guard status == 429 || status >= 500 else { return .failure(.status(status)) }
-            guard attempt < 3 else { break }
 
-            try? await Task.sleep(for: .seconds(attempt))
+            failure = .busy
         }
 
-        return .failure(.busy)
+        return .failure(failure)
     }
 }
