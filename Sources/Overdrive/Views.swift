@@ -328,11 +328,12 @@ struct Controls: View {
                         Marquee(text: player.current?.title ?? "Not Playing").bold()
                         Marquee(text: player.current.map { "\($0.artist) — \($0.album)" } ?? "").foregroundStyle(.secondary)
                     }
-                    .frame(width: 220, alignment: .leading)
+                    .frame(minWidth: 220, maxWidth: 360, alignment: .leading)
                 }
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .layoutPriority(1)
 
             HStack(spacing: 14) {
                 Button("Shuffle", systemImage: "shuffle") { player.shuffle.toggle() }
