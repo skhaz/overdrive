@@ -76,7 +76,7 @@ struct LyricsView: View {
                     .font(.body)
                     .scrollContentBackground(.hidden)
                     .padding(6)
-                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                    .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
                     .disabled(lyrics.loading)
                     .overlay { if lyrics.loading { ProgressView() } }
 
@@ -420,14 +420,14 @@ struct ContentView: View {
                         AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name).modifier(LyricsToolbar())
                     }
                 }
-                .overlay(alignment: .trailing) {
-                    if lyrics.visible && path.count >= depth {
-                        HStack(spacing: 0) {
-                            Divider()
-                            LyricsView().frame(width: LyricsView.width)
-                        }
-                        .background(Color(nsColor: .windowBackgroundColor))
+            }
+            .overlay(alignment: .trailing) {
+                if lyrics.visible && path.count >= depth {
+                    HStack(spacing: 0) {
+                        Divider()
+                        LyricsView().frame(width: LyricsView.width)
                     }
+                    .background(Color(nsColor: .textBackgroundColor))
                 }
             }
             .searchable(text: $library.query)
