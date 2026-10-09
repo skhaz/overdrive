@@ -360,6 +360,7 @@ struct ContentView: View {
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @State private var lyrics = Lyrics()
+    @State private var depth = 0
     @State private var section = Section.albums
     @State private var path = NavigationPath()
     @FocusState private var searching: Bool
@@ -404,7 +405,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .inspector(isPresented: Binding { lyrics.visible } set: { $0 ? lyrics.show(nil) : lyrics.hide() }) {
+            .inspector(isPresented: Binding { lyrics.visible && path.count >= depth } set: { $0 ? lyrics.show(nil) : lyrics.hide() }) {
                 LyricsView()
                     .inspectorColumnWidth(min: 260, ideal: 320, max: 520)
                     .toolbar {
@@ -435,7 +436,16 @@ struct ContentView: View {
         }
         .onChange(of: search) { searching = true }
         .onChange(of: section) { path = NavigationPath() }
-        .onChange(of: path) { lyrics.hide() }
+        .onChange(of: lyrics.visible) {
+            if lyrics.visible { depth = path.count }
+        }
+        .onChange(of: path) {
+            guard path.count < depth else { return }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { lyrics.hide() }
+        }
         .onChange(of: library.query) { path = NavigationPath() }
         .frame(minWidth: 820, minHeight: 520)
     }
