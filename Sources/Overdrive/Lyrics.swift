@@ -77,7 +77,7 @@ final class Lyrics {
 
             saved = text
             original = text
-            status = "Saved."
+            status = "Saved"
         } catch {
             status = error.localizedDescription
         }
