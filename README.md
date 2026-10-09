@@ -7,6 +7,8 @@
 
 Music player for macOS 26 or later.
 
+![Overdrive plays an album](.github/screenshot.png)
+
 - Reads the music folders in read-only mode. No database. It scans the folders at launch and when they change.
 - Plays all formats that AVFoundation supports: AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
 - Shows album covers from the embedded artwork or from an image in the album folder.
