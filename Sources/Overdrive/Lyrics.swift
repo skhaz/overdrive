@@ -17,7 +17,6 @@ final class Lyrics {
 
     @ObservationIgnored private var pending: (() -> Void)?
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var revealing: Track?
 
     var modified: Bool { text != original }
     var changed: Bool { text != saved }
@@ -36,18 +35,6 @@ final class Lyrics {
         guard !visible || track != self.track else { return }
 
         confirm { self.open(track) }
-    }
-
-    func reveal(_ track: Track) {
-        revealing = track
-
-        Task {
-            var lyrics = Lyrics.read(Lyrics.file(track))
-            if lyrics == nil { lyrics = await Lyrics.lookup(track) }
-            guard revealing == track, let lyrics, !lyrics.isEmpty else { return }
-
-            show(track)
-        }
     }
 
     func hide() {

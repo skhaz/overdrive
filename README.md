@@ -23,7 +23,7 @@ Music player for macOS 26 or later.
 Click the lyrics button in the toolbar to show the lyrics of the song that plays, or choose Lyrics from the context menu of a song.
 
 - The app reads the lyrics from the `.lrc` file next to the song, for example `Song.lrc` for `Song.mp3`.
-- When a song with lyrics starts to play, the panel opens. When the song changes, the panel shows the lyrics of the new song.
+- When a song starts to play, the panel opens, also if the song has no lyrics, so you can type them. When the song changes, the panel shows the lyrics of the new song.
 - When you leave the album, the panel closes.
 - If there is no `.lrc` file, the app gets the lyrics from [LRCLIB](https://lrclib.net) one time and keeps them in `~/Library/Application Support/Overdrive/Lyrics`. It writes nothing to the music folder until you click Save.
 - Click Save (Command-S) to write the `.lrc` file. Save with an empty text to delete the file.
