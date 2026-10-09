@@ -36,7 +36,7 @@ struct Overdrive: App {
     @State private var library = Library()
     @State private var lastFM: LastFM
     @State private var player: Player
-    @FocusedValue(\.search) private var search
+    @State private var search = 0
 
     init() {
         let lastFM = LastFM()
@@ -48,7 +48,7 @@ struct Overdrive: App {
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
-            ContentView()
+            ContentView(search: search)
                 .environment(library)
                 .environment(player)
                 .modifier(Reopen(delegate: delegate))
@@ -64,9 +64,11 @@ struct Overdrive: App {
             }
 
             CommandGroup(after: .textEditing) {
-                Button("Search") { search?() }
-                    .keyboardShortcut("p", modifiers: .control)
-                    .disabled(search == nil)
+                Button("Search") {
+                    delegate.open?(id: "main")
+                    search += 1
+                }
+                .keyboardShortcut("p", modifiers: .control)
             }
 
             CommandMenu("Controls") {
