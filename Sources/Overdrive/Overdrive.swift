@@ -66,6 +66,7 @@ struct Overdrive: App {
             CommandGroup(after: .textEditing) {
                 Button("Search") {
                     delegate.open?(id: "main")
+                    library.query = ""
                     search += 1
                 }
                 .keyboardShortcut("p", modifiers: .control)
