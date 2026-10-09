@@ -72,13 +72,17 @@ struct LyricsView: View {
                 Text(track.title).font(.headline).lineLimit(2)
                 Text(track.artist).foregroundStyle(.secondary).lineLimit(1)
 
-                TextEditor(text: $lyrics.text)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
-                    .disabled(lyrics.loading)
-                    .overlay { if lyrics.loading { ProgressView() } }
+                Group {
+                    if lyrics.loading {
+                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        TextEditor(text: $lyrics.text)
+                            .font(.body)
+                            .scrollContentBackground(.hidden)
+                            .padding(6)
+                    }
+                }
+                .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
 
                 HStack {
                     Text(lyrics.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
