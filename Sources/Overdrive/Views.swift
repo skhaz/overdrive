@@ -427,6 +427,9 @@ struct ContentView: View {
             Button("Discard", role: .destructive, action: lyrics.discard)
         }
         .environment(lyrics)
+        .onChange(of: player.current) {
+            if lyrics.visible, let current = player.current { lyrics.show(current) }
+        }
         .onChange(of: search) { searching = true }
         .onChange(of: section) { path = NavigationPath() }
         .onChange(of: library.query) { path = NavigationPath() }
