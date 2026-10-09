@@ -245,6 +245,7 @@ struct SongTable: View {
 }
 
 struct Controls: View {
+    let open: (Track) -> Void
     @Environment(Player.self) private var player
     @State private var scrub: Double?
 
@@ -252,13 +253,21 @@ struct Controls: View {
         @Bindable var player = player
 
         HStack(spacing: 16) {
-            Cover(track: player.current).frame(width: 48)
+            Button {
+                if let current = player.current { open(current) }
+            } label: {
+                HStack(spacing: 16) {
+                    Cover(track: player.current).frame(width: 48)
 
-            VStack(alignment: .leading) {
-                Marquee(text: player.current?.title ?? "Not Playing").bold()
-                Marquee(text: player.current.map { "\($0.artist) — \($0.album)" } ?? "").foregroundStyle(.secondary)
+                    VStack(alignment: .leading) {
+                        Marquee(text: player.current?.title ?? "Not Playing").bold()
+                        Marquee(text: player.current.map { "\($0.artist) — \($0.album)" } ?? "").foregroundStyle(.secondary)
+                    }
+                    .frame(width: 220, alignment: .leading)
+                }
+                .contentShape(.rect)
             }
-            .frame(width: 220, alignment: .leading)
+            .buttonStyle(.plain)
 
             HStack(spacing: 14) {
                 Button("Shuffle", systemImage: "shuffle") { player.shuffle.toggle() }
@@ -347,7 +356,11 @@ struct ContentView: View {
             .searchFocused($searching)
 
             Divider()
-            Controls().background(.bar)
+            Controls { track in
+                guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
+                path = NavigationPath([album])
+            }
+            .background(.bar)
         }
         .dropDestination(for: URL.self) { urls, _ in
             let folders = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
