@@ -49,6 +49,8 @@ struct LyricsButton: View {
 }
 
 struct LyricsView: View {
+    static let width: CGFloat = 320
+
     @Environment(Lyrics.self) private var lyrics
 
     var body: some View {
@@ -188,6 +190,7 @@ struct AlbumGrid: View {
 struct AlbumView: View {
     let album: Album
     @Environment(Player.self) private var player
+    @Environment(Lyrics.self) private var lyrics
 
     var body: some View {
         ScrollView {
@@ -246,6 +249,7 @@ struct AlbumView: View {
                 }
             }
             .padding(20)
+            .padding(.trailing, lyrics.visible ? LyricsView.width : 0)
         }
         .navigationTitle(album.title)
     }
@@ -404,13 +408,18 @@ struct ContentView: View {
                         AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name)
                     }
                 }
-            }
-            .inspector(isPresented: Binding { lyrics.visible && path.count >= depth } set: { $0 ? lyrics.show(nil) : lyrics.hide() }) {
-                LyricsView()
-                    .inspectorColumnWidth(min: 260, ideal: 320, max: 520)
-                    .toolbar {
-                        Button("Lyrics", systemImage: "quote.bubble") { lyrics.visible ? lyrics.hide() : lyrics.show(player.current ?? lyrics.track) }
+                .overlay(alignment: .trailing) {
+                    if lyrics.visible && path.count >= depth {
+                        HStack(spacing: 0) {
+                            Divider()
+                            LyricsView().frame(width: LyricsView.width)
+                        }
+                        .background(Color(nsColor: .windowBackgroundColor))
                     }
+                }
+                .toolbar {
+                    Button("Lyrics", systemImage: "quote.bubble") { lyrics.visible ? lyrics.hide() : lyrics.show(player.current ?? lyrics.track) }
+                }
             }
             .searchable(text: $library.query)
             .searchFocused($searching)
@@ -440,11 +449,7 @@ struct ContentView: View {
             if lyrics.visible { depth = path.count }
         }
         .onChange(of: path) {
-            guard path.count < depth else { return }
-
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { lyrics.hide() }
+            if path.count < depth { lyrics.hide() }
         }
         .onChange(of: library.query) { path = NavigationPath() }
         .frame(minWidth: 820, minHeight: 520)

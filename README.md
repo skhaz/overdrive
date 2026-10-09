@@ -12,7 +12,7 @@ Music player for macOS 26 or later.
 - No database. It scans the music folders at launch and when they change. It writes to them only when you save lyrics.
 - Plays all formats that AVFoundation supports: AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
 - Shows album covers from the embedded artwork or from an image in the album folder.
-- Shows and edits lyrics in a sidebar.
+- Shows and edits lyrics in a panel.
 - Sends scrobbles to Last.fm.
 - Opens tracks and albums in Mp3tag from the context menu.
 - Press Control-P to clear the search field and type a new search.
@@ -23,11 +23,11 @@ Music player for macOS 26 or later.
 Click the lyrics button in the toolbar to show the lyrics of the song that plays, or choose Lyrics from the context menu of a song.
 
 - The app reads the lyrics from the `.lrc` file next to the song, for example `Song.lrc` for `Song.mp3`.
-- When the song changes, the sidebar shows the lyrics of the new song.
-- When you leave the album, the sidebar closes.
+- When the song changes, the panel shows the lyrics of the new song.
+- When you leave the album, the panel closes.
 - If there is no `.lrc` file, the app gets the lyrics from [LRCLIB](https://lrclib.net). It writes nothing until you click Save.
 - Click Save (Command-S) to write the `.lrc` file. Save with an empty text to delete the file.
-- If you close the sidebar or open other lyrics with unsaved changes, the app asks you to discard them.
+- If you close the panel or open other lyrics with unsaved changes, the app asks you to discard them.
 
 ## Install
 
