@@ -435,7 +435,7 @@ struct ContentView: View {
                     .background(Color(nsColor: .textBackgroundColor))
                 }
             }
-            .searchable(text: $library.query)
+            .searchable(text: $library.query, prompt: "Ctrl+P for search")
             .searchFocused($searching)
 
             Divider()
