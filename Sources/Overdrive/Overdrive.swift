@@ -73,9 +73,9 @@ struct Overdrive: App {
             }
 
             CommandMenu("Controls") {
-                Button(player.playing ? "Pause" : "Play", systemImage: player.playing ? "pause.fill" : "play.fill", action: player.toggle).keyboardShortcut(.space, modifiers: [])
-                Button("Next", systemImage: "forward.fill", action: player.next).keyboardShortcut(.rightArrow)
-                Button("Previous", systemImage: "backward.fill", action: player.previous).keyboardShortcut(.leftArrow)
+                Button(player.playing ? "Pause" : "Play", systemImage: "playpause.fill", action: player.toggle)
+                Button("Next", systemImage: "forward.fill", action: player.next)
+                Button("Previous", systemImage: "backward.fill", action: player.previous)
                 Divider()
                 Toggle("Shuffle", systemImage: "shuffle", isOn: $player.shuffle)
             }

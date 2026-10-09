@@ -15,6 +15,7 @@ Music player for macOS 26 or later.
 - Shows and edits lyrics in a panel.
 - Sends scrobbles to Last.fm.
 - Opens tracks and albums in Mp3tag from the context menu.
+- Use the media keys (⏪ ⏯ ⏩) to go to the previous song, play or pause, and go to the next song.
 - Press Control-P to clear the search field and type a new search.
 - Click the cover or the title in the player bar to open the album that plays.
 
