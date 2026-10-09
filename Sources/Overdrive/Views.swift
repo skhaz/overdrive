@@ -363,7 +363,7 @@ struct Controls: View {
             }
             .disabled(player.current == nil)
 
-            Image(systemName: "speaker.wave.2.fill").foregroundStyle(.secondary)
+            Image(systemName: "speaker.wave.2.fill").foregroundStyle(.secondary).padding(.leading, 16)
             Slider(value: $player.volume, in: 0...1).frame(width: 90)
         }
         .padding(.horizontal, 16)
