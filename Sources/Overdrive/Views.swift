@@ -48,6 +48,17 @@ struct LyricsButton: View {
     }
 }
 
+struct LyricsToolbar: ViewModifier {
+    @Environment(Lyrics.self) private var lyrics
+    @Environment(Player.self) private var player
+
+    func body(content: Content) -> some View {
+        content.toolbar {
+            Button("Lyrics", systemImage: "quote.bubble") { lyrics.visible ? lyrics.hide() : lyrics.show(player.current ?? lyrics.track) }
+        }
+    }
+}
+
 struct LyricsView: View {
     static let width: CGFloat = 320
 
@@ -403,9 +414,10 @@ struct ContentView: View {
                         }
                     }
                     .navigationTitle(section.rawValue)
-                    .navigationDestination(for: Album.self) { AlbumView(album: $0) }
+                    .modifier(LyricsToolbar())
+                    .navigationDestination(for: Album.self) { AlbumView(album: $0).modifier(LyricsToolbar()) }
                     .navigationDestination(for: String.self) { name in
-                        AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name)
+                        AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name).modifier(LyricsToolbar())
                     }
                 }
                 .overlay(alignment: .trailing) {
@@ -416,9 +428,6 @@ struct ContentView: View {
                         }
                         .background(Color(nsColor: .windowBackgroundColor))
                     }
-                }
-                .toolbar {
-                    Button("Lyrics", systemImage: "quote.bubble") { lyrics.visible ? lyrics.hide() : lyrics.show(player.current ?? lyrics.track) }
                 }
             }
             .searchable(text: $library.query)
