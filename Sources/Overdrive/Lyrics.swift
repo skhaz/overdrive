@@ -1,7 +1,9 @@
+import CryptoKit
 import Foundation
 
 @Observable
 final class Lyrics {
+    private nonisolated static let cache = URL.applicationSupportDirectory.appending(path: "Overdrive/Lyrics")
     private nonisolated static let agent = "Overdrive/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0") (https://github.com/skhaz/overdrive)"
 
     private(set) var track: Track?
@@ -15,6 +17,7 @@ final class Lyrics {
 
     @ObservationIgnored private var pending: (() -> Void)?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var revealing: Track?
 
     var modified: Bool { text != original }
     var changed: Bool { text != saved }
@@ -33,6 +36,18 @@ final class Lyrics {
         guard !visible || track != self.track else { return }
 
         confirm { self.open(track) }
+    }
+
+    func reveal(_ track: Track) {
+        revealing = track
+
+        Task {
+            var lyrics = Lyrics.read(Lyrics.file(track))
+            if lyrics == nil { lyrics = await Lyrics.lookup(track) }
+            guard revealing == track, let lyrics, !lyrics.isEmpty else { return }
+
+            show(track)
+        }
     }
 
     func hide() {
@@ -92,8 +107,8 @@ final class Lyrics {
         visible = true
         status = ""
 
-        if let data = try? Data(contentsOf: Lyrics.file(track)) {
-            saved = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+        if let lyrics = Lyrics.read(Lyrics.file(track)) {
+            saved = lyrics
             original = saved
             text = saved
             loading = false
@@ -103,24 +118,34 @@ final class Lyrics {
         saved = ""
         original = ""
         text = ""
+
+        if let lyrics = Lyrics.read(Lyrics.key(track)) {
+            apply(lyrics)
+            loading = false
+            return
+        }
+
         loading = true
 
         Task {
-            let result = await Lyrics.fetch(track)
+            let result = await Lyrics.lookup(track)
             guard generation == self.generation else { return }
 
-            switch result {
-            case .some(let lyrics) where !lyrics.isEmpty:
-                original = lyrics
-                text = lyrics
-                status = "From LRCLIB. Click Save to keep them."
-            case .some:
-                status = "No lyrics found."
-            case .none:
-                status = "Could not reach LRCLIB."
-            }
-
+            apply(result)
             loading = false
+        }
+    }
+
+    private func apply(_ result: String?) {
+        switch result {
+        case .some(let lyrics) where !lyrics.isEmpty:
+            original = lyrics
+            text = lyrics
+            status = "From LRCLIB. Click Save to keep them."
+        case .some:
+            status = "No lyrics found."
+        case .none:
+            status = "Could not reach LRCLIB."
         }
     }
 
@@ -128,7 +153,26 @@ final class Lyrics {
         track.url.deletingPathExtension().appendingPathExtension("lrc")
     }
 
+    private nonisolated static func key(_ track: Track) -> URL {
+        let digest = SHA256.hash(data: Data("\(track.artist)\n\(track.title)\n\(track.album)\n\(Int(track.duration.rounded()))".utf8))
+        return cache.appending(path: digest.map { String(format: "%02x", $0) }.joined() + ".txt")
+    }
+
+    private nonisolated static func read(_ url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+    }
+
     @concurrent
+    private nonisolated static func lookup(_ track: Track) async -> String? {
+        if let lyrics = read(key(track)) { return lyrics }
+        guard let lyrics = await fetch(track) else { return nil }
+
+        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try? Data(lyrics.utf8).write(to: key(track), options: .atomic)
+        return lyrics
+    }
+
     private nonisolated static func fetch(_ track: Track) async -> String? {
         let get = request("get", [
             "artist_name": track.artist,
@@ -146,7 +190,8 @@ final class Lyrics {
             break
         }
 
-        guard let results = await load(request("search", ["artist_name": track.artist, "track_name": track.title])) as? [[String: Any]] else { return "" }
+        guard let json = await load(request("search", ["artist_name": track.artist, "track_name": track.title])) else { return nil }
+        guard let results = json as? [[String: Any]] else { return "" }
 
         return results
             .filter { $0["plainLyrics"] is String }

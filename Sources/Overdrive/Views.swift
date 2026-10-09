@@ -452,7 +452,13 @@ struct ContentView: View {
         }
         .environment(lyrics)
         .onChange(of: player.current) {
-            if lyrics.visible, let current = player.current { lyrics.show(current) }
+            guard let current = player.current else { return }
+
+            if lyrics.visible {
+                lyrics.show(current)
+            } else {
+                lyrics.reveal(current)
+            }
         }
         .onChange(of: search) { searching = true }
         .onChange(of: section) { path = NavigationPath() }
