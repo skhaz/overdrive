@@ -669,12 +669,11 @@ struct Controls: View {
                         Marquee(text: player.current?.title ?? "Not Playing").bold()
                         Marquee(text: player.current.map { "\($0.artist) — \($0.album)" } ?? "").foregroundStyle(.secondary)
                     }
-                    .frame(minWidth: 220, maxWidth: 360, alignment: .leading)
+                    .frame(minWidth: 120, maxWidth: 360, alignment: .leading)
                 }
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .layoutPriority(1)
 
             HStack(spacing: 14) {
                 Button("Shuffle", systemImage: "shuffle") { player.shuffle.toggle() }
@@ -692,7 +691,7 @@ struct Controls: View {
             .buttonStyle(.plain)
             .disabled(player.current == nil)
 
-            HStack {
+            HStack(spacing: 8) {
                 Text((scrub ?? player.position).time).monospacedDigit().foregroundStyle(.secondary)
                 Slider(value: Binding { scrub ?? player.position } set: { scrub = $0 }, in: 0...max(player.duration, 1)) { editing in
                     if !editing, let scrub {
@@ -700,8 +699,10 @@ struct Controls: View {
                         self.scrub = nil
                     }
                 }
+                .frame(minWidth: 120, maxWidth: .infinity)
                 Text(player.duration.time).monospacedDigit().foregroundStyle(.secondary)
             }
+            .frame(minWidth: 200, maxWidth: .infinity)
             .disabled(player.current == nil)
 
             Image(systemName: "speaker.wave.2.fill").foregroundStyle(.secondary).padding(.leading, 16)
@@ -847,7 +848,7 @@ struct ContentView: View {
         }
         .environment(lyrics)
         .onChange(of: player.current) {
-            if let current = player.current { lyrics.show(current) }
+            if lyrics.visible, let current = player.current { lyrics.show(current) }
         }
         .onChange(of: search) { searching = true }
         .onChange(of: page) {
@@ -868,7 +869,6 @@ struct ContentView: View {
         Label(title, systemImage: symbol)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
-            .simultaneousGesture(TapGesture().onEnded { if value == page { navigate(NavigationPath()) } })
             .tag(value)
     }
 
