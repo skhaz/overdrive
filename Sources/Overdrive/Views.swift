@@ -480,6 +480,8 @@ struct AlbumView: View {
                         .padding(.top, 8)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
                 .padding(.bottom, 20)
                 .contextMenu {
                     TrackMenu(tracks: album.tracks)
