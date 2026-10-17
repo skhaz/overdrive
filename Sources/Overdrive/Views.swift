@@ -100,6 +100,43 @@ struct FileMenu: View {
     }
 }
 
+func copy(_ values: [String]) {
+    var seen: Set<String> = []
+    let text = values.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: "\n")
+    guard !text.isEmpty else { return }
+
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+}
+
+func copyText(_ tracks: [Track]) -> String {
+    tracks.map { "\($0.title) — \($0.artist) — \($0.album)" }.joined(separator: "\n")
+}
+
+struct CopyMenu: View {
+    let tracks: [Track]
+    var album: Album?
+
+    var body: some View {
+        if !tracks.isEmpty {
+            Menu("Copy") {
+                if let album {
+                    Button("Artist") { copy([album.artist]) }
+                    Button("Album") { copy([album.title]) }
+                } else {
+                    Button(tracks.count == 1 ? "Song Name" : "Song Names") { copy(tracks.map(\.title)) }
+                    Button("Artist") { copy(tracks.map(\.artist)) }
+                    Button("Album") { copy(tracks.map(\.album)) }
+                    Divider()
+                    Button("Song, Artist, and Album") { copy([copyText(tracks)]) }
+                }
+            }
+
+            Divider()
+        }
+    }
+}
+
 struct LyricsToolbar: ViewModifier {
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
@@ -406,6 +443,7 @@ struct AlbumGrid: View {
                     .buttonStyle(.plain)
                     .contextMenu {
                         TrackMenu(tracks: album.tracks)
+                        CopyMenu(tracks: album.tracks, album: album)
                         FileMenu(urls: album.tracks.map(\.url))
                     }
                 }
@@ -445,6 +483,7 @@ struct AlbumView: View {
                 .padding(.bottom, 20)
                 .contextMenu {
                     TrackMenu(tracks: album.tracks)
+                    CopyMenu(tracks: album.tracks, album: album)
                     FileMenu(urls: album.tracks.map(\.url))
                 }
 
@@ -478,6 +517,7 @@ struct AlbumView: View {
                             let tracks = selection.contains(track.id) ? album.tracks.filter { selection.contains($0.id) } : [track]
 
                             TrackMenu(tracks: tracks)
+                            CopyMenu(tracks: tracks)
                             FileMenu(urls: tracks.map(\.url))
                         }
                     }
@@ -526,6 +566,9 @@ struct ArtistList: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                Button("Copy Artist") { copy([artist.name]) }
+            }
         }
     }
 }
@@ -567,6 +610,7 @@ struct SongTable: View {
                 GoMenu(track: track)
             }
 
+            CopyMenu(tracks: tracks.filter { ids.contains($0.id) })
             FileMenu(urls: Array(ids))
         } primaryAction: { ids in
             guard let id = ids.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
@@ -618,6 +662,7 @@ struct PlaylistView: View {
                         GoMenu(track: picked[0].track)
                     }
 
+                    CopyMenu(tracks: picked.map(\.track))
                     FileMenu(urls: picked.map(\.track.url))
                 }
             } primaryAction: { ids in
@@ -674,6 +719,9 @@ struct Controls: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                CopyMenu(tracks: player.current.map { [$0] } ?? [])
+            }
 
             HStack(spacing: 14) {
                 Button("Shuffle", systemImage: "shuffle") { player.shuffle.toggle() }

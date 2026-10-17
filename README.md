@@ -16,6 +16,7 @@ Music player for macOS 26 or later.
 - Sends scrobbles to Last.fm.
 - Opens tracks and albums in Mp3tag from the context menu.
 - Right-click a song or an album and choose Play Next or Add to Queue.
+- Right-click a song, an album, an artist, or the player bar and choose Copy to copy the song name, the artist, or the album.
 - Select more than one song with Command-click or Shift-click. Then right-click a selected song to use the menu on all selected songs. Right-click a song that is not selected to use the menu on only that song.
 - Use the media keys to go to the previous song, play or pause, and go to the next song.
 - Press Control-P to clear the search field and type a new search.
