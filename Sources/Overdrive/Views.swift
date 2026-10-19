@@ -468,7 +468,11 @@ struct AlbumView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(album.title).font(.largeTitle.bold()).lineLimit(2)
-                        Text(album.artist).font(.title2).foregroundStyle(.secondary)
+                        NavigationLink(album.artist, value: album.artist)
+                            .buttonStyle(.plain)
+                            .pointerStyle(.link)
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
                         Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
                             .foregroundStyle(.secondary)
 
