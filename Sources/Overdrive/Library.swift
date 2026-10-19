@@ -178,6 +178,13 @@ final class Library {
     private func search() {
         defer { version += 1 }
 
+        filtered = query.isEmpty ? [] : albums.filter { $0.artist == query }
+
+        guard filtered.isEmpty else {
+            tracks = filtered.flatMap(\.tracks)
+            return
+        }
+
         bytes.removeAll(keepingCapacity: true)
         tokens.removeAll(keepingCapacity: true)
 
