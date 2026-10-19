@@ -30,6 +30,7 @@ enum Page: Hashable {
 enum Destination {
     case album(Album)
     case artist(String)
+    case search(String)
 }
 
 struct GoAction: Equatable {
@@ -457,6 +458,7 @@ struct AlbumView: View {
     let album: Album
     @Environment(Player.self) private var player
     @Environment(Lyrics.self) private var lyrics
+    @Environment(\.go) private var go
     @State private var selection: Set<Track.ID> = []
     @State private var anchor: Int?
 
@@ -468,7 +470,7 @@ struct AlbumView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(album.title).font(.largeTitle.bold()).lineLimit(2)
-                        NavigationLink(album.artist, value: album.artist)
+                        Button(album.artist) { go(.search(album.artist)) }
                             .buttonStyle(.plain)
                             .pointerStyle(.link)
                             .font(.title2)
@@ -839,16 +841,6 @@ struct ContentView: View {
                     .navigationDestination(for: String.self) { name in
                         AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name).modifier(LyricsToolbar())
                     }
-                    .environment(\.go, GoAction { destination in
-                        var value = path
-
-                        switch destination {
-                        case .album(let album): value.append(album)
-                        case .artist(let name): value.append(name)
-                        }
-
-                        navigate(value)
-                    })
                 }
             }
             .overlay(alignment: .trailing) {
@@ -901,6 +893,23 @@ struct ContentView: View {
             Text("The app keeps a copy as “\(deleting ?? "").backup” in the Playlists folder.")
         }
         .environment(lyrics)
+        .environment(\.go, GoAction { destination in
+            var value = path
+
+            switch destination {
+            case .album(let album): value.append(album)
+            case .artist(let name): value.append(name)
+            case .search(let text):
+                lyrics.confirm {
+                    page = .section(.albums)
+                    library.query = text
+                    path = NavigationPath()
+                }
+                return
+            }
+
+            navigate(value)
+        })
         .onChange(of: player.current) {
             if lyrics.visible, let current = player.current { lyrics.show(current) }
         }
