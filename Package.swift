@@ -6,6 +6,6 @@ let package = Package(
     platforms: [.macOS(.v26)],
     targets: [
         .executableTarget(name: "Overdrive", swiftSettings: [.defaultIsolation(MainActor.self)]),
-        .testTarget(name: "OverdriveTests", dependencies: ["Overdrive"]),
+        .testTarget(name: "OverdriveTests", dependencies: ["Overdrive"], resources: [.copy("Fixtures")]),
     ]
 )

@@ -46,7 +46,7 @@ enum FileInfo {
             AudioFileGetProperty(file, kAudioFilePropertyEstimatedDuration, &size, &duration)
 
             if rate == 0, duration > 0 { rate = UInt32(Double(bytes) * 8 / duration) }
-            if rate > 0 { lines.append("Bit Rate: \((rate + 500) / 1000) kbps") }
+            if rate > 0 { lines.append("Bit Rate: \((rate + 500) / 1000) kbps\(known && format.mFormatID == kAudioFormatMPEGLayer3 && MPEG.variable(url) ? " (VBR)" : "")") }
         }
 
         lines.append("Size: \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
