@@ -139,6 +139,6 @@ Right-click a song and choose Watch Video on YouTube.
 - The app pauses the song that plays. While the window is open, the media keys play and pause the video. When you close the window, the media keys control the songs again.
 - The app blocks the known ad requests and removes the ad data from the YouTube player response. YouTube can change this at any time, so an ad can show.
 - Before the video plays, the app makes sure that you are signed in to YouTube. If you are not signed in, or the session is expired, the window shows the Google sign-in page, and the video plays after you sign in. With YouTube Premium, the videos have no ads. Passkeys do not work in the window, because macOS lets only Google apps use passkeys for Google in an app. Click Try another way and use your phone or your password and a code.
-- The app keeps the session after you quit. Every 6 hours, while the window is closed, the app opens YouTube in the background for a short time, so Google renews the session and you do not have to sign in again.
+- The app keeps the session after you quit. Every hour, while the window is closed, the app opens YouTube in the background for a short time, so Google renews the session and you do not have to sign in again.
 - To sign out, choose Settings > YouTube > Sign Out.
 - To open videos in the default browser, choose Settings > YouTube > Open Videos In > Default Browser.

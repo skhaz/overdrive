@@ -111,7 +111,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         Task { [weak self] in
             while true {
-                try? await Task.sleep(for: .seconds(6 * 3600))
+                try? await Task.sleep(for: .seconds(3600))
                 await self?.refresh()
             }
         }
