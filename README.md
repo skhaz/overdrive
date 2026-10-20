@@ -12,7 +12,7 @@ A music player for macOS 26 or later. It plays the music in your folders, with n
 ## Features
 
 - **Your folders are the library.** The app scans the music folders at launch and when they change. It writes to them only when you save lyrics.
-- **All AVFoundation formats:** AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
+- **Plays all common formats:** AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, and AIFF.
 - **Album covers** from the embedded artwork or from an image in the album folder.
 - **Lyrics panel** with synced lyrics. It reads `.lrc` files, gets missing lyrics from [LRCLIB](https://lrclib.net), and lets you edit and save them.
 - **Same volume for all songs**, per album or per song.
@@ -115,7 +115,7 @@ Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email
 - No scrobble is lost. With no network, the scrobbles wait and the app sends them later.
 - The video window opens at once, because the app keeps YouTube ready in the background. You stay signed in to YouTube.
 - YouTube can show an ad, because the ad block cannot stop all ads. With YouTube Premium, there are no ads.
-- Each playlist is a text file in `~/Music/Library/Playlists`. If you edit a playlist file in a different app, choose File > Rescan Library.
+- Your playlists are saved in the Playlists folder, in Music > Library > Playlists. If you change a playlist there, choose File > Rescan Library.
 
 ## Credits
 
