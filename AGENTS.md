@@ -1,5 +1,10 @@
 # Agents
 
+## Documentation
+
+- Put every technical detail in this file: build, tests, fuzzing, release, data files, formats, protocols, and internal behavior.
+- `README.md` is for users with no technical knowledge. Use plain words. Write what the app does and how to use it. Do not write about code, files, tools, or how the app works inside.
+
 ## Commits
 
 Commit each change when it is complete. Do not ask before you commit.
@@ -15,7 +20,6 @@ Commit each change when it is complete. Do not ask before you commit.
 - Build: `./build.sh`. To build with Last.fm, set the API key from https://www.last.fm/api/account/create: `LASTFM_KEY=... LASTFM_SECRET=... ./build.sh`.
 - Test: `swift test`. The tests use a fake Last.fm server, so they do not send scrobbles to a real account. The `Release` action runs the tests before the build.
 - Do all tests on the release from Homebrew, the same as a real installation. Use a local build only to debug or to profile.
-- Keep the README for users only. Put technical details in this file.
 - Sanitizers: `swift test --sanitize=address`, `swift test --sanitize=undefined`, and `swift test --sanitize=thread`.
 - Fuzzing: run the libFuzzer targets in Docker (OrbStack), because the macOS toolchain has no libFuzzer runtime:
   `docker run --rm -v "$PWD":/src:ro -v /tmp/fuzz:/out -e OUT=/out --shm-size=256m swift:latest sh /src/Fuzz/fuzz.sh 300`.
