@@ -46,6 +46,7 @@ struct Overdrive: App {
         _player = State(initialValue: Player(lastFM: lastFM, loudness: loudness))
 
         Task { await lastFM.flush() }
+        AppleMusic.block()
     }
 
     var body: some Scene {
