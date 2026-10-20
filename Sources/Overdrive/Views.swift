@@ -98,6 +98,12 @@ struct FileMenu: View {
     let urls: [URL]
 
     var body: some View {
+        if urls.count == 1 {
+            Menu("File Info") {
+                ForEach(FileInfo.lines(urls[0]), id: \.self) { Text($0) }
+            }
+        }
+
         if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "app.mp3tag.Mp3tag") {
             Button("Open in Mp3tag") { NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: .init()) }
         }
