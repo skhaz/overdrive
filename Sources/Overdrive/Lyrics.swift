@@ -1,11 +1,6 @@
 import CryptoKit
 import Foundation
 
-nonisolated struct SyncedLine: Equatable, Sendable {
-    let time: Double
-    let text: String
-}
-
 @Observable
 final class Lyrics {
     nonisolated enum Failure: Error {
@@ -25,7 +20,7 @@ final class Lyrics {
     private(set) var status = ""
     private(set) var original = ""
     private(set) var saved = ""
-    var text = "" { didSet { if text != oldValue { synced = Lyrics.parse(text) } } }
+    var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
     var visible = false
     var confirming = false
 
@@ -198,52 +193,6 @@ final class Lyrics {
     private nonisolated static func read(_ url: URL) -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
-    }
-
-    nonisolated static func parse(_ text: String) -> [SyncedLine] {
-        var offset = 0.0
-        var lines: [SyncedLine] = []
-        for raw in text.components(separatedBy: .newlines) {
-            var line = raw
-            var times: [Double] = []
-            var plain = true
-            while line.first == "[", let close = line.firstIndex(of: "]") {
-                let tag = String(line[line.index(after: line.startIndex)..<close])
-                if let time = stamp(tag) {
-                    times.append(time)
-                } else if tag.hasPrefix("offset:") {
-                    offset = -(Double(tag.dropFirst(7).trimmingCharacters(in: .whitespaces)) ?? 0) / 1000
-                } else if !tag.contains(":") {
-                    plain = false
-                    break
-                }
-                line = String(line[line.index(after: close)...])
-            }
-            let words = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard plain, !times.isEmpty, !words.isEmpty else { continue }
-            for time in times { lines.append(SyncedLine(time: max(time + offset, 0), text: words)) }
-        }
-        return lines.sorted { $0.time < $1.time }
-    }
-
-    nonisolated static func index(at position: Double, in lines: [SyncedLine]) -> Int? {
-        var low = 0
-        var high = lines.count
-        while low < high {
-            let middle = (low + high) / 2
-            if lines[middle].time <= position {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        return low == 0 ? nil : low - 1
-    }
-
-    private nonisolated static func stamp(_ tag: String) -> Double? {
-        let parts = tag.split(separator: ":")
-        guard parts.count == 2, parts[0].allSatisfy(\.isNumber), let minutes = Double(parts[0]), let seconds = Double(parts[1]), seconds < 60 else { return nil }
-        return minutes * 60 + seconds
     }
 
     @concurrent

@@ -47,12 +47,12 @@ struct ParserTests {
     }
 
     @Test func appliesLyricsOffsetEarlier() {
-        let lines = Lyrics.parse("[offset:+500]\n[00:10.00]Hello")
+        let lines = LRC.parse("[offset:+500]\n[00:10.00]Hello")
         #expect(lines == [SyncedLine(time: 9.5, text: "Hello")])
     }
 
     @Test func keepsBracketsInsideLyricsLines() {
-        let lines = Lyrics.parse("[00:10.00]Hi [Chorus: X] there\n[00:12.00]Hello [x]")
+        let lines = LRC.parse("[00:10.00]Hi [Chorus: X] there\n[00:12.00]Hello [x]")
         #expect(lines.map(\.text) == ["Hi [Chorus: X] there", "Hello [x]"])
     }
 }

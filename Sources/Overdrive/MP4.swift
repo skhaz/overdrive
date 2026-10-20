@@ -41,7 +41,7 @@ nonisolated enum MP4 {
               let item = child(file, covr, ilst.start, ilst.end),
               let data = header(file, item.start, item.end) else { return nil }
 
-        return Picture.read(file, data.start + 8, Int(data.end - data.start - 8))
+        return Embedded.read(file, data.start + 8, Int(data.end - data.start - 8))
     }
 
     static func read(_ url: URL) -> Tags? {

@@ -39,4 +39,13 @@ struct PictureTests {
 
         #expect(Picture.thumbnail(url) == nil)
     }
+
+    @Test func ignoresID3ExtendedHeaderThatIsTooShort() throws {
+        let fixture = Bundle.module.resourceURL!.appending(path: "Fixtures/id3-extended-header.mp3")
+        let url = try file(Data(contentsOf: fixture), ".mp3")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        _ = Embedded.cover(url)
+        _ = ID3.read(url)
+    }
 }

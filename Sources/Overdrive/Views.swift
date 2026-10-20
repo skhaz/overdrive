@@ -205,7 +205,7 @@ struct LyricsView: View {
         if let track = lyrics.track {
             let lines = lyrics.synced
             let live = player.current == track
-            let current = live ? Lyrics.index(at: player.position, in: lines) : nil
+            let current = live ? LRC.index(at: player.position, in: lines) : nil
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top) {
