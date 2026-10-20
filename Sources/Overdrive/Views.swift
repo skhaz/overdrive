@@ -143,6 +143,7 @@ struct CopyMenu: View {
                     Button("Album") { copy(tracks.map(\.album)) }
                     Divider()
                     Button("Song, Artist, and Album") { copy([copyText(tracks)]) }
+                    Button("Artist - Song Name") { copy(tracks.map { "\($0.artist) - \($0.title)" }) }
                 }
             }
 
