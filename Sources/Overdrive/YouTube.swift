@@ -3,6 +3,21 @@ import WebKit
 
 private final class Handle: NSView {
     var dropped: (() -> Void)?
+    var hovered: ((Bool) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovered?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovered?(false)
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -129,6 +144,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         web.navigationDelegate = self
         panel.delegate = self
         handle.dropped = { [weak self] in self?.snap() }
+        handle.hovered = { [weak self] in self?.panel.standardWindowButton(.closeButton)?.animator().alphaValue = $0 ? 1 : 0 }
         player.resumed = { [weak self] in
             if self?.panel.isVisible == true { self?.panel.close() }
         }
@@ -242,6 +258,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     private func show(_ mode: Mode) {
         self.mode = mode
         handle.isHidden = mode != .video
+        panel.standardWindowButton(.closeButton)?.alphaValue = mode == .video ? 0 : 1
 
         place()
         panel.makeKeyAndOrderFront(nil)
