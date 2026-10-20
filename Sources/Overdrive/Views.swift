@@ -99,7 +99,7 @@ struct FileMenu: View {
 
     var body: some View {
         if urls.count == 1 {
-            Menu("File Info") {
+            Menu("Information") {
                 ForEach(FileInfo.lines(urls[0]), id: \.self) { line in
                     Button(line) { copy([String(line.split(separator: ": ", maxSplits: 1).last ?? "")]) }
                 }
