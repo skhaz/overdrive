@@ -10,6 +10,8 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
     let artist: String
     let album: String
     let number: Int
+    let disc: Int
+    let albumArtist: String
     let year: Int
     let duration: Double
     let albumID: String
@@ -332,11 +334,12 @@ final class Library {
         }
 
         let albums = groups.map { id, tracks in
-            let numbers = Set(tracks.map(\.number))
-            let ordered = numbers.count == tracks.count && !numbers.contains(0)
-                ? tracks.sorted { $0.number < $1.number }
+            let numbers = Set(tracks.map { $0.disc << 16 | $0.number })
+            let ordered = numbers.count == tracks.count && !tracks.contains { $0.number == 0 }
+                ? tracks.sorted { ($0.disc, $0.number) < ($1.disc, $1.number) }
                 : tracks.sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
-            let artist = tracks.allSatisfy { $0.artist == tracks[0].artist } ? tracks[0].artist : "Various Artists"
+            let shared = tracks.allSatisfy { $0.albumArtist == tracks[0].albumArtist } ? tracks[0].albumArtist : ""
+            let artist = tracks.allSatisfy { $0.artist == tracks[0].artist } ? tracks[0].artist : shared.isEmpty ? "Various Artists" : shared
 
             return Album(id: id, title: tracks[0].album, artist: artist, year: tracks.map(\.year).max()!, tracks: ordered)
         }
@@ -419,8 +422,10 @@ final class Library {
             tags.year = tag(kAFInfoDictionary_Year)
             if tags.year.isEmpty { tags.year = tag(kAFInfoDictionary_RecordedDate) }
 
-            let id3 = ID3.year(url)
+            let id3 = ID3.read(url)
             tags.original = id3.original
+            tags.albumArtist = id3.albumArtist
+            tags.disc = id3.disc
             if tags.year.isEmpty { tags.year = id3.release }
             tags.number = Int(tag(kAFInfoDictionary_TrackNumber).prefix { $0.isNumber }) ?? 0
         }
@@ -435,6 +440,8 @@ final class Library {
             artist: tags.artist.isEmpty ? "Unknown Artist" : tags.artist,
             album: album,
             number: tags.number,
+            disc: tags.disc,
+            albumArtist: tags.albumArtist,
             year: original > 0 ? original : Int(tags.year.prefix(4)) ?? 0,
             duration: tags.duration,
             albumID: "\(directory.path)\n\(album)"

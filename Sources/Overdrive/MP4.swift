@@ -7,7 +7,9 @@ nonisolated enum MP4 {
         var album = ""
         var year = ""
         var original = ""
+        var albumArtist = ""
         var number = 0
+        var disc = 0
         var duration = 0.0
     }
 
@@ -22,7 +24,9 @@ nonisolated enum MP4 {
     private static let artist: UInt32 = 0xA941_5254
     private static let album: UInt32 = 0xA961_6C62
     private static let day: UInt32 = 0xA964_6179
+    private static let albumArtist: UInt32 = 0x6141_5254
     private static let trkn: UInt32 = 0x7472_6B6E
+    private static let disk: UInt32 = 0x6469_736B
     private static let covr: UInt32 = 0x636F_7672
     private static let freeform: UInt32 = 0x2D2D_2D2D
     private static let nameBox: UInt32 = 0x6E61_6D65
@@ -65,8 +69,10 @@ nonisolated enum MP4 {
             case name where tags.title.isEmpty: tags.title = text(file, item)
             case artist where tags.artist.isEmpty: tags.artist = text(file, item)
             case album where tags.album.isEmpty: tags.album = text(file, item)
+            case albumArtist where tags.albumArtist.isEmpty: tags.albumArtist = text(file, item)
             case day where tags.year.isEmpty: tags.year = text(file, item)
             case trkn where tags.number == 0: tags.number = number(file, item)
+            case disk where tags.disc == 0: tags.disc = number(file, item)
             case freeform where tags.original.isEmpty: tags.original = original(file, item)
             default: break
             }
