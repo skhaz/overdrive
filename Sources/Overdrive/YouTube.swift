@@ -56,6 +56,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
     var browser: Bool { didSet { configuration.defaults.set(browser, forKey: "youtube.browser") } }
     var searching = false
+    private(set) var showing: Track?
 
     @ObservationIgnored private let configuration: Configuration
     @ObservationIgnored private let player: Player
@@ -196,6 +197,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         var request = URLRequest(url: URL(string: "https://www.youtube.com/embed/\(video)?autoplay=1&controls=0&rel=0&playsinline=1&iv_load_policy=3&cc_load_policy=0")!)
         request.setValue("https://\((Bundle.main.bundleIdentifier ?? "org.delduca.Overdrive").lowercased())/", forHTTPHeaderField: "Referer")
         web.load(request)
+        showing = track
         show(.video)
     }
 
@@ -330,6 +332,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         mode = .idle
+        showing = nil
         player.intercept = nil
         web.pauseAllMediaPlayback()
         web.load(URLRequest(url: URL(string: "about:blank")!))

@@ -498,6 +498,7 @@ struct AlbumGrid: View {
 struct AlbumView: View {
     let album: Album
     @Environment(Player.self) private var player
+    @Environment(YouTube.self) private var youTube
     @Environment(Lyrics.self) private var lyrics
     @Environment(\.go) private var go
     @State private var selection: Set<Track.ID> = []
@@ -576,6 +577,12 @@ struct AlbumView: View {
             .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
         }
         .navigationTitle(album.title)
+        .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+            guard let track, let index = album.tracks.firstIndex(of: track) else { return }
+
+            selection = [track.id]
+            anchor = index
+        }
     }
 
     private func select(_ index: Int) {
@@ -643,6 +650,7 @@ struct GoMenu: View {
 struct SongTable: View {
     let tracks: [Track]
     @Environment(Player.self) private var player
+    @Environment(YouTube.self) private var youTube
     @State private var selection: Set<Track.ID> = []
 
     var body: some View {
@@ -666,6 +674,9 @@ struct SongTable: View {
 
             player.play(tracks, at: index)
         }
+        .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+            if let track, tracks.contains(track) { selection = [track.id] }
+        }
     }
 }
 
@@ -673,6 +684,7 @@ struct PlaylistView: View {
     let name: String
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
+    @Environment(YouTube.self) private var youTube
     @Environment(Playlists.self) private var playlists
     @State private var selection: Set<Row.ID> = []
     @State private var removing: [Row] = []
@@ -718,6 +730,16 @@ struct PlaylistView: View {
                 guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
                 player.play(rows.map(\.track), at: index)
+            }
+            .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+                guard let track else { return }
+
+                let index = player.index
+                if rows.indices.contains(index), rows[index].track == track, youTube.showing == nil {
+                    selection = [rows[index].id]
+                } else if let row = rows.first(where: { $0.track == track }) {
+                    selection = [row.id]
+                }
             }
             .confirmationDialog(removing.count == 1 ? "Remove “\(removing[0].track.title)” from the playlist?" : "Remove \(count(removing.count, "song")) from the playlist?", isPresented: Binding { !removing.isEmpty } set: { if !$0 { removing = [] } }) {
                 Button("Remove", role: .destructive) {
