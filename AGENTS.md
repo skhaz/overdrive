@@ -4,6 +4,12 @@
 
 Commit each change when it is complete. Do not ask before you commit.
 
+## YouTube
+
+- The app has only one YouTube web view. The app makes it when it starts and keeps it until it quits. Do not make a second web view, and do not release or recreate it.
+- The web view always keeps the YouTube player page loaded and ready, so a video starts at once. When the video window closes, stop the video, but keep the page loaded.
+- When a video starts, pause the song that plays. When a song starts to play, close the video window.
+
 ## Deploy
 
 Do these steps for each deploy:
