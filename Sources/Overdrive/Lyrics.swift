@@ -41,19 +41,10 @@ final class Lyrics {
         return name.hasSuffix(".lrc") || name.contains(".lrc.sb-")
     }
 
-    func show(_ track: Track?) {
-        guard let track else {
-            visible = true
-            return
-        }
-
+    func show(_ track: Track) {
         guard !visible || track != self.track else { return }
 
         confirm { self.open(track) }
-    }
-
-    func hide() {
-        confirm { self.visible = false }
     }
 
     func discard() {

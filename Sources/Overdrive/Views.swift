@@ -152,22 +152,6 @@ struct CopyMenu: View {
     }
 }
 
-struct LyricsToolbar: ViewModifier {
-    let contains: (Track) -> Bool
-    @Environment(Lyrics.self) private var lyrics
-    @Environment(Player.self) private var player
-
-    func body(content: Content) -> some View {
-        let track = [player.current, lyrics.track].compactMap(\.self).first(where: contains)
-        let shown = lyrics.visible && (lyrics.track.map(contains) ?? true)
-
-        content.toolbar {
-            Button("Lyrics", systemImage: "quote.bubble") { shown ? lyrics.hide() : lyrics.show(track) }
-                .disabled(!shown && track == nil && (player.current != nil || lyrics.track != nil))
-        }
-    }
-}
-
 struct LyricsView: View {
     static let width: CGFloat = 320
 
@@ -227,8 +211,6 @@ struct LyricsView: View {
             }
             .padding()
             .onChange(of: track) { editing = false }
-        } else {
-            ContentUnavailableView("No Song", systemImage: "quote.bubble", description: Text("Play a song, or choose Lyrics from the menu of a song."))
         }
     }
 }
@@ -551,7 +533,7 @@ struct AlbumView: View {
                 }
             }
             .padding(20)
-            .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) ?? true ? LyricsView.width : 0)
+            .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
         }
         .navigationTitle(album.title)
     }
@@ -846,8 +828,8 @@ struct ContentView: View {
                                 switch page {
                                 case .section(.albums): AlbumGrid(albums: library.filtered)
                                 case .section(.artists): ArtistList(artists: library.artists)
-                                case .playlist(let name): PlaylistView(name: name).modifier(LyricsToolbar { contains($0, [], page) })
-                                case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song")).modifier(LyricsToolbar { contains($0, [], page) })
+                                case .playlist(let name): PlaylistView(name: name)
+                                case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
                                 }
                             }
                             .id(library.version)
@@ -856,7 +838,7 @@ struct ContentView: View {
                     .navigationTitle(page.title)
                     .navigationDestination(for: Route.self) { route in
                         switch route {
-                        case .album(let album): AlbumView(album: album).modifier(LyricsToolbar { album.tracks.contains($0) })
+                        case .album(let album): AlbumView(album: album)
                         case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name)
                         }
                     }
@@ -962,19 +944,14 @@ struct ContentView: View {
     }
 
     private func shown(_ path: [Route], _ page: Page) -> Bool {
-        guard lyrics.visible else { return false }
-        guard let track = lyrics.track else { return contains(nil, path, page) }
+        guard lyrics.visible, let track = lyrics.track else { return false }
 
-        return contains(track, path, page)
-    }
-
-    private func contains(_ track: Track?, _ path: [Route], _ page: Page) -> Bool {
         switch (path.last, page) {
-        case (.album(let album), _): track.map(album.tracks.contains) ?? true
-        case (.artist, _): false
-        case (nil, .section(.songs)): track.map(library.tracks.contains) ?? true
-        case (nil, .playlist(let name)): track.map { playlists.paths[name]?.contains($0.url.path) ?? false } ?? true
-        case (nil, .section): false
+        case (.album(let album), _): return album.tracks.contains(track)
+        case (.artist, _): return false
+        case (nil, .section(.songs)): return library.tracks.contains(track)
+        case (nil, .playlist(let name)): return playlists.paths[name]?.contains(track.url.path) ?? false
+        case (nil, .section): return false
         }
     }
 }
