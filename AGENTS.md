@@ -10,6 +10,34 @@ Commit each change when it is complete. Do not ask before you commit.
 - The web view always keeps the YouTube player page loaded and ready, so a video starts at once. When the video window closes, stop the video, but keep the page loaded.
 - When a video starts, pause the song that plays. When a song starts to play, close the video window.
 
+## Build and test
+
+- Build: `./build.sh`. To build with Last.fm, set the API key from https://www.last.fm/api/account/create: `LASTFM_KEY=... LASTFM_SECRET=... ./build.sh`.
+- Test: `swift test`. The tests use a fake Last.fm server, so they do not send scrobbles to a real account. The `Release` action runs the tests before the build.
+- Do all tests on the release from Homebrew, the same as a real installation. Use a local build only to debug or to profile.
+- Keep the README for users only. Put technical details in this file.
+- Uninstall: `brew uninstall --zap --cask overdrive`. The `--zap` option also removes the settings, the Last.fm session, and the lyrics cache. It does not remove the `.lrc` files in the music folders.
+
+## Data files
+
+The app keeps its data in `~/Library/Application Support/Overdrive`:
+
+| File | Content |
+| --- | --- |
+| `Session.plist` | The queue, the order, the song, the position, shuffle, repeat, the scrobble state, and the open screen. One atomic and durable write. |
+| `Loudness.plist` | The EBU R128 loudness of each song. |
+| `Scrobbles.plist` | The pending and rejected scrobbles. One atomic and durable write before each send. |
+| `lastfm.plist` | The Last.fm session key and user name. |
+| `Videos.plist` | The YouTube video ID of each song. |
+| `Rules/` | The compiled ad block rules of the web view. |
+| `Lyrics/` | The lyrics from LRCLIB and lyrics.ovh. An empty file means "no lyrics". |
+
+## Behavior
+
+- Volume: the app measures each song one time (EBU R128, reference -14 LUFS, gain limited by the peak, maximum +12 dB). The background worker stops in Low Power Mode and when the Mac is hot. With shuffle off, it uses the album gain. With shuffle on, it uses the track gain.
+- Last.fm: the app marks each batch on the disk before it sends it. It removes a scrobble only when Last.fm accepts it. Code 5 (daily limit) keeps the scrobble. Codes 6, 7, and 13 isolate the bad scrobble. Codes 1 to 4 move it to the rejected list. When the result of a send is not known, the app looks at `user.getRecentTracks` before it sends again, and sends it again one day before the 14-day limit if it cannot look.
+- YouTube: the app searches with the YouTube page itself (`/youtubei/v1/search` with the context of the page), so it needs no API key. It plays the first result that has the song name and the artist, ignores "Topic" channels, and checks with `oembed` that the video can play outside YouTube. The ad block uses a content rule list and removes `adPlacements`, `adSlots`, and `playerAds` from the player response.
+
 ## Deploy
 
 Do these steps for each deploy:

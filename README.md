@@ -15,7 +15,7 @@ A music player for macOS 26 or later. It plays the music in your folders, with n
 - **All AVFoundation formats:** AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
 - **Album covers** from the embedded artwork or from an image in the album folder.
 - **Lyrics panel** with synced lyrics. It reads `.lrc` files, gets missing lyrics from [LRCLIB](https://lrclib.net), and lets you edit and save them.
-- **Same volume for all songs** (EBU R128), per album or per song.
+- **Same volume for all songs**, per album or per song.
 - **Last.fm scrobbles** that are never lost and never sent two times.
 - **YouTube music videos** in a small window that stays on top, with ads blocked.
 - **Playlists** as plain text files.
@@ -31,14 +31,6 @@ A music player for macOS 26 or later. It plays the music in your folders, with n
 ```sh
 brew install --cask skhaz/tap/overdrive
 ```
-
-To uninstall:
-
-```sh
-brew uninstall --zap --cask overdrive
-```
-
-The `--zap` option also removes the settings, the Last.fm session, and the lyrics cache. It does not remove the `.lrc` files in your music folders.
 
 ## How to use
 
@@ -116,75 +108,14 @@ Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email
 | Command-, | Settings |
 | Media keys | Previous, play or pause, next |
 
-## How it works
+## Good to know
 
-### Volume
-
-- The app measures each song one time and keeps the result. It measures slowly in the background, and stops in Low Power Mode and when the Mac is hot.
-- When you play an album in order, the app changes the volume of the full album, so the quiet and loud songs stay as they are. With shuffle on, it changes the volume of each song.
-- The volume never goes above the peak of the song, so the sound does not clip.
-
-### Last.fm
-
-- The app writes each scrobble to the disk before it sends it, and removes it only when Last.fm accepts it.
-- With no network, the scrobbles wait and the app sends them later.
-- If the app does not know if Last.fm got a scrobble, it looks at your recent tracks on Last.fm before it sends it again. This prevents duplicates.
-- Scrobbles that Last.fm rejects show in Settings.
-
-### YouTube
-
-- The app searches YouTube for the artist and the song name, and plays the first result that has both. It ignores audio-only "Topic" channels and videos that cannot play outside YouTube.
-- The app keeps YouTube loaded in the background, so the video starts at once. It loads YouTube again every hour while the window is closed. This also keeps you signed in.
-- The app blocks the known ad requests. YouTube can change this at any time, so an ad can show. With YouTube Premium, there are no ads.
-
-### Playlists
-
-Each playlist is a text file in `~/Music/Library/Playlists`, with the path of one song on each line. The paths are relative to the `Playlists` folder. If you edit a file in a different app, choose File > Rescan Library.
-
-### Files
-
-The app keeps its data in `~/Library/Application Support/Overdrive`:
-
-| File | Content |
-| --- | --- |
-| `Session.plist` | The queue, the song, the position, and the open screen |
-| `Loudness.plist` | The volume of each song |
-| `Scrobbles.plist` | The scrobbles that wait to be sent |
-| `lastfm.plist` | The Last.fm session key |
-| `Videos.plist` | The YouTube video of each song |
-| `Lyrics/` | The lyrics from LRCLIB |
-
-The app writes the session and the scrobbles in one atomic write, so a crash or a power loss cannot damage them.
-
-## Development
-
-Build:
-
-```sh
-./build.sh
-```
-
-To build with Last.fm, set the API key from https://www.last.fm/api/account/create:
-
-```sh
-LASTFM_KEY=... LASTFM_SECRET=... ./build.sh
-```
-
-Test:
-
-```sh
-swift test
-```
-
-The tests use a fake Last.fm server, so they do not send scrobbles to a real account.
-
-Release:
-
-1. Commit the change and push it to `main`.
-2. Push a new tag, for example `v0.1.12`. The GitHub Action runs the tests, builds the app, creates the GitHub release, and updates the cask in `skhaz/homebrew-tap`.
-3. When the action completes, install the release with `brew update && brew upgrade --cask overdrive`.
-
-Do all tests on the release from Homebrew, the same as a real installation. Use a local build only to debug or to profile.
+- The app never changes your music files. It writes only the `.lrc` lyrics files that you save.
+- The volume of all songs is the same, so you do not have to change the volume between songs. When you play an album in order, the quiet and loud songs of the album stay as they are.
+- No scrobble is lost. With no network, the scrobbles wait and the app sends them later.
+- The video window opens at once, because the app keeps YouTube ready in the background. You stay signed in to YouTube.
+- YouTube can show an ad, because the ad block cannot stop all ads. With YouTube Premium, there are no ads.
+- Each playlist is a text file in `~/Music/Library/Playlists`. If you edit a playlist file in a different app, choose File > Rescan Library.
 
 ## Credits
 
