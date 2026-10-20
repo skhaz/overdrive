@@ -98,9 +98,14 @@ final class LastFM {
         defer { connecting = false }
 
         do {
-            let result = try await call("auth.getMobileSession", ["username": username, "password": password])["session"] as! [String: Any]
-            session = result["key"] as! String
-            user = result["name"] as! String
+            guard let result = try await call("auth.getMobileSession", ["username": username, "password": password])["session"] as? [String: Any],
+                  let key = result["key"] as? String, let name = result["name"] as? String else {
+                status = "Last.fm sent a response that is not valid."
+                return
+            }
+
+            session = key
+            user = name
             status = ""
             await flush()
         } catch let failure as Failure where failure.code == 4 && username.contains("@") {
@@ -157,16 +162,16 @@ final class LastFM {
                 }
             }
 
+            mark(batch, String(Int(Date.now.timeIntervalSince1970)))
+
             do {
                 let json = try await call("track.scrobble", parameters, session: true)
-                guard let codes = LastFM.codes(json, batch.count) else {
-                    mark(batch)
-                    return
-                }
+                guard let codes = LastFM.codes(json, batch.count) else { return }
 
                 let limited = zip(batch, codes).filter { $1 == 5 }.map(\.0)
                 rejected.append(contentsOf: zip(batch, codes).filter { $1 != 0 && $1 != 5 }.map { $0.merging(["_code": String($1)]) { $1 } })
                 remove(batch.filter { entry in !limited.contains { $0["_id"] == entry["_id"] } })
+                mark(limited, nil)
                 status = ""
 
                 guard limited.isEmpty else {
@@ -174,6 +179,7 @@ final class LastFM {
                     return
                 }
             } catch let failure as Failure {
+                mark(batch, nil)
                 status = failure.message
 
                 switch failure.code {
@@ -191,11 +197,11 @@ final class LastFM {
                     return
                 }
             } catch let error as URLError where LastFM.unsent.contains(error.code) {
+                mark(batch, nil)
                 status = error.localizedDescription
                 return
             } catch {
                 status = error.localizedDescription
-                mark(batch)
                 return
             }
         }
@@ -206,13 +212,17 @@ final class LastFM {
         pending.removeAll { $0["_id"].map(ids.contains) ?? false }
     }
 
-    private func mark(_ batch: [[String: String]]) {
-        let ids = Set(batch.compactMap { $0["_id"] })
-        let now = String(Int(Date.now.timeIntervalSince1970))
+    private func mark(_ batch: [[String: String]], _ value: String?) {
+        guard !batch.isEmpty else { return }
 
-        for index in pending.indices where pending[index]["_id"].map(ids.contains) ?? false {
-            pending[index]["_uncertain"] = now
+        let ids = Set(batch.compactMap { $0["_id"] })
+        var entries = pending
+
+        for index in entries.indices where entries[index]["_id"].map(ids.contains) ?? false {
+            entries[index]["_uncertain"] = value
         }
+
+        pending = entries
     }
 
     private func settle() async {
@@ -225,21 +235,20 @@ final class LastFM {
 
         if let low = stamps.min(), let high = stamps.max(), let found = await history(low, high) {
             remove(uncertain.filter { $0["timestamp"].map(found.contains) ?? false })
-
-            for index in pending.indices {
-                pending[index]["_uncertain"] = nil
-            }
-
+            pending = pending.map { $0.filter { $0.key != "_uncertain" } }
             return
         }
 
         let deadline = now - LastFM.limit + 86400
+        var entries = pending
 
-        for index in pending.indices where pending[index]["_uncertain"] != nil {
-            if let stamp = pending[index]["timestamp"].flatMap(Double.init), stamp < deadline {
-                pending[index]["_uncertain"] = nil
+        for index in entries.indices where entries[index]["_uncertain"] != nil {
+            if let stamp = entries[index]["timestamp"].flatMap(Double.init), stamp < deadline {
+                entries[index]["_uncertain"] = nil
             }
         }
+
+        pending = entries
     }
 
     private func history(_ low: Int, _ high: Int) async -> Set<String>? {

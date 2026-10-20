@@ -105,7 +105,8 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     @ObservationIgnored private var track: Track?
     @ObservationIgnored private var logged = false
     @ObservationIgnored private var signedIn = false
-    @ObservationIgnored private var canceled = false
+    @ObservationIgnored private var request = 0
+    @ObservationIgnored private var retry: Task<Void, Never>?
 
     init(player: Player, _ configuration: Configuration = Configuration()) {
         self.configuration = configuration
@@ -151,8 +152,8 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
             if panel.isVisible {
                 panel.close()
-            } else if searching {
-                canceled = true
+            } else {
+                cancel()
             }
         }
 
@@ -172,7 +173,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             while true {
                 try? await Task.sleep(for: .seconds(3600))
                 guard let self else { return }
-                if mode == .ready || mode == .failed, !panel.isVisible { load() }
+                if mode == .ready || mode == .failed, !panel.isVisible, !searching { load() }
             }
         }
     }
@@ -189,7 +190,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         self.track = track
         searching = true
-        canceled = false
+        request += 1
 
         switch mode {
         case .ready, .video: Task { await find() }
@@ -208,7 +209,8 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         }
 
         self.track = nil
-        defer { searching = false }
+        let current = request
+        defer { if request == current { searching = false } }
 
         let name = "\(track.artist)\u{1F}\(track.title)"
         var id = videos[name]
@@ -221,7 +223,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             }
         }
 
-        guard !canceled else { return }
+        guard request == current else { return }
         guard let id else { return stop("No video found for “\(track.artist) - \(track.title)”.") }
 
         if videos[name] != id {
@@ -246,10 +248,16 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             setTimeout(resolve, 3000);
         });
         """
-        _ = try? await web.callAsyncJavaScript(script, arguments: ["id": id], contentWorld: .page)
+        do {
+            _ = try await web.callAsyncJavaScript(script, arguments: ["id": id], contentWorld: .page)
+        } catch {
+            guard request == current else { return }
 
-        guard !canceled else {
             player.intercept = nil
+            return stop(error.localizedDescription)
+        }
+
+        guard request == current else {
             _ = try? await web.evaluateJavaScript("document.getElementById('movie_player').stopVideo()")
             return
         }
@@ -304,14 +312,25 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard let url = webView.url, url.host() == YouTube.account.host() else { return }
+        let youTube = webView.url?.host() == YouTube.account.host()
+        let path = webView.url?.path() ?? ""
 
-        if mode == .login, url.path() == YouTube.account.path() {
-            signedIn = true
-            return load()
+        if mode == .login {
+            guard youTube else { return }
+
+            if path == YouTube.account.path() {
+                signedIn = true
+                return load()
+            }
+
+            guard path.hasPrefix("/embed") else { return }
+        } else {
+            guard mode == .loading else { return }
+
+            guard youTube, path.hasPrefix("/embed") else {
+                return track == nil ? failed(URLError(.badServerResponse)) : show(.login)
+            }
         }
-
-        guard mode == .loading, url.path().hasPrefix("/embed") else { return }
 
         Task {
             logged = (try? await webView.evaluateJavaScript("ytcfg.get('LOGGED_IN')")) as? Bool ?? false || signedIn
@@ -340,9 +359,9 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         mode = .failed
 
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(60))
-            guard let self, mode == .failed, !panel.isVisible else { return }
+        retry?.cancel()
+        retry = Task { [weak self] in
+            guard (try? await Task.sleep(for: .seconds(60))) != nil, let self, mode == .failed, !panel.isVisible else { return }
 
             load()
         }
@@ -441,15 +460,22 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        if mode == .video { configuration.defaults.set(Double(panel.frame.width), forKey: "youtube.width") }
+        guard mode == .video else { return }
+
+        configuration.defaults.set(Double(panel.frame.width), forKey: "youtube.width")
         place()
+    }
+
+    private func cancel() {
+        request += 1
+        track = nil
+        searching = false
+        player.intercept = nil
     }
 
     func windowWillClose(_ notification: Notification) {
         showing = nil
-        track = nil
-        searching = false
-        player.intercept = nil
+        cancel()
 
         if mode == .video {
             mode = .ready
