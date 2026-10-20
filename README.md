@@ -2,31 +2,31 @@
 
 # Overdrive
 
-[![Release](https://github.com/skhaz/overdrive/actions/workflows/release.yml/badge.svg)](https://github.com/skhaz/overdrive/actions/workflows/release.yml)
 [![GitHub release](https://img.shields.io/github/v/release/skhaz/overdrive)](https://github.com/skhaz/overdrive/releases/latest)
 
-A music player for macOS 26 or later. It plays the music in your folders, with no database and no import.
+A music player for the Mac (macOS 26 or later). It plays the music that is already on your Mac. You do not have to import anything.
 
 ![Overdrive plays an album](.github/screenshot.png)
 
 ## Features
 
-- **Your folders are the library.** The app scans the music folders at launch and when they change. It writes to them only when you save lyrics.
+- **Uses your music folders.** Add a folder and your albums show at once. New songs that you put in the folder show automatically.
 - **Plays all common formats:** AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, and AIFF.
-- **Album covers** from the embedded artwork or from an image in the album folder.
-- **Lyrics panel** with synced lyrics. It reads `.lrc` files, gets missing lyrics from [LRCLIB](https://lrclib.net), and lets you edit and save them.
-- **Same volume for all songs**, per album or per song.
-- **Last.fm scrobbles** that are never lost and never sent two times.
-- **YouTube music videos** in a small window that stays on top, with ads blocked.
-- **Playlists** as plain text files.
-- **Queue:** Play Next and Add to Queue.
-- **Session restore:** the queue, the song, the position, and the open screen are the same when you open the app again.
-- **Media keys** and Now Playing in Control Center.
-- **Apple Music cannot open** while the app is open, so the media keys always control Overdrive.
-- **File information:** format, sample rate, channels, bit depth, bit rate, and size.
-- **Mp3tag:** open songs and albums in Mp3tag from the context menu.
+- **Album covers** from your music files or from the image in the album folder.
+- **Lyrics** that move with the song. If a song has no lyrics, the app finds them on the internet. You can also type and save your own.
+- **Same volume for all songs**, so you do not have to change the volume between songs.
+- **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
+- **Music videos from YouTube** in a small window that stays on top.
+- **Playlists** and a queue (Play Next and Add to Queue).
+- **Continues where you stopped.** When you open the app again, it shows the same song, at the same time.
+- **Keyboard media keys** and Control Center play, pause, and change songs.
+- **Apple Music does not open by accident** while you use Overdrive.
+- **Song details:** the quality and the size of each song file.
+- **Mp3tag:** if you have Mp3tag, you can open your songs in it to edit their names and details.
 
 ## Install
+
+Install [Homebrew](https://brew.sh), open Terminal, and type:
 
 ```sh
 brew install --cask skhaz/tap/overdrive
@@ -36,31 +36,31 @@ brew install --cask skhaz/tap/overdrive
 
 ### Add your music
 
-Drag a music folder to the window, or choose Overdrive > Settings > Folders > Add Folder. You can add more than one folder. The app finds the songs in all subfolders.
+Drag a music folder to the window, or choose Overdrive > Settings > Folders > Add Folder. You can add more than one folder. The app also finds the songs in the folders inside it.
 
 ### Find and play
 
 - Use the sidebar to see **Albums**, **Artists**, or **Songs**.
 - Type in the search field to find an artist, an album, or a song.
 - Double-click a song to play it. On an album, click **Play** or **Shuffle**.
-- Use the player bar at the bottom to play, pause, go to the previous or next song, shuffle, repeat, seek, and change the volume.
-- Click the cover or the title in the player bar to open the album that plays.
+- Use the bar at the bottom to play, pause, go to the previous or next song, shuffle, repeat, go to a different part of the song, and change the volume.
+- Click the cover or the name in the bottom bar to open the album that plays.
 
-The song that plays is selected in the list and shows in the accent color.
+The song that plays shows in color and is selected in the list.
 
-### Use the context menu
+### Use the menu of a song
 
-Right-click a song, an album, or the player bar. You can:
+Right-click a song, an album, or the bottom bar. You can:
 
 - **Play Next** or **Add to Queue**.
 - **Add to Playlist**.
 - **Watch Video on YouTube**.
 - **Go to Album** or **Go to Artist**.
 - **Copy** the song name, the artist, the album, or "Artist - Song Name".
-- See the **Information** of the file. Click an item to copy its value.
+- See the **Information** of the song file. Click an item to copy it.
 - **Open in Mp3tag** or **Show in Finder**.
 
-To use the menu on more than one song, select the songs with Command-click or Shift-click, then right-click one of them.
+To do this for more than one song, select the songs with Command-click or Shift-click, then right-click one of them.
 
 ### Make playlists
 
@@ -69,21 +69,21 @@ To use the menu on more than one song, select the songs with Command-click or Sh
 3. Drag the songs in the playlist to change the order.
 4. To remove a song, right-click it and choose **Remove from Playlist**, or press Delete.
 
-To delete a playlist, right-click it in the sidebar. The app keeps a backup named `{name}.backup`.
+To delete a playlist, right-click it in the sidebar. The app keeps a backup copy in the Playlists folder (Music > Library > Playlists).
 
-### Read and edit lyrics
+### Lyrics
 
-The lyrics panel opens when a song plays. Click a line of synced lyrics to go to that time. Edit the text and click **Save** (Command-S) to write the `.lrc` file next to the song. Save an empty text to delete the file.
+The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, edit the text and click **Save** (Command-S). The app saves the lyrics next to the song. To remove the lyrics, delete all the text and click **Save**.
 
 ### Watch the music video
 
 1. Right-click a song and choose **Watch Video on YouTube**.
-2. The first time, sign in to Google in the window. Passkeys do not work in an app window, so click **Try another way** and use your phone or your password and a code.
-3. The video plays in a window in a corner of the screen. The song in Overdrive pauses.
+2. The first time, sign in to your Google account in the window. Passkeys do not work in this window, so click **Try another way** and use your phone, or your password and a code.
+3. The video plays in a small window in a corner of the screen. The song in Overdrive pauses.
 
-Drag the window to move it to a different corner. Move the pointer on the video to see the close button. When you play a song in Overdrive, the window closes.
+Drag the window to move it to a different corner. Put the pointer on the video to see the close button. When you play a song in Overdrive, the video window closes.
 
-### Scrobble to Last.fm
+### Connect Last.fm
 
 Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email) and password, and click **Connect**.
 
@@ -91,31 +91,31 @@ Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email
 
 | Setting | What it does |
 | --- | --- |
-| Folders | The music folders of the library. |
-| Last.fm | Connect or disconnect the Last.fm account. Shows the scrobbles that wait to be sent. |
-| YouTube > Open Videos In | Floating Window (default) or Default Browser. |
-| YouTube > Window Corner | The corner of the video window. |
-| YouTube > Sign Out | Signs out of YouTube. |
-| Controls > Normalize Volume | Turns the same volume for all songs on or off. |
+| Folders | The folders with your music. |
+| Last.fm | Connect or disconnect your Last.fm account. |
+| YouTube > Open Videos In | Show the videos in the small window (default) or in your web browser. |
+| YouTube > Window Corner | The corner of the screen for the video window. |
+| YouTube > Sign Out | Sign out of YouTube. |
+
+To turn off the same volume for all songs, choose Controls > Normalize Volume.
 
 ### Keyboard shortcuts
 
 | Keys | Action |
 | --- | --- |
 | Command-N | New playlist |
-| Command-R | Rescan the library |
+| Command-R | Look for new music in your folders |
 | Command-S | Save the lyrics |
 | Command-, | Settings |
-| Media keys | Previous, play or pause, next |
+| Media keys | Previous song, play or pause, next song |
 
 ## Good to know
 
-- The app never changes your music files. It writes only the `.lrc` lyrics files that you save.
-- The volume of all songs is the same, so you do not have to change the volume between songs. When you play an album in order, the quiet and loud songs of the album stay as they are.
-- No scrobble is lost. With no network, the scrobbles wait and the app sends them later.
-- The video window opens at once, because the app keeps YouTube ready in the background. You stay signed in to YouTube.
-- YouTube can show an ad, because the ad block cannot stop all ads. With YouTube Premium, there are no ads.
-- Your playlists are saved in the Playlists folder, in Music > Library > Playlists. If you change a playlist there, choose File > Rescan Library.
+- The app never changes your songs. It only saves the lyrics that you save.
+- When you play an album in order, the quiet and loud songs of the album stay as the artist made them.
+- No Last.fm play is lost. If there is no internet, the app sends them later.
+- The video window opens at once, and you stay signed in to YouTube.
+- YouTube can show an ad. With YouTube Premium, there are no ads.
 
 ## Credits
 
