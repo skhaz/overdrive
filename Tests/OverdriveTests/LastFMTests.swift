@@ -419,8 +419,8 @@ struct LastFMTests {
 
     @Test func writesTheStoreAtomically() throws {
         let url = directory.appending(path: "store.plist")
-        Persist.write(Data("first".utf8), to: url, wait: true)
-        Persist.write(Data("second".utf8), to: url, wait: true)
+        Persist.write(Data("first".utf8), to: url)
+        Persist.write(Data("second".utf8), to: url)
 
         #expect(try Data(contentsOf: url) == Data("second".utf8))
         #expect(!FileManager.default.fileExists(atPath: url.appendingPathExtension("tmp").path))

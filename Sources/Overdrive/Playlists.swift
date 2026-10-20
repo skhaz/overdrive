@@ -51,7 +51,7 @@ final class Playlists {
         for name in Set(migrated) { save(name, paths[name] ?? []) }
 
         for item in legacy where FileManager.default.fileExists(atPath: file(item.name).path) {
-            try? FileManager.default.removeItem(at: item.file)
+            Persist.remove(item.file)
         }
     }
 
@@ -139,8 +139,7 @@ final class Playlists {
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(list.map { StoredPath.encode($0) }) else { return }
 
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? data.write(to: file(name), options: .atomic)
+        Persist.write(data, to: file(name))
     }
 
     private func stored(_ line: String) -> String {

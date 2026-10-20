@@ -80,7 +80,7 @@ final class LastFM {
         queue.pending = (defaults.array(forKey: "lastfm.pending") as? [[String: String]] ?? []).map { $0.merging(["_id": UUID().uuidString]) { old, _ in old } }
         guard !queue.pending.isEmpty, let data = try? PropertyListEncoder().encode(queue) else { return queue }
 
-        Persist.write(data, to: configuration.store, wait: true)
+        Persist.write(data, to: configuration.store)
         if (try? Data(contentsOf: configuration.store)) == data { defaults.removeObject(forKey: "lastfm.pending") }
         return queue
     }
@@ -90,7 +90,7 @@ final class LastFM {
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(Queue(pending: pending, rejected: rejected)) else { return }
 
-        Persist.write(data, to: configuration.store, wait: true)
+        Persist.write(data, to: configuration.store)
     }
 
     func connect(_ username: String, _ password: String) async {
@@ -120,7 +120,7 @@ final class LastFM {
     private func save() {
         guard let data = try? PropertyListEncoder().encode(["session": session, "user": user]) else { return }
 
-        Persist.write(data, to: configuration.credentials, wait: true)
+        Persist.write(data, to: configuration.credentials)
     }
 
     func disconnect() {

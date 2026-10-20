@@ -3,29 +3,37 @@ import Foundation
 nonisolated enum Persist {
     private static let queue = DispatchQueue(label: "Persist", qos: .utility)
 
-    static func write(_ data: Data, to url: URL, wait: Bool = false) {
-        if wait {
-            queue.sync { store(data, url) }
-        } else {
-            queue.async { store(data, url) }
-        }
+    @discardableResult
+    static func write(_ data: Data, to url: URL) -> Bool {
+        queue.sync { store(data, url) }
     }
 
     static func flush() {
         queue.sync {}
     }
 
+    @discardableResult
     static func move(_ source: URL, to destination: URL) -> Bool {
         queue.sync { relocate(source, destination) }
     }
 
-    private static func store(_ data: Data, _ url: URL) {
+    @discardableResult
+    static func remove(_ url: URL) -> Bool {
+        queue.sync {
+            guard unlink(url.path) == 0 else { return false }
+
+            sync(url.deletingLastPathComponent())
+            return true
+        }
+    }
+
+    private static func store(_ data: Data, _ url: URL) -> Bool {
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let temporary = url.appendingPathExtension("tmp")
         let file = open(temporary.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-        guard file >= 0 else { return }
+        guard file >= 0 else { return false }
 
         let complete = data.withUnsafeBytes { bytes in
             var offset = 0
@@ -45,10 +53,11 @@ nonisolated enum Persist {
 
         guard complete, synced, rename(temporary.path, url.path) == 0 else {
             unlink(temporary.path)
-            return
+            return false
         }
 
         sync(directory)
+        return true
     }
 
     private static func relocate(_ source: URL, _ destination: URL) -> Bool {

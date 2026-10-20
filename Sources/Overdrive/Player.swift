@@ -85,7 +85,7 @@ final class Player {
         }
 
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.save(wait: true) }
+            MainActor.assumeIsolated { self?.save() }
         }
 
         NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] notification in
@@ -374,7 +374,7 @@ final class Player {
         save()
     }
 
-    func save(wait: Bool = false) {
+    func save() {
         let session = Session(queue: queue.map { StoredPath.encode($0.url.path) }, order: order.map { StoredPath.encode($0.url.path) }, index: index, position: position,
                               shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
                               started: started.timeIntervalSince1970, scrobbled: scrobbled,
@@ -383,7 +383,7 @@ final class Player {
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(session) else { return }
 
-        Persist.write(data, to: Player.session, wait: wait)
+        Persist.write(data, to: Player.session)
     }
 
     private func tick(_ seconds: Double) {

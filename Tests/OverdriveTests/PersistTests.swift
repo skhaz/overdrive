@@ -13,7 +13,7 @@ import Testing
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let file = directory.appending(path: "Data.plist")
-        Persist.write(Data("value".utf8), to: file, wait: true)
+        #expect(Persist.write(Data("value".utf8), to: file))
 
         #expect(try Data(contentsOf: file) == Data("value".utf8))
         #expect(!FileManager.default.fileExists(atPath: file.appendingPathExtension("tmp").path))

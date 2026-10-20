@@ -61,8 +61,8 @@ final class Lyrics {
     func refresh() {
         confirm {
             guard let track = self.track else { return }
-            try? FileManager.default.removeItem(at: Lyrics.key(track))
-            try? FileManager.default.removeItem(at: Lyrics.oldKey(track))
+            Persist.remove(Lyrics.key(track))
+            Persist.remove(Lyrics.oldKey(track))
             self.open(track)
         }
     }
@@ -73,24 +73,23 @@ final class Lyrics {
 
         let url = Lyrics.file(track)
 
-        do {
-            if !text.isEmpty {
-                try Data(text.utf8).write(to: url, options: .atomic)
-                try? FileManager.default.createDirectory(at: Lyrics.cache, withIntermediateDirectories: true)
-                try? Data(text.utf8).write(to: Lyrics.key(track), options: .atomic)
-            } else {
-                if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-                try? FileManager.default.createDirectory(at: Lyrics.cache, withIntermediateDirectories: true)
-                try? Data().write(to: Lyrics.key(track), options: .atomic)
-                try? FileManager.default.removeItem(at: Lyrics.oldKey(track))
+        if !text.isEmpty {
+            guard Persist.write(Data(text.utf8), to: url) else {
+                status = "Could not save the lyrics."
+                return
             }
 
-            saved = text
-            original = text
-            status = "Saved"
-        } catch {
-            status = error.localizedDescription
+            Persist.write(Data(text.utf8), to: Lyrics.key(track))
+        } else {
+            if FileManager.default.fileExists(atPath: url.path) { Persist.remove(url) }
+
+            Persist.write(Data(), to: Lyrics.key(track))
+            Persist.remove(Lyrics.oldKey(track))
         }
+
+        saved = text
+        original = text
+        status = "Saved"
     }
 
     func confirm(_ action: @escaping () -> Void) {
@@ -185,8 +184,7 @@ final class Lyrics {
     private nonisolated static func cached(_ track: Track) -> String? {
         if let lyrics = read(key(track)) { return lyrics }
         guard let lyrics = read(oldKey(track)) else { return nil }
-        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        try? FileManager.default.moveItem(at: oldKey(track), to: key(track))
+        Persist.move(oldKey(track), to: key(track))
         return lyrics
     }
 
@@ -198,20 +196,18 @@ final class Lyrics {
     @concurrent
     private nonisolated static func lookup(_ track: Track) async -> (Result<String, Failure>, String) {
         if let lyrics = cached(track), !lyrics.isEmpty { return (.success(lyrics), "cache") }
-        try? FileManager.default.removeItem(at: key(track))
-        try? FileManager.default.removeItem(at: oldKey(track))
+        Persist.remove(key(track))
+        Persist.remove(oldKey(track))
 
         let result = await fetch(track)
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
-            try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-            try? Data(lyrics.utf8).write(to: key(track), options: .atomic)
+            Persist.write(Data(lyrics.utf8), to: key(track))
             return (result, "LRCLIB")
         }
 
         if let fallback = await ovh(artist: track.artist, title: track.title), !fallback.isEmpty {
-            try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-            try? Data(fallback.utf8).write(to: key(track), options: .atomic)
+            Persist.write(Data(fallback.utf8), to: key(track))
             return (.success(fallback), "lyrics.ovh")
         }
 

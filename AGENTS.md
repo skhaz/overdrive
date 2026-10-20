@@ -47,7 +47,7 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 
 Every file that the app produces for its data is a binary plist. Do not add plain text, JSON, or other formats for app data.
 
-All file writes, replacements, moves, and deletes must be atomic. Write to a temporary file and rename it over the target, or use `Persist` or `Data.write(options: .atomic)`. Never write in place.
+All file writes, replacements, moves, and deletes must be atomic and durable. Use `Persist.write`, `Persist.move`, and `Persist.remove`. They call `F_FULLFSYNC`, rename, and sync the directory. Never write in place and never use `Data.write` directly.
 
 Every song path that Overdrive stores in its data files is home-relative with `~/` when it is under the home directory, in the current files and in all future files. Paths outside the home directory are absolute. The Overdrive directories come from the current home directory at runtime.
 
