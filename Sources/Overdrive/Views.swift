@@ -770,7 +770,6 @@ struct Controls: View {
 }
 
 struct ContentView: View {
-    let search: Int
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
@@ -853,7 +852,7 @@ struct ContentView: View {
                     .background(Color(nsColor: .textBackgroundColor))
                 }
             }
-            .searchable(text: $library.query, prompt: "Ctrl+P for search")
+            .searchable(text: $library.query)
             .searchFocused($searching)
 
             Divider()
@@ -914,7 +913,6 @@ struct ContentView: View {
         .onChange(of: player.current) {
             if let current = player.current { lyrics.show(current) }
         }
-        .onChange(of: search) { searching = true }
         .onAppear { searching = true }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUpdateNotification)) { _ in
             guard !searching, active == .key, playlists.naming == nil, deleting == nil, !lyrics.confirming,

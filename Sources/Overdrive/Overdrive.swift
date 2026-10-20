@@ -37,7 +37,6 @@ struct Overdrive: App {
     @State private var playlists = Playlists()
     @State private var lastFM: LastFM
     @State private var player: Player
-    @State private var search = 0
 
     init() {
         let lastFM = LastFM()
@@ -49,7 +48,7 @@ struct Overdrive: App {
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
-            ContentView(search: search)
+            ContentView()
                 .environment(library)
                 .environment(player)
                 .environment(playlists)
@@ -73,15 +72,6 @@ struct Overdrive: App {
                     playlists.load()
                 }
                 .keyboardShortcut("r")
-            }
-
-            CommandGroup(after: .textEditing) {
-                Button("Search") {
-                    delegate.open?(id: "main")
-                    library.query = ""
-                    search += 1
-                }
-                .keyboardShortcut("p", modifiers: .control)
             }
 
             CommandMenu("Controls") {
