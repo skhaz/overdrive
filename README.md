@@ -13,6 +13,7 @@ Music player for macOS 26 or later.
 - Plays all formats that AVFoundation supports: AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
 - Shows album covers from the embedded artwork or from an image in the album folder.
 - Shows and edits lyrics in a panel.
+- Makes the volume of all songs the same.
 - Sends scrobbles to Last.fm.
 - Opens tracks and albums in Mp3tag from the context menu.
 - Right-click a song or an album and choose Play Next or Add to Queue.
@@ -33,6 +34,17 @@ Click the lyrics button in the toolbar to show the lyrics of the song that plays
 - If there is no `.lrc` file, the app gets the lyrics from [LRCLIB](https://lrclib.net) one time and keeps them in `~/Library/Application Support/Overdrive/Lyrics`. It writes nothing to the music folder until you click Save.
 - Click Save (Command-S) to write the `.lrc` file. Save with an empty text to delete the file.
 - If the lyrics have unsaved changes, the app asks before it leaves the album, closes the panel, or shows other lyrics. You can save, discard, or cancel and continue to edit.
+
+## Volume
+
+The app makes the loudness of all songs the same, so you do not have to change the volume between songs.
+
+- The app measures each song one time (EBU R128) and keeps the result in `~/Library/Application Support/Overdrive/Loudness.plist`. It writes nothing to the music folder.
+- The app measures the songs slowly in the background, so the Mac does not get hot. It stops in Low Power Mode and when the Mac is hot. A song that is not measured yet is measured before it starts to play. A song of more than 5 minutes starts at once and is measured for the next time.
+- When you play an album in order, the app changes the volume of the full album, so the quiet and loud songs of the album stay as they are. When shuffle is on, the app changes the volume of each song.
+- The volume of a song does not go above its peak, so the sound does not clip.
+- When you change a song file, the app measures the song again.
+- To turn it off, choose Controls > Normalize Volume.
 
 ## Playlists
 

@@ -16,6 +16,13 @@ final class Player {
 
     var shuffle = false { didSet { reorder() } }
     var repeatMode = Repeat.off { didSet { requeue() } }
+    var normalize = UserDefaults.standard.object(forKey: "normalize") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(normalize, forKey: "normalize")
+            if let item, let track = current { Task { await adjust(item, track) } }
+            requeue()
+        }
+    }
     var volume = UserDefaults.standard.object(forKey: "volume") as? Float ?? 1 {
         didSet {
             player.volume = volume
@@ -28,6 +35,7 @@ final class Player {
 
     @ObservationIgnored private let player = AVQueuePlayer()
     @ObservationIgnored private let lastFM: LastFM
+    @ObservationIgnored private let loudness: Loudness
     @ObservationIgnored private var order: [Track] = []
     @ObservationIgnored private var played = 0.0
     @ObservationIgnored private var started = Date.now
@@ -37,8 +45,9 @@ final class Player {
     @ObservationIgnored private var item: AVPlayerItem?
     @ObservationIgnored private var upcoming: AVPlayerItem?
 
-    init(lastFM: LastFM) {
+    init(lastFM: LastFM, loudness: Loudness) {
         self.lastFM = lastFM
+        self.loudness = loudness
         player.volume = volume
         player.actionAtItemEnd = .advance
 
@@ -177,18 +186,49 @@ final class Player {
 
     private func load() {
         player.removeAllItems()
-        item = enqueue(index)
-        upcoming = following(index).map(enqueue)
+        let item = enqueue(index, start: true)
+        self.item = item
+        upcoming = following(index).map { enqueue($0) }
 
-        player.play()
         playing = true
         begin()
     }
 
-    private func enqueue(_ index: Int) -> AVPlayerItem {
-        let item = AVPlayerItem(url: queue[index].url)
+    private func enqueue(_ index: Int, start: Bool = false) -> AVPlayerItem {
+        let track = queue[index]
+        let item = AVPlayerItem(url: track.url)
         player.insert(item, after: nil)
+
+        Task {
+            await adjust(item, track, wait: !start || track.duration < 300)
+            if start, item === self.item, playing { player.play() }
+        }
+
         return item
+    }
+
+    private func adjust(_ item: AVPlayerItem, _ track: Track, wait: Bool = true) async {
+        guard normalize else {
+            item.audioMix = nil
+            return
+        }
+
+        let album = !shuffle
+
+        guard wait || loudness.gain(track, album: album) != nil else {
+            Task { await loudness.measure(track, album: album) }
+            return
+        }
+
+        await loudness.measure(track, album: album)
+        guard normalize, let gain = loudness.gain(track, album: album),
+              let audio = try? await item.asset.loadTracks(withMediaType: .audio).first else { return }
+
+        let parameters = AVMutableAudioMixInputParameters(track: audio)
+        parameters.setVolume(gain, at: .zero)
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = [parameters]
+        item.audioMix = mix
     }
 
     private func finished(_ ended: AVPlayerItem?) {
@@ -199,7 +239,7 @@ final class Player {
         guard let upcoming else { return load() }
 
         item = upcoming
-        self.upcoming = following(index).map(enqueue)
+        self.upcoming = following(index).map { enqueue($0) }
 
         begin()
     }
@@ -258,7 +298,7 @@ final class Player {
             player.remove(upcoming)
         }
 
-        upcoming = following(index).map(enqueue)
+        upcoming = following(index).map { enqueue($0) }
     }
 
     private func update() {

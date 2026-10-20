@@ -119,8 +119,10 @@ final class Library {
     @ObservationIgnored private var counts: [Int] = []
     @ObservationIgnored private var stream: FSEventStreamRef?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private let loudness: Loudness
 
-    init() {
+    init(loudness: Loudness) {
+        self.loudness = loudness
         watch()
         scan()
     }
@@ -162,6 +164,7 @@ final class Library {
             albums = result.albums
             search()
             scanning = false
+            loudness.update(result.albums)
         }
     }
 

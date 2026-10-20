@@ -33,15 +33,17 @@ struct Reopen: ViewModifier {
 
 struct Overdrive: App {
     @NSApplicationDelegateAdaptor private var delegate: Delegate
-    @State private var library = Library()
+    @State private var library: Library
     @State private var playlists = Playlists()
     @State private var lastFM: LastFM
     @State private var player: Player
 
     init() {
         let lastFM = LastFM()
+        let loudness = Loudness()
         _lastFM = State(initialValue: lastFM)
-        _player = State(initialValue: Player(lastFM: lastFM))
+        _library = State(initialValue: Library(loudness: loudness))
+        _player = State(initialValue: Player(lastFM: lastFM, loudness: loudness))
 
         Task { await lastFM.flush() }
     }
@@ -80,6 +82,7 @@ struct Overdrive: App {
                 Button("Previous", systemImage: "backward.fill", action: player.previous)
                 Divider()
                 Toggle("Shuffle", systemImage: "shuffle", isOn: $player.shuffle)
+                Toggle("Normalize Volume", systemImage: "speaker.wave.2", isOn: $player.normalize)
             }
         }
 
