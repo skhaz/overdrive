@@ -11,6 +11,10 @@ nonisolated enum Persist {
         }
     }
 
+    static func flush() {
+        queue.sync {}
+    }
+
     private static func store(_ data: Data, _ url: URL) {
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

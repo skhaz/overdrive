@@ -1,6 +1,11 @@
 import Foundation
+import Observation
 import Testing
 @testable import Overdrive
+
+private final class Counter: @unchecked Sendable {
+    var value = 0
+}
 
 @Suite struct LikesTests {
     private func track(_ path: String) -> Track {
@@ -14,7 +19,7 @@ import Testing
 
     @Test @MainActor func persists() {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let file = directory.appending(path: "Likes.plist")
         let first = track("/Music/a.flac")
@@ -27,6 +32,7 @@ import Testing
         #expect(likes.contains(first))
         #expect(likes.contains(second))
 
+        Persist.flush()
         let reloaded = Likes(file: file)
         #expect(reloaded.paths == [first.url.path, second.url.path])
 
@@ -34,6 +40,7 @@ import Testing
         #expect(reloaded.paths == [second.url.path])
         #expect(!reloaded.contains(first))
 
+        Persist.flush()
         let again = Likes(file: file)
         #expect(again.paths == [second.url.path])
         #expect(again.contains(second))
@@ -41,7 +48,7 @@ import Testing
 
     @Test @MainActor func toggle() {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let likes = Likes(file: directory.appending(path: "Likes.plist"))
         let first = track("/Music/a.flac")
@@ -65,7 +72,7 @@ import Testing
 
     @Test @MainActor func deduplicates() throws {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let file = directory.appending(path: "Likes.plist")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -80,7 +87,7 @@ import Testing
 
     @Test @MainActor func startsEmptyWithoutFile() {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let likes = Likes(file: directory.appending(path: "Likes.plist"))
         #expect(likes.paths.isEmpty)
@@ -89,7 +96,7 @@ import Testing
 
     @Test @MainActor func removesOnlySelected() {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let first = track("/Music/a.flac")
         let second = track("/Music/b.flac")
@@ -104,7 +111,7 @@ import Testing
 
     @Test @MainActor func reloadsChangesFromDisk() throws {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appending(path: "Likes.plist")
@@ -113,6 +120,7 @@ import Testing
         let likes = Likes(file: file)
         likes.add([first])
 
+        Persist.flush()
         try PropertyListEncoder().encode([second.url.path]).write(to: file)
         likes.load()
 
@@ -123,7 +131,7 @@ import Testing
 
     @Test @MainActor func likesEveryMissingTrackFromMixedSelection() {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let first = track("/Music/a.flac")
         let second = track("/Music/b.flac")
@@ -136,7 +144,7 @@ import Testing
 
     @Test @MainActor func recoversFromInvalidFile() throws {
         let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appending(path: "Likes.plist")
@@ -147,6 +155,25 @@ import Testing
         #expect(likes.paths.isEmpty)
 
         likes.add([first])
+        Persist.flush()
         #expect(Likes(file: file).paths == [first.url.path])
+    }
+
+    @Test @MainActor func notifiesObserversWhenLikedChanges() {
+        let directory = temporary()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
+
+        let likes = Likes(file: directory.appending(path: "Likes.plist"))
+        let first = track("/Music/a.flac")
+        let counter = Counter()
+
+        withObservationTracking {
+            _ = likes.contains(first)
+        } onChange: {
+            counter.value += 1
+        }
+
+        likes.add([first])
+        #expect(counter.value > 0)
     }
 }

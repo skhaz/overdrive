@@ -7,7 +7,7 @@ final class Likes {
     private(set) var paths: [String] = []
 
     @ObservationIgnored private let file: URL
-    @ObservationIgnored private var liked: Set<String> = []
+    private var liked: Set<String> = []
 
     init(file: URL = Likes.file) {
         self.file = file
@@ -60,6 +60,6 @@ final class Likes {
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(paths) else { return }
 
-        Persist.write(data, to: file, wait: true)
+        Persist.write(data, to: file)
     }
 }
