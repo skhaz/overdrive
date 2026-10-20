@@ -8,43 +8,51 @@ final class Playlists {
     private(set) var paths: [String: [String]] = [:]
     var naming: [URL]?
 
-    init() {
+    @ObservationIgnored private let directory: URL
+
+    init(directory: URL = Playlists.directory) {
+        self.directory = directory
         load()
     }
 
     func load() {
-        let files = (try? FileManager.default.contentsOfDirectory(at: Self.directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
 
         paths = [:]
-        var migratedNames: [String] = []
+        var migrated: [String] = []
+        var legacy: [(file: URL, name: String)] = []
 
         for file in files where file.pathExtension == "playlist" {
             guard let data = try? Data(contentsOf: file), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { continue }
-            var migrated = false
             let name = file.deletingPathExtension().lastPathComponent
 
-            paths[name] = text.split(whereSeparator: \.isNewline).map {
-                let line = String($0)
-                let path: String
+            paths[name] = text.split(whereSeparator: \.isNewline).map { stored(String($0)) }
+            legacy.append((file, name))
+            migrated.append(name)
+        }
 
-                if line == "~" || line.hasPrefix("~/") {
-                    path = StoredPath.decode(line)
-                } else if line.hasPrefix("/") {
-                    path = line
-                } else {
-                    path = Self.directory.appending(path: line).standardized.path
-                }
+        for file in files where file.pathExtension == "plist" {
+            let name = file.deletingPathExtension().lastPathComponent
+            guard !name.hasSuffix(".backup") else { continue }
+            guard let data = try? Data(contentsOf: file), let list = try? PropertyListDecoder().decode([String].self, from: data) else { continue }
 
-                if StoredPath.encode(path) != line { migrated = true }
+            var changed = false
+            paths[name] = list.map {
+                let path = StoredPath.decode($0)
+                if StoredPath.encode(path) != $0 { changed = true }
                 return path
             }
 
-            if migrated { migratedNames.append(name) }
+            if changed { migrated.append(name) }
         }
 
         names = paths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
 
-        for name in migratedNames { save(name, paths[name] ?? []) }
+        for name in Set(migrated) { save(name, paths[name] ?? []) }
+
+        for item in legacy where FileManager.default.fileExists(atPath: file(item.name).path) {
+            try? FileManager.default.removeItem(at: item.file)
+        }
     }
 
     nonisolated static func ignored(_ path: String) -> Bool {
@@ -116,7 +124,7 @@ final class Playlists {
     }
 
     func delete(_ name: String) {
-        let backup = Self.directory.appending(path: name + ".backup", directoryHint: .notDirectory)
+        let backup = directory.appending(path: name + ".backup.plist", directoryHint: .notDirectory)
 
         try? FileManager.default.removeItem(at: backup)
         guard (try? FileManager.default.moveItem(at: file(name), to: backup)) != nil else { return }
@@ -128,11 +136,22 @@ final class Playlists {
     private func save(_ name: String, _ list: [String]) {
         paths[name] = list
 
-        try? FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-        try? Data(list.map { StoredPath.encode($0) + "\n" }.joined().utf8).write(to: file(name), options: .atomic)
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard let data = try? encoder.encode(list.map { StoredPath.encode($0) }) else { return }
+
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: file(name), options: .atomic)
+    }
+
+    private func stored(_ line: String) -> String {
+        if line == "~" || line.hasPrefix("~/") { return StoredPath.decode(line) }
+        if line.hasPrefix("/") { return line }
+
+        return directory.appending(path: line).standardized.path
     }
 
     private func file(_ name: String) -> URL {
-        Self.directory.appending(path: name + ".playlist", directoryHint: .notDirectory)
+        directory.appending(path: name + ".plist", directoryHint: .notDirectory)
     }
 }

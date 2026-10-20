@@ -1103,7 +1103,7 @@ struct ContentView: View {
                 }
             }
         } message: {
-            Text("The app keeps a copy as “\(deleting ?? "").backup” in the Playlists folder.")
+            Text("The app keeps a copy as “\(deleting ?? "").backup.plist” in the Playlists folder.")
         }
         .environment(lyrics)
         .environment(\.go, GoAction { destination in

@@ -39,10 +39,13 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 | `Loudness.plist` | The EBU R128 loudness of each song. |
 | `Scrobbles.plist` | The pending and rejected scrobbles. One atomic and durable write before each send. |
 | `Likes.plist` | The paths of the liked songs. Loaded at boot and written on each like or unlike. |
+| `Playlists/` | One binary plist for each playlist with its song paths. |
 | `lastfm.plist` | The Last.fm session key and user name. |
 | `Videos.plist` | The YouTube video ID of each song. |
 | `Rules/` | The compiled ad block rules of the web view. |
 | `Lyrics/` | The lyrics from LRCLIB and lyrics.ovh. An empty file means "no lyrics". |
+
+Every file that the app produces for its data is a binary plist. Do not add plain text, JSON, or other formats for app data.
 
 Every song path that Overdrive stores in its data files is home-relative with `~/` when it is under the home directory, in the current files and in all future files. Paths outside the home directory are absolute. The Overdrive directories come from the current home directory at runtime.
 
