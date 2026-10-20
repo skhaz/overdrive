@@ -1,5 +1,9 @@
 # Agents
 
+## Commits
+
+Commit each change when it is complete. Do not ask before you commit.
+
 ## Deploy
 
 Do these steps for each deploy:
