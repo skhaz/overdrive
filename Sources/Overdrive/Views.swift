@@ -105,11 +105,22 @@ struct TrackMenu: View {
     var exclude: String?
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
+    @Environment(YouTube.self) private var youTube
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         if !tracks.isEmpty {
             Button("Play Next") { player.insert(tracks, next: true) }
             Button("Add to Queue") { player.insert(tracks, next: false) }
+
+            if tracks.count == 1 {
+                Button("Watch Video on YouTube") {
+                    if youTube.key.isEmpty { return openSettings() }
+
+                    Task { await youTube.watch(tracks[0]) }
+                }
+                .disabled(youTube.searching)
+            }
 
             Menu("Add to Playlist") {
                 let names = playlists.names.filter { $0 != exclude }
@@ -1010,10 +1021,13 @@ struct ContentView: View {
 struct SettingsView: View {
     @Environment(Library.self) private var library
     @Environment(LastFM.self) private var lastFM
+    @Environment(YouTube.self) private var youTube
     @State private var username = ""
     @State private var password = ""
 
     var body: some View {
+        @Bindable var youTube = youTube
+
         Form {
             SwiftUI.Section("Folders") {
                 ForEach(library.folders, id: \.self) { folder in
@@ -1054,6 +1068,18 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Last.fm")
+            }
+
+            SwiftUI.Section {
+                TextField("API Key", text: $youTube.key)
+                Picker("Open Videos In", selection: $youTube.browser) {
+                    Text("Floating Window").tag(false)
+                    Text("Default Browser").tag(true)
+                }
+            } header: {
+                Text("YouTube")
+            } footer: {
+                Text("Watch Video on YouTube needs a YouTube Data API v3 key from the Google Cloud console.").foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

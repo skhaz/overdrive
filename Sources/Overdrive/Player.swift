@@ -8,6 +8,10 @@ final class Player {
         case off, all, one
     }
 
+    enum Remote {
+        case play, pause, toggle, next, previous
+    }
+
     nonisolated struct Session: Codable {
         let queue: [String]
         let order: [String]
@@ -62,6 +66,7 @@ final class Player {
     @ObservationIgnored private var announced = false
     @ObservationIgnored private var restored = false
     @ObservationIgnored var view = (page: Player.saved?.page ?? "", path: Player.saved?.path ?? [], query: Player.saved?.query ?? "")
+    @ObservationIgnored var intercept: ((Remote) -> Void)?
     @ObservationIgnored private var seeks = 0
     @ObservationIgnored private var status: NSKeyValueObservation?
     @ObservationIgnored private var item: AVPlayerItem?
@@ -87,11 +92,11 @@ final class Player {
         }
 
         let center = MPRemoteCommandCenter.shared()
-        Player.handle(center.playCommand) { [weak self] _ in self?.resume() }
-        Player.handle(center.pauseCommand) { [weak self] _ in self?.pause() }
-        Player.handle(center.togglePlayPauseCommand) { [weak self] _ in self?.toggle() }
-        Player.handle(center.nextTrackCommand) { [weak self] _ in self?.next() }
-        Player.handle(center.previousTrackCommand) { [weak self] _ in self?.previous() }
+        Player.handle(center.playCommand) { [weak self] _ in self?.perform(.play) }
+        Player.handle(center.pauseCommand) { [weak self] _ in self?.perform(.pause) }
+        Player.handle(center.togglePlayPauseCommand) { [weak self] _ in self?.perform(.toggle) }
+        Player.handle(center.nextTrackCommand) { [weak self] _ in self?.perform(.next) }
+        Player.handle(center.previousTrackCommand) { [weak self] _ in self?.perform(.previous) }
         Player.handle(center.changePlaybackPositionCommand) { [weak self] in self?.seek($0) }
     }
 
@@ -191,6 +196,18 @@ final class Player {
 
             update()
             save()
+        }
+    }
+
+    private func perform(_ command: Remote) {
+        if let intercept { return intercept(command) }
+
+        switch command {
+        case .play: resume()
+        case .pause: pause()
+        case .toggle: toggle()
+        case .next: next()
+        case .previous: previous()
         }
     }
 

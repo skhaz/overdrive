@@ -42,12 +42,13 @@ struct Overdrive: App {
         let loudness = Loudness()
         let library = Library(loudness: loudness)
         let player = Player(lastFM: lastFM, loudness: loudness)
+        let youTube = YouTube(player: player)
         library.loaded = { [unowned library] in player.restore { library.track($0) } }
 
         Task { await lastFM.flush() }
         AppleMusic.block()
 
-        return (termination: termination, lastFM: lastFM, library: library, player: player)
+        return (termination: termination, lastFM: lastFM, library: library, player: player, youTube: youTube)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
@@ -55,6 +56,7 @@ struct Overdrive: App {
     @State private var playlists = Playlists()
     @State private var lastFM = Overdrive.shared.lastFM
     @State private var player = Overdrive.shared.player
+    @State private var youTube = Overdrive.shared.youTube
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
@@ -62,6 +64,7 @@ struct Overdrive: App {
                 .environment(library)
                 .environment(player)
                 .environment(playlists)
+                .environment(youTube)
                 .modifier(Reopen(delegate: delegate))
         }
         .defaultWindowPlacement { _, context in
@@ -98,6 +101,7 @@ struct Overdrive: App {
             SettingsView()
                 .environment(library)
                 .environment(lastFM)
+                .environment(youTube)
         }
     }
 }

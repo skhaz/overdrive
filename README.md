@@ -15,6 +15,7 @@ Music player for macOS 26 or later.
 - Shows and edits lyrics in a panel.
 - Makes the volume of all songs the same.
 - Sends scrobbles to Last.fm. See [Last.fm](#lastfm).
+- Plays the music video of a song from YouTube. See [YouTube](#youtube).
 - Opens tracks and albums in Mp3tag from the context menu.
 - Right-click a song and choose Information to see the format, sample rate, channels, bit depth, bit rate, and size of the file. Click an item to copy its value.
 - Right-click a song or an album and choose Play Next or Add to Queue.
@@ -127,3 +128,16 @@ Do all tests on the release from GitHub and Homebrew, the same as a real install
 1. Get an API key at https://www.last.fm/api/account/create.
 2. Build with the key: `LASTFM_KEY=... LASTFM_SECRET=... ./build.sh`.
 3. Open Settings, enter the Last.fm username (not the email) and password, and click Connect. The app keeps only the session key, in `~/Library/Application Support/Overdrive/lastfm.plist`.
+
+## YouTube
+
+Right-click a song and choose Watch Video on YouTube.
+
+- The app needs a YouTube Data API v3 key. Get a key in the Google Cloud console and type it in Settings > YouTube. A key can do 100 searches each day.
+- The app searches YouTube for the artist and the song name. It plays the first result that has the song name and the artist in the title or the channel name. It ignores audio-only "Topic" channels and videos that cannot play outside YouTube. If no result agrees, the app tells you.
+- The app keeps the video of each song in `~/Library/Application Support/Overdrive/Videos.plist`, so it searches for each song only one time.
+- The video plays in a 16:9 window that stays on top of all windows. You can move it, resize it, and close it. The window shows only the video.
+- The app pauses the song that plays. While the window is open, the media keys play and pause the video. When you close the window, the media keys control the songs again.
+- The app blocks the known ad requests and removes the ad data from the YouTube player response. YouTube can change this at any time, so an ad can show.
+- The window keeps no cookies or other website data after you quit the app.
+- To open videos in the default browser, choose Settings > YouTube > Open Videos In > Default Browser.
