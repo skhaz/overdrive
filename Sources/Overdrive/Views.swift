@@ -505,6 +505,7 @@ final class Frame {
 
 struct AlbumView: View {
     let album: Album
+    @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Lyrics.self) private var lyrics
@@ -512,79 +513,83 @@ struct AlbumView: View {
     @State private var selection: Set<Track.ID> = []
     @State private var anchor: Int?
     @State private var list = Frame()
+    @State private var revealed = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .bottom, spacing: 20) {
-                    Cover(track: album.tracks[0]).frame(width: 220).shadow(radius: 4, y: 2)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .bottom, spacing: 20) {
+                        Cover(track: album.tracks[0]).frame(width: 220).shadow(radius: 4, y: 2)
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(album.title).font(.largeTitle.bold()).lineLimit(2)
-                        Button(album.artist) { go(.search(album.artist)) }
-                            .buttonStyle(.plain)
-                            .pointerStyle(.link)
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                        Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(album.title).font(.largeTitle.bold()).lineLimit(2)
+                            Button(album.artist) { go(.search(album.artist)) }
+                                .buttonStyle(.plain)
+                                .pointerStyle(.link)
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                            Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
+                                .foregroundStyle(.secondary)
 
-                        HStack {
-                            Button("Play", systemImage: "play.fill") { player.shuffle = false; player.play(album.tracks) }
-                            Button("Shuffle", systemImage: "shuffle") { player.shuffle = true; player.play(album.tracks, at: .random(in: album.tracks.indices)) }
+                            HStack {
+                                Button("Play", systemImage: "play.fill") { player.shuffle = false; player.play(album.tracks) }
+                                Button("Shuffle", systemImage: "shuffle") { player.shuffle = true; player.play(album.tracks, at: .random(in: album.tracks.indices)) }
+                            }
+                            .controlSize(.large)
+                            .padding(.top, 8)
                         }
-                        .controlSize(.large)
-                        .padding(.top, 8)
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
-                .padding(.bottom, 20)
-                .contextMenu {
-                    TrackMenu(tracks: album.tracks)
-                    CopyMenu(tracks: album.tracks, album: album)
-                    FileMenu(urls: album.tracks.map(\.url))
-                }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                    .padding(.bottom, 20)
+                    .contextMenu {
+                        TrackMenu(tracks: album.tracks)
+                        CopyMenu(tracks: album.tracks, album: album)
+                        FileMenu(urls: album.tracks.map(\.url))
+                    }
 
-                LazyVStack(spacing: 0) {
-                    ForEach(album.tracks.indices, id: \.self) { index in
-                        let track = album.tracks[index]
+                    LazyVStack(spacing: 0) {
+                        ForEach(album.tracks.indices, id: \.self) { index in
+                            let track = album.tracks[index]
 
-                        HStack {
-                            Group {
-                                if player.current == track {
-                                    Image(systemName: player.playing ? "speaker.wave.2.fill" : "speaker.fill").foregroundStyle(.tint)
-                                } else {
-                                    Text(track.number > 0 ? String(track.number) : "").foregroundStyle(.secondary)
+                            HStack {
+                                Group {
+                                    if player.current == track {
+                                        Image(systemName: player.playing ? "speaker.wave.2.fill" : "speaker.fill").foregroundStyle(.tint)
+                                    } else {
+                                        Text(track.number > 0 ? String(track.number) : "").foregroundStyle(.secondary)
+                                    }
                                 }
+                                .frame(width: 28, alignment: .trailing)
+
+                                Text(track.title).foregroundStyle(track == youTube.showing ?? player.current ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+
+                                if album.artist != track.artist {
+                                    Text(track.artist).foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Text(track.duration.time).monospacedDigit().foregroundStyle(.secondary)
                             }
-                            .frame(width: 28, alignment: .trailing)
+                            .stripe(index, selected: selection.contains(track.id))
+                            .onTapGesture { select(index) }
+                            .contextMenu {
+                                let tracks = selection.contains(track.id) ? album.tracks.filter { selection.contains($0.id) } : [track]
 
-                            Text(track.title).foregroundStyle(track == youTube.showing ?? player.current ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-
-                            if album.artist != track.artist {
-                                Text(track.artist).foregroundStyle(.secondary)
+                                TrackMenu(tracks: tracks)
+                                CopyMenu(tracks: tracks)
+                                FileMenu(urls: tracks.map(\.url))
                             }
-
-                            Spacer()
-
-                            Text(track.duration.time).monospacedDigit().foregroundStyle(.secondary)
-                        }
-                        .stripe(index, selected: selection.contains(track.id))
-                        .onTapGesture { select(index) }
-                        .contextMenu {
-                            let tracks = selection.contains(track.id) ? album.tracks.filter { selection.contains($0.id) } : [track]
-
-                            TrackMenu(tracks: tracks)
-                            CopyMenu(tracks: tracks)
-                            FileMenu(urls: tracks.map(\.url))
                         }
                     }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { list.rect = $0 }
                 }
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { list.rect = $0 }
+                .padding(20)
+                .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
             }
-            .padding(20)
-            .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
+            .task { reveal(proxy) }
         }
         .navigationTitle(album.title)
         .onReceive(NotificationCenter.default.publisher(for: .rightClick)) { notification in
@@ -602,6 +607,18 @@ struct AlbumView: View {
             selection = [track.id]
             anchor = index
         }
+    }
+
+    private func reveal(_ proxy: ScrollViewProxy) {
+        guard !revealed else { return }
+        revealed = true
+
+        let matches = album.tracks.indices.filter { library.matched(album.tracks[$0]) }
+        guard let first = matches.first else { return }
+
+        selection = Set(matches.map { album.tracks[$0].id })
+        anchor = first
+        proxy.scrollTo(first, anchor: .center)
     }
 
     private func select(_ index: Int) {

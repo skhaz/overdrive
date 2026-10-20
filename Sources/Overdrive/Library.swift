@@ -88,6 +88,7 @@ final class Library {
     private(set) var tracks: [Track] = []
     private(set) var version = 0
     @ObservationIgnored private var hits: Set<URL> = []
+    @ObservationIgnored private var songMatches: Set<URL> = []
     var scanning = false
     var query = Player.saved?.query ?? "" { didSet { if query != oldValue { search() } } }
 
@@ -177,6 +178,10 @@ final class Library {
         lookup[path]
     }
 
+    func matched(_ track: Track) -> Bool {
+        !query.isEmpty && songMatches.contains(track.id)
+    }
+
     func rows(_ paths: [String]) -> [Row] {
         let hits = query.isEmpty ? nil : hits
 
@@ -194,6 +199,7 @@ final class Library {
         }
 
         filtered = query.isEmpty ? [] : albums.filter { $0.artist == query }
+        songMatches.removeAll(keepingCapacity: true)
 
         guard filtered.isEmpty else {
             tracks = filtered.flatMap(\.tracks)
@@ -233,16 +239,25 @@ final class Library {
                             let record = UnsafeBufferPointer(rebasing: keys[Int(span.artist)..<Int(span.end)])
                             var total = 0
                             var all = true
+                            var song = true
+                            var titled = false
 
                             for token in tokens.indices {
                                 let word = UnsafeBufferPointer(rebasing: pattern[tokens[token]])
-                                let score = max(Fuzzy.score(word, title), Fuzzy.score(word, artist), Fuzzy.score(word, record))
+                                let inTitle = Fuzzy.score(word, title)
+                                let inArtist = Fuzzy.score(word, artist)
+                                let score = max(inTitle, inArtist, Fuzzy.score(word, record))
                                 best[token] = max(best[token], score)
                                 total += score
                                 all = all && score > 0
+                                song = song && (inTitle > 0 || inArtist > 0)
+                                titled = titled || inTitle > 0
                             }
 
-                            if all { trackHits.append((Int32(total), Int32(track))) }
+                            if all {
+                                trackHits.append((Int32(total), Int32(track)))
+                                if song, titled { songMatches.insert(everything[track].id) }
+                            }
                         }
 
                         if !best.contains(0) { albumHits.append((Int32(best.reduce(0, +)), Int32(album))) }
