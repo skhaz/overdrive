@@ -20,7 +20,8 @@ Music player for macOS 26 or later.
 - Right-click a song and choose Information to see the format, sample rate, channels, bit depth, bit rate, and size of the file. Click an item to copy its value.
 - Right-click a song or an album and choose Play Next or Add to Queue.
 - Right-click a song, an album, an artist, or the player bar and choose Copy to copy the song name, the artist, or the album. For a song, Artist - Song Name copies the text as "Iron Maiden - The Wicker Man".
-- Select more than one song with Command-click or Shift-click. Then right-click a selected song to use the menu on all selected songs. Right-click a song that is not selected to use the menu on only that song.
+- Select more than one song with Command-click or Shift-click. Then right-click a selected song to use the menu on all selected songs. Right-click a song that is not selected to select it and use the menu on only that song.
+- The song that plays, or the video that plays, is selected in the list of songs and shows in the accent color. When the song changes, the selection changes.
 - Use the media keys to go to the previous song, play or pause, and go to the next song.
 - While the app is open, Apple Music cannot open. The app closes Apple Music when it starts, when Apple Music opens, and every second.
 - Press Control-P to clear the search field and type a new search.

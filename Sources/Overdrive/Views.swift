@@ -551,7 +551,7 @@ struct AlbumView: View {
                             }
                             .frame(width: 28, alignment: .trailing)
 
-                            Text(track.title)
+                            Text(track.title).foregroundStyle(track == youTube.showing ?? player.current ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
 
                             if album.artist != track.artist {
                                 Text(track.artist).foregroundStyle(.secondary)
@@ -566,9 +566,17 @@ struct AlbumView: View {
                         .contextMenu {
                             let tracks = selection.contains(track.id) ? album.tracks.filter { selection.contains($0.id) } : [track]
 
-                            TrackMenu(tracks: tracks)
-                            CopyMenu(tracks: tracks)
-                            FileMenu(urls: tracks.map(\.url))
+                            Group {
+                                TrackMenu(tracks: tracks)
+                                CopyMenu(tracks: tracks)
+                                FileMenu(urls: tracks.map(\.url))
+                            }
+                            .onAppear {
+                                guard !selection.contains(track.id) else { return }
+
+                                selection = [track.id]
+                                anchor = index
+                            }
                         }
                     }
                 }
@@ -647,6 +655,18 @@ struct GoMenu: View {
     }
 }
 
+struct Cell: View {
+    let text: String
+    let playing: Bool
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        Text(text)
+            .foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+            .padding(.vertical, Stripe.padding)
+    }
+}
+
 struct SongTable: View {
     let tracks: [Track]
     @Environment(Player.self) private var player
@@ -654,11 +674,13 @@ struct SongTable: View {
     @State private var selection: Set<Track.ID> = []
 
     var body: some View {
+        let now = youTube.showing ?? player.current
+
         Table(tracks, selection: $selection) {
-            TableColumn("Title") { Text($0.title).padding(.vertical, Stripe.padding) }
-            TableColumn("Artist") { Text($0.artist).padding(.vertical, Stripe.padding) }
-            TableColumn("Album") { Text($0.album).padding(.vertical, Stripe.padding) }
-            TableColumn("Time") { Text($0.duration.time).monospacedDigit().padding(.vertical, Stripe.padding) }.width(60)
+            TableColumn("Title") { Cell(text: $0.title, playing: $0 == now) }
+            TableColumn("Artist") { Cell(text: $0.artist, playing: $0 == now) }
+            TableColumn("Album") { Cell(text: $0.album, playing: $0 == now) }
+            TableColumn("Time") { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
         }
         .contextMenu(forSelectionType: Track.ID.self) { ids in
             TrackMenu(tracks: tracks.filter { ids.contains($0.id) })
@@ -691,15 +713,16 @@ struct PlaylistView: View {
 
     var body: some View {
         let rows = library.rows(playlists.paths[name] ?? [])
+        let now = youTube.showing ?? player.current
 
         if playlists.paths[name]?.isEmpty ?? true {
             ContentUnavailableView("No Songs", systemImage: "music.note.list", description: Text("Right-click a song or an album and choose Add to Playlist."))
         } else {
             Table(of: Row.self, selection: $selection) {
-                TableColumn("Title") { Text($0.track.title).padding(.vertical, Stripe.padding) }
-                TableColumn("Artist") { Text($0.track.artist).padding(.vertical, Stripe.padding) }
-                TableColumn("Album") { Text($0.track.album).padding(.vertical, Stripe.padding) }
-                TableColumn("Time") { Text($0.track.duration.time).monospacedDigit().padding(.vertical, Stripe.padding) }.width(60)
+                TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now) }
+                TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
+                TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
+                TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
             } rows: {
                 ForEach(rows) { TableRow($0).draggable(String($0.id)) }
                     .dropDestination(for: String.self) { index, ids in move(rows, ids.compactMap { Int($0) }, to: index) }

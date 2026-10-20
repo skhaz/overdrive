@@ -48,6 +48,30 @@ struct Overdrive: App {
         Task { await lastFM.flush() }
         AppleMusic.block()
 
+        NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
+            let window = event.window ?? NSApp.window(withWindowNumber: NSWindow.windowNumber(at: event.locationInWindow, belowWindowWithWindowNumber: 0))
+            guard let window, let content = window.contentView else { return event }
+
+            let location = event.window == nil ? window.convertPoint(fromScreen: event.locationInWindow) : event.locationInWindow
+
+            var views = [content]
+            while let view = views.popLast() {
+                guard let table = view as? NSTableView else {
+                    views += view.subviews
+                    continue
+                }
+
+                let point = table.convert(location, from: nil)
+                guard table.headerView != nil, !table.isHiddenOrHasHiddenAncestor, table.visibleRect.contains(point) else { continue }
+
+                let row = table.row(at: point)
+                if row >= 0, !table.selectedRowIndexes.contains(row) { table.selectRowIndexes([row], byExtendingSelection: false) }
+                break
+            }
+
+            return event
+        }
+
         return (termination: termination, lastFM: lastFM, library: library, player: player, youTube: youTube)
     }()
 
