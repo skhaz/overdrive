@@ -228,7 +228,9 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         if videos[name] != id {
             videos[name] = id
-            if let data = try? PropertyListEncoder().encode(videos) { Persist.write(data, to: configuration.store) }
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .binary
+            if let data = try? encoder.encode(videos) { Persist.write(data, to: configuration.store) }
         }
 
         player.pause()

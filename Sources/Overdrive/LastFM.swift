@@ -78,7 +78,9 @@ final class LastFM {
         let defaults = configuration.defaults
         var queue = Queue()
         queue.pending = (defaults.array(forKey: "lastfm.pending") as? [[String: String]] ?? []).map { $0.merging(["_id": UUID().uuidString]) { old, _ in old } }
-        guard !queue.pending.isEmpty, let data = try? PropertyListEncoder().encode(queue) else { return queue }
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard !queue.pending.isEmpty, let data = try? encoder.encode(queue) else { return queue }
 
         Persist.write(data, to: configuration.store)
         if (try? Data(contentsOf: configuration.store)) == data { defaults.removeObject(forKey: "lastfm.pending") }
@@ -118,7 +120,9 @@ final class LastFM {
     }
 
     private func save() {
-        guard let data = try? PropertyListEncoder().encode(["session": session, "user": user]) else { return }
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard let data = try? encoder.encode(["session": session, "user": user]) else { return }
 
         Persist.write(data, to: configuration.credentials)
     }
