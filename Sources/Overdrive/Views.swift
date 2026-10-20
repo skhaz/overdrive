@@ -871,7 +871,7 @@ struct ContentView: View {
                     .background(Color(nsColor: .textBackgroundColor))
                 }
             }
-            .searchable(text: $library.query)
+            .searchable(text: $library.query, placement: .toolbarPrincipal)
             .searchFocused($searching)
 
             Divider()
