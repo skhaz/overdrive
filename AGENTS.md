@@ -45,6 +45,7 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 
 ## Behavior
 
+- Search: when an album opens from a search, it selects every song that matched the query and scrolls to the first one. If no song matched, it selects the current song.
 - Volume: the app measures each song one time (EBU R128, reference -14 LUFS, gain limited by the peak, maximum +12 dB). The background worker stops in Low Power Mode and when the Mac is hot. With shuffle off, it uses the album gain. With shuffle on, it uses the track gain.
 - Last.fm: the app marks each batch on the disk before it sends it. It removes a scrobble only when Last.fm accepts it. Code 5 (daily limit) keeps the scrobble. Codes 6, 7, and 13 isolate the bad scrobble. Codes 1 to 4 move it to the rejected list. When the result of a send is not known, the app looks at `user.getRecentTracks` before it sends again, and sends it again one day before the 14-day limit if it cannot look.
 - YouTube: the app searches with the YouTube page itself (`/youtubei/v1/search` with the context of the page), so it needs no API key. It plays the first result that has the song name and the artist, ignores "Topic" channels, and checks with `oembed` that the video can play outside YouTube. The ad block uses a content rule list and removes `adPlacements`, `adSlots`, and `playerAds` from the player response.

@@ -601,7 +601,7 @@ struct AlbumView: View {
             selection = [album.tracks[index].id]
             anchor = index
         }
-        .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+        .onChange(of: youTube.showing ?? player.current) { _, track in
             guard let track, let index = album.tracks.firstIndex(of: track) else { return }
 
             selection = [track.id]
@@ -614,11 +614,18 @@ struct AlbumView: View {
         revealed = true
 
         let matches = album.tracks.indices.filter { library.matched(album.tracks[$0]) }
-        guard let first = matches.first else { return }
 
-        selection = Set(matches.map { album.tracks[$0].id })
-        anchor = first
-        proxy.scrollTo(first, anchor: .center)
+        if let first = matches.first {
+            selection = Set(matches.map { album.tracks[$0].id })
+            anchor = first
+            proxy.scrollTo(first, anchor: .center)
+            return
+        }
+
+        guard let track = youTube.showing ?? player.current, let index = album.tracks.firstIndex(of: track) else { return }
+
+        selection = [track.id]
+        anchor = index
     }
 
     private func select(_ index: Int) {
