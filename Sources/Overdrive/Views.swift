@@ -19,6 +19,23 @@ enum Page: Hashable {
     case section(Section)
     case playlist(String)
 
+    init?(key: String) {
+        if key.hasPrefix("playlist:") {
+            self = .playlist(String(key.dropFirst(9)))
+        } else if let section = Section(rawValue: key) {
+            self = .section(section)
+        } else {
+            return nil
+        }
+    }
+
+    var key: String {
+        switch self {
+        case .section(let section): section.rawValue
+        case .playlist(let name): "playlist:" + name
+        }
+    }
+
     var title: String {
         switch self {
         case .section(let section): section.rawValue
@@ -30,6 +47,23 @@ enum Page: Hashable {
 enum Route: Hashable {
     case album(Album)
     case artist(String)
+
+    init?(key: String, albums: [Album]) {
+        if key.hasPrefix("artist:") {
+            self = .artist(String(key.dropFirst(7)))
+        } else if key.hasPrefix("album:"), let album = albums.first(where: { $0.id == key.dropFirst(6) }) {
+            self = .album(album)
+        } else {
+            return nil
+        }
+    }
+
+    var key: String {
+        switch self {
+        case .album(let album): "album:" + album.id
+        case .artist(let name): "artist:" + name
+        }
+    }
 }
 
 enum Destination {
@@ -775,10 +809,11 @@ struct ContentView: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @State private var lyrics = Lyrics()
-    @State private var page = Page.section(.albums)
+    @State private var page = Page(key: Player.saved?.page ?? "") ?? .section(.albums)
     @State private var name = ""
     @State private var deleting: String?
     @State private var path: [Route] = []
+    @State private var saved = Player.saved?.path
     @FocusState private var searching: Bool
     @Environment(\.controlActiveState) private var active
 
@@ -920,11 +955,22 @@ struct ContentView: View {
                   !(NSApp.keyWindow?.firstResponder is NSText) else { return }
             searching = true
         }
+        .onChange(of: library.version) {
+            guard let saved, !library.albums.isEmpty else { return }
+
+            self.saved = nil
+            if path.isEmpty { path = saved.compactMap { Route(key: $0, albums: library.albums) } }
+        }
+        .onChange(of: path) { remember() }
         .onChange(of: page) {
+            remember()
             path = []
             if case .playlist = page { library.query = "" }
         }
-        .onChange(of: library.query) { navigate([]) }
+        .onChange(of: library.query) {
+            navigate([])
+            remember()
+        }
         .frame(minWidth: 820, minHeight: 520)
     }
 
@@ -933,6 +979,11 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .tag(value)
+    }
+
+    private func remember() {
+        player.view = (page.key, path.map(\.key), library.query)
+        player.save()
     }
 
     private func navigate(_ value: [Route]) {

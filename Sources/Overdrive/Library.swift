@@ -88,7 +88,7 @@ final class Library {
     private(set) var tracks: [Track] = []
     private(set) var version = 0
     var scanning = false
-    var query = "" { didSet { if query != oldValue { search() } } }
+    var query = Player.saved?.query ?? "" { didSet { if query != oldValue { search() } } }
 
     var folders: [URL] = UserDefaults.standard.stringArray(forKey: Library.key)?.map { URL(filePath: $0) } ?? [] {
         didSet {

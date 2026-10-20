@@ -32,34 +32,29 @@ struct Reopen: ViewModifier {
 }
 
 struct Overdrive: App {
-    private static let termination = {
+    private static let shared = {
         signal(SIGTERM, SIG_IGN)
-        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        source.setEventHandler { NSApp.terminate(nil) }
-        source.resume()
-        return source
-    }()
+        let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        termination.setEventHandler { NSApp.terminate(nil) }
+        termination.resume()
 
-    @NSApplicationDelegateAdaptor private var delegate: Delegate
-    @State private var library: Library
-    @State private var playlists = Playlists()
-    @State private var lastFM: LastFM
-    @State private var player: Player
-
-    init() {
         let lastFM = LastFM()
         let loudness = Loudness()
         let library = Library(loudness: loudness)
         let player = Player(lastFM: lastFM, loudness: loudness)
-        library.loaded = { [unowned library] in player.restore(library.track) }
-        _lastFM = State(initialValue: lastFM)
-        _library = State(initialValue: library)
-        _player = State(initialValue: player)
-        _ = Overdrive.termination
+        library.loaded = { [unowned library] in player.restore { library.track($0) } }
 
         Task { await lastFM.flush() }
         AppleMusic.block()
-    }
+
+        return (termination: termination, lastFM: lastFM, library: library, player: player)
+    }()
+
+    @NSApplicationDelegateAdaptor private var delegate: Delegate
+    @State private var library = Overdrive.shared.library
+    @State private var playlists = Playlists()
+    @State private var lastFM = Overdrive.shared.lastFM
+    @State private var player = Overdrive.shared.player
 
     var body: some Scene {
         Window("Overdrive", id: "main") {

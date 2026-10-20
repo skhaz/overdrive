@@ -24,7 +24,7 @@ Music player for macOS 26 or later.
 - While the app is open, Apple Music cannot open. The app closes Apple Music when it starts, when Apple Music opens, and every second.
 - Press Control-P to clear the search field and type a new search.
 - Click the cover or the title in the player bar to open the album that plays.
-- When you quit the app, it saves the queue, the song, the position, shuffle, and repeat. When you open the app again, it loads them and stays paused. Click Play to continue.
+- When you quit the app, it saves the queue, the song, the position, play or pause, shuffle, repeat, the section, the open album or artist, and the search. When you open the app again, all of it is the same as before. The app writes this state to `~/Library/Application Support/Overdrive/Session.plist` in one atomic write, so a crash or a power loss cannot leave a part of it.
 - Sorts the songs of an album by the disc number and then by the track number.
 - Uses the album artist tag for an album that has songs of different artists.
 

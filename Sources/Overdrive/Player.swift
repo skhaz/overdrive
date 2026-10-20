@@ -8,16 +8,24 @@ final class Player {
         case off, all, one
     }
 
-    private nonisolated struct Session: Codable {
+    nonisolated struct Session: Codable {
         let queue: [String]
         let order: [String]
         let index: Int
         let position: Double
         let shuffle: Bool
         let repeatMode: Int
+        let playing: Bool?
+        let played: Double?
+        let started: Double?
+        let scrobbled: Bool?
+        let page: String?
+        let path: [String]?
+        let query: String?
     }
 
     private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
+    static let saved = (try? Data(contentsOf: session)).flatMap { try? PropertyListDecoder().decode(Session.self, from: $0) }
 
     private(set) var queue: [Track] = []
     private(set) var index = 0
@@ -53,6 +61,7 @@ final class Player {
     @ObservationIgnored private var scrobbled = false
     @ObservationIgnored private var announced = false
     @ObservationIgnored private var restored = false
+    @ObservationIgnored var view = (page: Player.saved?.page ?? "", path: Player.saved?.path ?? [], query: Player.saved?.query ?? "")
     @ObservationIgnored private var seeks = 0
     @ObservationIgnored private var status: NSKeyValueObservation?
     @ObservationIgnored private var item: AVPlayerItem?
@@ -69,7 +78,7 @@ final class Player {
         }
 
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.save() }
+            MainActor.assumeIsolated { self?.save(wait: true) }
         }
 
         NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] notification in
@@ -146,8 +155,7 @@ final class Player {
         guard !restored else { return }
         restored = true
 
-        guard item == nil, let data = try? Data(contentsOf: Player.session),
-              let session = try? PropertyListDecoder().decode(Session.self, from: data) else { return }
+        guard item == nil, let session = Player.saved else { return }
 
         let tracks = session.queue.compactMap(lookup)
         guard !tracks.isEmpty else { return }
@@ -164,8 +172,25 @@ final class Player {
 
         load(play: false)
 
-        if found != nil, session.position > 0 {
-            seek(session.position)
+        guard found != nil, let item, let track = current else { return }
+
+        played = session.played ?? 0
+        scrobbled = session.scrobbled ?? false
+        if let started = session.started { self.started = Date(timeIntervalSince1970: started) }
+
+        Task {
+            await adjust(item, track)
+            guard item === self.item else { return }
+
+            if session.position > 0 {
+                seeks += 1
+                await player.seek(to: CMTime(seconds: session.position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                seeks -= 1
+                position = session.position
+            }
+
+            if session.playing == true, !playing { resume() }
+            update()
             save()
         }
     }
@@ -182,7 +207,7 @@ final class Player {
 
         if !announced {
             announced = true
-            started = .now
+            if played == 0 { started = .now }
             lastFM.nowPlaying(track)
         }
 
@@ -314,15 +339,16 @@ final class Player {
         save()
     }
 
-    private func save() {
+    func save(wait: Bool = false) {
         let session = Session(queue: queue.map(\.url.path), order: order.map(\.url.path), index: index, position: position,
-                              shuffle: shuffle, repeatMode: repeatMode.rawValue)
+                              shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
+                              started: started.timeIntervalSince1970, scrobbled: scrobbled,
+                              page: view.page, path: view.path, query: view.query)
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(session) else { return }
 
-        try? FileManager.default.createDirectory(at: Player.session.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: Player.session, options: .atomic)
+        Persist.write(data, to: Player.session, wait: wait)
     }
 
     private func tick(_ seconds: Double) {
