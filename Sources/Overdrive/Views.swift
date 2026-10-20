@@ -27,6 +27,11 @@ enum Page: Hashable {
     }
 }
 
+enum Route: Hashable {
+    case album(Album)
+    case artist(String)
+}
+
 enum Destination {
     case album(Album)
     case artist(String)
@@ -139,12 +144,17 @@ struct CopyMenu: View {
 }
 
 struct LyricsToolbar: ViewModifier {
+    let contains: (Track) -> Bool
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
 
     func body(content: Content) -> some View {
+        let track = [player.current, lyrics.track].compactMap(\.self).first(where: contains)
+        let shown = lyrics.visible && (lyrics.track.map(contains) ?? true)
+
         content.toolbar {
-            Button("Lyrics", systemImage: "quote.bubble") { lyrics.visible ? lyrics.hide() : lyrics.show(player.current ?? lyrics.track) }
+            Button("Lyrics", systemImage: "quote.bubble") { shown ? lyrics.hide() : lyrics.show(track) }
+                .disabled(!shown && track == nil && (player.current != nil || lyrics.track != nil))
         }
     }
 }
@@ -432,7 +442,7 @@ struct AlbumGrid: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 20)], spacing: 24) {
                 ForEach(albums) { album in
-                    NavigationLink(value: album) {
+                    NavigationLink(value: Route.album(album)) {
                         VStack(alignment: .leading, spacing: 2) {
                             Cover(track: album.tracks[0]).shadow(radius: 2, y: 1)
                             Text(album.title).lineLimit(1).padding(.top, 4)
@@ -532,7 +542,7 @@ struct AlbumView: View {
                 }
             }
             .padding(20)
-            .padding(.trailing, lyrics.visible ? LyricsView.width : 0)
+            .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) ?? true ? LyricsView.width : 0)
         }
         .navigationTitle(album.title)
     }
@@ -774,11 +784,10 @@ struct ContentView: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @State private var lyrics = Lyrics()
-    @State private var depth = 0
     @State private var page = Page.section(.albums)
     @State private var name = ""
     @State private var deleting: String?
-    @State private var path = NavigationPath()
+    @State private var path: [Route] = []
     @FocusState private var searching: Bool
     @Environment(\.controlActiveState) private var active
 
@@ -828,23 +837,24 @@ struct ContentView: View {
                                 switch page {
                                 case .section(.albums): AlbumGrid(albums: library.filtered)
                                 case .section(.artists): ArtistList(artists: library.artists)
-                                case .playlist(let name): PlaylistView(name: name)
-                                case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
+                                case .playlist(let name): PlaylistView(name: name).modifier(LyricsToolbar { contains($0, [], page) })
+                                case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song")).modifier(LyricsToolbar { contains($0, [], page) })
                                 }
                             }
                             .id(library.version)
                         }
                     }
                     .navigationTitle(page.title)
-                    .modifier(LyricsToolbar())
-                    .navigationDestination(for: Album.self) { AlbumView(album: $0).modifier(LyricsToolbar()) }
-                    .navigationDestination(for: String.self) { name in
-                        AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name).modifier(LyricsToolbar())
+                    .navigationDestination(for: Route.self) { route in
+                        switch route {
+                        case .album(let album): AlbumView(album: album).modifier(LyricsToolbar { album.tracks.contains($0) })
+                        case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name)
+                        }
                     }
                 }
             }
             .overlay(alignment: .trailing) {
-                if lyrics.visible && path.count >= depth {
+                if shown(path, page) {
                     HStack(spacing: 0) {
                         Divider()
                         LyricsView().frame(width: LyricsView.width)
@@ -858,7 +868,7 @@ struct ContentView: View {
             Divider()
             Controls { track in
                 guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
-                navigate(NavigationPath([album]))
+                navigate([.album(album)])
             }
             .background(.bar)
         }
@@ -897,13 +907,13 @@ struct ContentView: View {
             var value = path
 
             switch destination {
-            case .album(let album): value.append(album)
-            case .artist(let name): value.append(name)
+            case .album(let album): value.append(.album(album))
+            case .artist(let name): value.append(.artist(name))
             case .search(let text):
                 lyrics.confirm {
                     page = .section(.albums)
                     library.query = text
-                    path = NavigationPath()
+                    path = []
                 }
                 return
             }
@@ -920,16 +930,10 @@ struct ContentView: View {
             searching = true
         }
         .onChange(of: page) {
-            path = NavigationPath()
+            path = []
             if case .playlist = page { library.query = "" }
         }
-        .onChange(of: lyrics.visible) {
-            if lyrics.visible { depth = path.count }
-        }
-        .onChange(of: path) {
-            if path.count < depth { lyrics.hide() }
-        }
-        .onChange(of: library.query) { navigate(NavigationPath()) }
+        .onChange(of: library.query) { navigate([]) }
         .frame(minWidth: 820, minHeight: 520)
     }
 
@@ -940,11 +944,28 @@ struct ContentView: View {
             .tag(value)
     }
 
-    private func navigate(_ value: NavigationPath) {
-        if value.count < depth {
+    private func navigate(_ value: [Route]) {
+        if shown(path, page), !shown(value, page) {
             lyrics.confirm { path = value }
         } else {
             path = value
+        }
+    }
+
+    private func shown(_ path: [Route], _ page: Page) -> Bool {
+        guard lyrics.visible else { return false }
+        guard let track = lyrics.track else { return contains(nil, path, page) }
+
+        return contains(track, path, page)
+    }
+
+    private func contains(_ track: Track?, _ path: [Route], _ page: Page) -> Bool {
+        switch (path.last, page) {
+        case (.album(let album), _): track.map(album.tracks.contains) ?? true
+        case (.artist, _): false
+        case (nil, .section(.songs)): track.map(library.tracks.contains) ?? true
+        case (nil, .playlist(let name)): track.map { playlists.paths[name]?.contains($0.url.path) ?? false } ?? true
+        case (nil, .section): false
         }
     }
 }
