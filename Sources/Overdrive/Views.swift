@@ -495,6 +495,14 @@ struct AlbumGrid: View {
     }
 }
 
+extension Notification.Name {
+    static let rightClick = Notification.Name("rightClick")
+}
+
+final class Frame {
+    var rect = CGRect.zero
+}
+
 struct AlbumView: View {
     let album: Album
     @Environment(Player.self) private var player
@@ -503,6 +511,7 @@ struct AlbumView: View {
     @Environment(\.go) private var go
     @State private var selection: Set<Track.ID> = []
     @State private var anchor: Int?
+    @State private var list = Frame()
 
     var body: some View {
         ScrollView {
@@ -566,25 +575,27 @@ struct AlbumView: View {
                         .contextMenu {
                             let tracks = selection.contains(track.id) ? album.tracks.filter { selection.contains($0.id) } : [track]
 
-                            Group {
-                                TrackMenu(tracks: tracks)
-                                CopyMenu(tracks: tracks)
-                                FileMenu(urls: tracks.map(\.url))
-                            }
-                            .onAppear {
-                                guard !selection.contains(track.id) else { return }
-
-                                selection = [track.id]
-                                anchor = index
-                            }
+                            TrackMenu(tracks: tracks)
+                            CopyMenu(tracks: tracks)
+                            FileMenu(urls: tracks.map(\.url))
                         }
                     }
                 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { list.rect = $0 }
             }
             .padding(20)
             .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
         }
         .navigationTitle(album.title)
+        .onReceive(NotificationCenter.default.publisher(for: .rightClick)) { notification in
+            guard let point = notification.object as? CGPoint, list.rect.contains(point) else { return }
+
+            let index = Int((point.y - list.rect.minY) / Stripe.height)
+            guard album.tracks.indices.contains(index), !selection.contains(album.tracks[index].id) else { return }
+
+            selection = [album.tracks[index].id]
+            anchor = index
+        }
         .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
             guard let track, let index = album.tracks.firstIndex(of: track) else { return }
 
