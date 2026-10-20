@@ -2,10 +2,13 @@ import AppKit
 import WebKit
 
 private final class Handle: NSView {
+    var dropped: (() -> Void)?
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         window?.performDrag(with: event)
+        dropped?()
     }
 }
 
@@ -18,12 +21,25 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         var defaults = UserDefaults.standard
     }
 
+    enum Corner: String, CaseIterable {
+        case topLeft, topRight, bottomLeft, bottomRight
+
+        var name: String {
+            switch self {
+            case .topLeft: "Top Left"
+            case .topRight: "Top Right"
+            case .bottomLeft: "Bottom Left"
+            case .bottomRight: "Bottom Right"
+            }
+        }
+    }
+
     private enum Mode {
-        case idle, checking, login, searching, video, refreshing
+        case loading, ready, failed, login, video
     }
 
     private static let account = URL(string: "https://www.youtube.com/account")!
-    private static let home = URL(string: "https://www.youtube.com/")!
+    private static let resident = URL(string: "https://www.youtube.com/embed/?controls=0&rel=0&playsinline=1&iv_load_policy=3&cc_load_policy=0")!
 
     private static let blocked = ["doubleclick.net", "googlesyndication.com", "googleadservices.com", "imasdk.googleapis.com", "youtube.com/api/stats/ads",
                                   "youtube.com/pagead/", "youtube.com/ptracking", "youtube.com/get_midroll_", "youtube-nocookie.com/api/stats/ads"]
@@ -55,6 +71,12 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     """
 
     var browser: Bool { didSet { configuration.defaults.set(browser, forKey: "youtube.browser") } }
+    var corner: Corner {
+        didSet {
+            configuration.defaults.set(corner.rawValue, forKey: "youtube.corner")
+            place()
+        }
+    }
     var searching = false
     private(set) var showing: Track?
 
@@ -64,14 +86,16 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     @ObservationIgnored private let web: WKWebView
     @ObservationIgnored private let panel: NSPanel
     @ObservationIgnored private let handle = Handle()
-    @ObservationIgnored private var mode = Mode.idle
-    @ObservationIgnored private var video = ""
+    @ObservationIgnored private var mode = Mode.loading
     @ObservationIgnored private var track: Track?
+    @ObservationIgnored private var logged = false
+    @ObservationIgnored private var signedIn = false
 
     init(player: Player, _ configuration: Configuration = Configuration()) {
         self.configuration = configuration
         self.player = player
         browser = configuration.defaults.object(forKey: "youtube.browser") as? Bool ?? false
+        corner = configuration.defaults.string(forKey: "youtube.corner").flatMap(Corner.init) ?? .bottomRight
         videos = (try? Data(contentsOf: configuration.store)).flatMap { try? PropertyListDecoder().decode([String: String].self, from: $0) } ?? [:]
 
         let settings = WKWebViewConfiguration()
@@ -104,36 +128,37 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         super.init()
         web.navigationDelegate = self
         panel.delegate = self
+        handle.dropped = { [weak self] in self?.snap() }
         player.resumed = { [weak self] in
             if self?.panel.isVisible == true { self?.panel.close() }
         }
 
         let rules = YouTube.blocked.map { ["trigger": ["url-filter": NSRegularExpression.escapedPattern(for: $0)], "action": ["type": "block"]] }
-        guard let data = try? JSONSerialization.data(withJSONObject: rules), let store = WKContentRuleListStore(url: configuration.rules) else { return }
 
-        try? FileManager.default.createDirectory(at: configuration.rules, withIntermediateDirectories: true)
-        store.compileContentRuleList(forIdentifier: "Ads", encodedContentRuleList: String(decoding: data, as: UTF8.self)) { [weak self] list, _ in
-            if let list { self?.web.configuration.userContentController.add(list) }
+        if let data = try? JSONSerialization.data(withJSONObject: rules), let store = WKContentRuleListStore(url: configuration.rules) {
+            try? FileManager.default.createDirectory(at: configuration.rules, withIntermediateDirectories: true)
+            store.compileContentRuleList(forIdentifier: "Ads", encodedContentRuleList: String(decoding: data, as: UTF8.self)) { [weak self] list, _ in
+                if let list { self?.web.configuration.userContentController.add(list) }
+                self?.load()
+            }
+        } else {
+            load()
         }
 
         Task { [weak self] in
             while true {
                 try? await Task.sleep(for: .seconds(3600))
-                await self?.refresh()
+                guard let self else { return }
+                if mode == .ready || mode == .failed, !panel.isVisible { load() }
             }
         }
     }
 
-    private func refresh() async {
-        guard mode == .idle, await web.configuration.websiteDataStore.httpCookieStore.allCookies().contains(where: { $0.name == "LOGIN_INFO" }), mode == .idle else { return }
-
-        mode = .refreshing
-        web.load(URLRequest(url: YouTube.account))
-        try? await Task.sleep(for: .seconds(30))
-        guard mode == .refreshing else { return }
-
-        mode = .idle
-        web.load(URLRequest(url: URL(string: "about:blank")!))
+    private func load() {
+        mode = .loading
+        var request = URLRequest(url: YouTube.resident)
+        request.setValue("https://\((Bundle.main.bundleIdentifier ?? "org.delduca.Overdrive").lowercased())/", forHTTPHeaderField: "Referer")
+        web.load(request)
     }
 
     func watch(_ track: Track) {
@@ -141,13 +166,25 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         self.track = track
         searching = true
-        mode = .checking
-        web.load(URLRequest(url: browser ? YouTube.home : YouTube.account))
+
+        switch mode {
+        case .ready, .video: Task { await find() }
+        case .failed: load()
+        case .loading, .login: break
+        }
     }
 
     private func find() async {
-        defer { searching = false }
         guard let track else { return }
+
+        guard browser || logged else {
+            show(.login)
+            web.load(URLRequest(url: YouTube.account))
+            return
+        }
+
+        self.track = nil
+        defer { searching = false }
 
         let name = "\(track.artist)\u{1F}\(track.title)"
         var id = videos[name]
@@ -171,80 +208,102 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         guard !browser else {
             NSWorkspace.shared.open(URL(string: "https://www.youtube.com/watch?v=\(id)")!)
-            return stop(nil)
+            return
         }
 
-        video = id
         player.intercept = { [weak self] in self?.remote($0) }
-        play()
+
+        let script = """
+        document.getElementById('movie_player').loadVideoById(id);
+        const video = document.querySelector('video');
+        await new Promise(resolve => {
+            video.addEventListener('playing', resolve, { once: true });
+            setTimeout(resolve, 3000);
+        });
+        """
+        _ = try? await web.callAsyncJavaScript(script, arguments: ["id": id], contentWorld: .page)
+
+        showing = track
+        show(.video)
     }
 
-    private func stop(_ message: String?) {
-        if panel.isVisible {
-            panel.close()
-        } else {
-            mode = .idle
-            web.load(URLRequest(url: URL(string: "about:blank")!))
-        }
-
-        if let message { alert(message) }
+    private func stop(_ message: String) {
+        if panel.isVisible { panel.close() }
+        alert(message)
     }
 
     func signOut() async {
         let store = WKWebsiteDataStore.default()
         let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
         await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records.filter { $0.displayName.contains("youtube") || $0.displayName.contains("google") })
-    }
-
-    private func play() {
-        var request = URLRequest(url: URL(string: "https://www.youtube.com/embed/\(video)?autoplay=1&controls=0&rel=0&playsinline=1&iv_load_policy=3&cc_load_policy=0")!)
-        request.setValue("https://\((Bundle.main.bundleIdentifier ?? "org.delduca.Overdrive").lowercased())/", forHTTPHeaderField: "Referer")
-        web.load(request)
-        showing = track
-        show(.video)
+        if !panel.isVisible { load() }
     }
 
     private func show(_ mode: Mode) {
         self.mode = mode
         handle.isHidden = mode != .video
 
-        if let frame = configuration.defaults.string(forKey: "youtube.frame") {
-            panel.setFrame(from: frame)
-        } else if !panel.isVisible {
-            panel.center()
-        }
-
-        var frame = panel.frame
-        if mode == .login { frame.size.width = max(frame.width, 800) }
-        frame.size.height = (frame.width * 9 / 16).rounded()
-        panel.setFrame(frame, display: false)
+        place()
         panel.makeKeyAndOrderFront(nil)
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard mode == .checking || mode == .login, let url = webView.url, url.host() == YouTube.account.host(),
-              url.path() == (browser ? YouTube.home : YouTube.account).path() else { return }
+    private func place() {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
 
-        mode = .searching
-        Task { await find() }
+        let margin: CGFloat = 20
+        let area = screen.visibleFrame.insetBy(dx: margin, dy: margin)
+        let saved = configuration.defaults.object(forKey: "youtube.width") as? Double ?? 640
+        let width = min(mode == .login ? max(saved, 800) : saved, area.width).rounded()
+        let size = NSSize(width: width, height: (width * 9 / 16).rounded())
+
+        let x = corner == .topLeft || corner == .bottomLeft ? area.minX : area.maxX - size.width
+        let y = corner == .bottomLeft || corner == .bottomRight ? area.minY : area.maxY - size.height
+        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
     }
 
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        guard mode == .checking, webView.url?.host() != YouTube.account.host() else { return }
+    private func snap() {
+        guard let screen = panel.screen else { return }
 
-        show(.login)
+        let left = panel.frame.midX < screen.visibleFrame.midX
+        let bottom = panel.frame.midY < screen.visibleFrame.midY
+        corner = bottom ? (left ? .bottomLeft : .bottomRight) : (left ? .topLeft : .topRight)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let url = webView.url, url.host() == YouTube.account.host() else { return }
+
+        if mode == .login, url.path() == YouTube.account.path() {
+            signedIn = true
+            return load()
+        }
+
+        guard mode == .loading, url.path().hasPrefix("/embed") else { return }
+
+        Task {
+            logged = (try? await webView.evaluateJavaScript("ytcfg.get('LOGGED_IN')")) as? Bool ?? false || signedIn
+            signedIn = false
+            mode = .ready
+            if track != nil { await find() }
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
-        guard mode == .checking else { return }
+        guard mode == .loading else { return }
 
+        mode = .failed
+        guard track != nil else { return }
+
+        track = nil
         searching = false
         stop(error.localizedDescription)
     }
 
     private func search(_ track: Track) async throws -> String? {
         let script = """
-        const response = await fetch('/youtubei/v1/search?prettyPrint=false', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ context: ytcfg.get('INNERTUBE_CONTEXT'), query }) });
+        const context = structuredClone(ytcfg.get('INNERTUBE_CONTEXT'));
+        context.client.clientName = 'WEB';
+        delete context.thirdParty;
+        const response = await fetch('/youtubei/v1/search?prettyPrint=false', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ context, query }) });
         return await response.text();
         """
         let text = try await web.callAsyncJavaScript(script, arguments: ["query": "\(track.artist) \(track.title)"], contentWorld: .page) as? String ?? ""
@@ -326,18 +385,21 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        if mode == .video { configuration.defaults.set(panel.frameDescriptor, forKey: "youtube.frame") }
-    }
-
-    func windowDidMove(_ notification: Notification) {
-        if mode == .video { configuration.defaults.set(panel.frameDescriptor, forKey: "youtube.frame") }
+        if mode == .video { configuration.defaults.set(Double(panel.frame.width), forKey: "youtube.width") }
+        place()
     }
 
     func windowWillClose(_ notification: Notification) {
-        mode = .idle
         showing = nil
+        track = nil
+        searching = false
         player.intercept = nil
-        web.pauseAllMediaPlayback()
-        web.load(URLRequest(url: URL(string: "about:blank")!))
+
+        if mode == .video {
+            mode = .ready
+            web.evaluateJavaScript("document.getElementById('movie_player').stopVideo()")
+        } else {
+            load()
+        }
     }
 }

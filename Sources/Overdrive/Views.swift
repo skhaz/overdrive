@@ -1093,6 +1093,12 @@ struct SettingsView: View {
                     Text("Floating Window").tag(false)
                     Text("Default Browser").tag(true)
                 }
+
+                if !youTube.browser {
+                    Picker("Window Corner", selection: $youTube.corner) {
+                        ForEach(YouTube.Corner.allCases, id: \.self) { Text($0.name).tag($0) }
+                    }
+                }
             } header: {
                 Text("YouTube")
             }
