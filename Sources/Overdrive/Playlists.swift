@@ -16,15 +16,26 @@ final class Playlists {
         let files = (try? FileManager.default.contentsOfDirectory(at: Self.directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
 
         paths = [:]
+        var migrated: [String] = []
 
         for file in files where file.pathExtension == "playlist" {
             guard let data = try? Data(contentsOf: file), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { continue }
-            paths[file.deletingPathExtension().lastPathComponent] = text.split(whereSeparator: \.isNewline).map {
-                $0.hasPrefix("/") ? String($0) : Self.directory.appending(path: $0).standardized.path
+            var relative = false
+            let name = file.deletingPathExtension().lastPathComponent
+
+            paths[name] = text.split(whereSeparator: \.isNewline).map {
+                guard !$0.hasPrefix("/") else { return String($0) }
+
+                relative = true
+                return Self.directory.appending(path: $0).standardized.path
             }
+
+            if relative { migrated.append(name) }
         }
 
         names = paths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+
+        for name in migrated { save(name, paths[name] ?? []) }
     }
 
     nonisolated static func ignored(_ path: String) -> Bool {
