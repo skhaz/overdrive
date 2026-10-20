@@ -53,6 +53,7 @@ final class Loudness {
     func measure(_ track: Track, album: Bool) async {
         if entries[track.url.path] == nil, let file = Loudness.file(track.url), let entry = await Loudness.measure(file) {
             entries[track.url.path] = entry
+            save()
         }
 
         guard album, let paths = albums[track.albumID] else { return }
@@ -80,7 +81,7 @@ final class Loudness {
             guard !Task.isCancelled else { return }
 
             let count = entries.count
-            entries = entries.filter { valid.contains($0.key) }
+            entries = entries.filter { valid.contains($0.key) || known[$0.key] == nil }
             if entries.count != count { save() }
 
             var measured = 0
@@ -118,18 +119,12 @@ final class Loudness {
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(entries) else { return }
 
-        Task { await Loudness.write(data) }
-    }
-
-    @concurrent
-    private nonisolated static func write(_ data: Data) async {
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: file, options: .atomic)
+        Persist.write(data, to: Loudness.file)
     }
 
     private nonisolated static func idle() async {
         while ProcessInfo.processInfo.isLowPowerModeEnabled || ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue {
-            try? await Task.sleep(for: .seconds(30))
+            guard (try? await Task.sleep(for: .seconds(30))) != nil else { return }
         }
     }
 

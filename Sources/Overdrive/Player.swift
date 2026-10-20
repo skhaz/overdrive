@@ -33,11 +33,11 @@ final class Player {
 
     private(set) var queue: [Track] = []
     private(set) var index = 0
-    private(set) var playing = false { didSet { if playing, !oldValue { resumed?() } } }
+    private(set) var playing = false
     private(set) var position = 0.0
     private(set) var artwork: NSImage?
 
-    var shuffle = false { didSet { reorder() } }
+    var shuffle = false { didSet { if shuffle != oldValue { reorder() } } }
     var repeatMode = Repeat.off { didSet { requeue() } }
     var normalize = UserDefaults.standard.object(forKey: "normalize") as? Bool ?? true {
         didSet {
@@ -69,6 +69,7 @@ final class Player {
     @ObservationIgnored var intercept: ((Remote) -> Void)?
     @ObservationIgnored var resumed: (() -> Void)?
     @ObservationIgnored private var seeks = 0
+    @ObservationIgnored private var failures = 0
     @ObservationIgnored private var status: NSKeyValueObservation?
     @ObservationIgnored private var item: AVPlayerItem?
     @ObservationIgnored private var upcoming: AVPlayerItem?
@@ -98,7 +99,7 @@ final class Player {
         Player.handle(center.togglePlayPauseCommand) { [weak self] _ in self?.perform(.toggle) }
         Player.handle(center.nextTrackCommand) { [weak self] _ in self?.perform(.next) }
         Player.handle(center.previousTrackCommand) { [weak self] _ in self?.perform(.previous) }
-        Player.handle(center.changePlaybackPositionCommand) { [weak self] in self?.seek($0) }
+        Player.handle(center.changePlaybackPositionCommand) { [weak self] in if self?.intercept == nil { self?.seek($0) } }
     }
 
     private nonisolated static func handle(_ command: MPRemoteCommand, _ action: @escaping @MainActor @Sendable (Double) -> Void) {
@@ -109,11 +110,12 @@ final class Player {
         }
     }
 
-    private nonisolated static func observe(_ item: AVPlayerItem, _ failed: @escaping @MainActor @Sendable () -> Void) -> NSKeyValueObservation {
-        item.observe(\.status) { item, _ in
+    private nonisolated static func observe(_ item: AVPlayerItem, _ failed: @escaping @MainActor @Sendable (ObjectIdentifier) -> Void) -> NSKeyValueObservation {
+        item.observe(\.status, options: [.initial]) { item, _ in
             guard item.status == .failed else { return }
 
-            Task { @MainActor in failed() }
+            let id = ObjectIdentifier(item)
+            Task { @MainActor in failed(id) }
         }
     }
 
@@ -142,9 +144,9 @@ final class Player {
         let tracks = tracks.filter { $0 != track }
         let added = Set(tracks)
 
+        index -= queue[..<index].count { added.contains($0) }
         queue.removeAll { added.contains($0) }
         order.removeAll { added.contains($0) }
-        index = queue.firstIndex(of: track)!
 
         if next {
             queue.insert(contentsOf: tracks, at: index + 1)
@@ -185,18 +187,18 @@ final class Player {
         if let started = session.started { self.started = Date(timeIntervalSince1970: started) }
 
         Task {
-            await adjust(item, track)
-            guard item === self.item else { return }
-
             if session.position > 0 {
                 seeks += 1
                 await player.seek(to: CMTime(seconds: session.position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
                 seeks -= 1
+                guard item === self.item else { return }
+
                 position = session.position
+                update()
+                save()
             }
 
-            update()
-            save()
+            await adjust(item, track)
         }
     }
 
@@ -218,9 +220,11 @@ final class Player {
 
     func resume() {
         guard let track = current else { return }
+        guard item != nil else { return load() }
 
         player.play()
         playing = true
+        resumed?()
 
         if !announced {
             announced = true
@@ -286,6 +290,7 @@ final class Player {
         upcoming = following(index).map { enqueue($0) }
 
         playing = play
+        if play { resumed?() }
         begin()
     }
 
@@ -339,6 +344,19 @@ final class Player {
         begin()
     }
 
+    private func failed(_ id: ObjectIdentifier) {
+        guard let item, ObjectIdentifier(item) == id else { return }
+
+        failures += 1
+        guard failures < queue.count, let next = following(index, manual: true) else {
+            failures = 0
+            return stop()
+        }
+
+        index = next
+        load(play: playing)
+    }
+
     private func begin() {
         guard let track = current, let item else { return }
 
@@ -348,7 +366,7 @@ final class Player {
         started = .now
         artwork = Artwork.image(track)
 
-        status = Player.observe(item) { [weak self] in self?.next() }
+        status = Player.observe(item) { [weak self] in self?.failed($0) }
 
         announced = playing
         if playing { lastFM.nowPlaying(track) }
@@ -376,6 +394,7 @@ final class Player {
 
         guard playing, delta > 0, delta < 2, let track = current else { return }
 
+        failures = 0
         played += delta
 
         if !scrobbled, track.duration >= 30, played >= min(track.duration / 2, 240) {
