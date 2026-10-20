@@ -4,27 +4,16 @@ import Network
 
 @Observable
 final class LastFM {
-    private static let endpoint = URL(string: "https://ws.audioscrobbler.com/2.0/")!
-    private static let defaults = UserDefaults.standard
-    private static let file = URL.applicationSupportDirectory.appending(path: "Overdrive/lastfm.plist")
-    private static let saved = (try? PropertyListDecoder().decode([String: String].self, from: Data(contentsOf: file))) ?? [:]
-    private static let store = URL.applicationSupportDirectory.appending(path: "Overdrive/Scrobbles.plist")
-    private static let loaded = load()
-    private static let unsent: Set<URLError.Code> = [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
-                                                     .internationalRoamingOff, .dataNotAllowed, .secureConnectionFailed]
-
-    static let key = Bundle.main.object(forInfoDictionaryKey: "LastFMKey") as? String ?? ""
-    static let secret = Bundle.main.object(forInfoDictionaryKey: "LastFMSecret") as? String ?? ""
-
-    var session = saved["session"] ?? "" { didSet { save() } }
-    var user = saved["user"] ?? "" { didSet { save() } }
-    var pending = loaded.pending { didSet { persist() } }
-    var rejected = loaded.rejected { didSet { persist() } }
-    var status = ""
-    var connecting = false
-
-    @ObservationIgnored private var flushing = false
-    @ObservationIgnored private let monitor = NWPathMonitor()
+    nonisolated struct Configuration {
+        var endpoint = URL(string: "https://ws.audioscrobbler.com/2.0/")!
+        var credentials = URL.applicationSupportDirectory.appending(path: "Overdrive/lastfm.plist")
+        var store = URL.applicationSupportDirectory.appending(path: "Overdrive/Scrobbles.plist")
+        var transport = URLSession.shared
+        var defaults = UserDefaults.standard
+        var retry: Duration = .seconds(60)
+        var settle: TimeInterval = 120
+        var monitor = true
+    }
 
     private nonisolated struct Queue: Codable {
         var pending: [[String: String]] = []
@@ -36,32 +25,63 @@ final class LastFM {
         let message: String
     }
 
-    init() {
-        monitor.pathUpdateHandler = { [weak self] path in
-            guard path.status == .satisfied else { return }
+    static let limit: TimeInterval = 14 * 86400
+    static let key = Bundle.main.object(forInfoDictionaryKey: "LastFMKey") as? String ?? ""
+    static let secret = Bundle.main.object(forInfoDictionaryKey: "LastFMSecret") as? String ?? ""
 
-            Task { @MainActor in await self?.flush() }
+    private static let unsent: Set<URLError.Code> = [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+                                                     .internationalRoamingOff, .dataNotAllowed, .secureConnectionFailed]
+
+    var session: String { didSet { save() } }
+    var user: String { didSet { save() } }
+    var pending: [[String: String]] { didSet { persist() } }
+    var rejected: [[String: String]] { didSet { persist() } }
+    var status = ""
+    var connecting = false
+
+    @ObservationIgnored private let configuration: Configuration
+    @ObservationIgnored private let monitor = NWPathMonitor()
+    @ObservationIgnored private var flushing = false
+
+    init(_ configuration: Configuration = Configuration()) {
+        self.configuration = configuration
+
+        let saved = (try? PropertyListDecoder().decode([String: String].self, from: Data(contentsOf: configuration.credentials))) ?? [:]
+        session = saved["session"] ?? ""
+        user = saved["user"] ?? ""
+
+        let queue = LastFM.load(configuration)
+        pending = queue.pending
+        rejected = queue.rejected
+
+        if configuration.monitor {
+            monitor.pathUpdateHandler = { [weak self] path in
+                guard path.status == .satisfied else { return }
+
+                Task { @MainActor in await self?.flush() }
+            }
+            monitor.start(queue: .main)
         }
-        monitor.start(queue: .main)
 
-        Task { [weak self] in
+        Task { [weak self, retry = configuration.retry] in
             while true {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: retry)
                 guard let self else { return }
                 if !pending.isEmpty { await flush() }
             }
         }
     }
 
-    private static func load() -> Queue {
-        if let data = try? Data(contentsOf: store), let queue = try? PropertyListDecoder().decode(Queue.self, from: data) { return queue }
+    private static func load(_ configuration: Configuration) -> Queue {
+        if let data = try? Data(contentsOf: configuration.store), let queue = try? PropertyListDecoder().decode(Queue.self, from: data) { return queue }
 
+        let defaults = configuration.defaults
         var queue = Queue()
         queue.pending = (defaults.array(forKey: "lastfm.pending") as? [[String: String]] ?? []).map { $0.merging(["_id": UUID().uuidString]) { old, _ in old } }
-        guard let data = try? PropertyListEncoder().encode(queue) else { return queue }
+        guard !queue.pending.isEmpty, let data = try? PropertyListEncoder().encode(queue) else { return queue }
 
-        Persist.write(data, to: store, wait: true)
-        if (try? Data(contentsOf: store)) == data { defaults.removeObject(forKey: "lastfm.pending") }
+        Persist.write(data, to: configuration.store, wait: true)
+        if (try? Data(contentsOf: configuration.store)) == data { defaults.removeObject(forKey: "lastfm.pending") }
         return queue
     }
 
@@ -70,7 +90,7 @@ final class LastFM {
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(Queue(pending: pending, rejected: rejected)) else { return }
 
-        Persist.write(data, to: Self.store, wait: true)
+        Persist.write(data, to: configuration.store, wait: true)
     }
 
     func connect(_ username: String, _ password: String) async {
@@ -94,8 +114,8 @@ final class LastFM {
 
     private func save() {
         let manager = FileManager.default
-        try? manager.createDirectory(at: Self.file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        manager.createFile(atPath: Self.file.path, contents: try? PropertyListEncoder().encode(["session": session, "user": user]), attributes: [.posixPermissions: 0o600])
+        try? manager.createDirectory(at: configuration.credentials.deletingLastPathComponent(), withIntermediateDirectories: true)
+        manager.createFile(atPath: configuration.credentials.path, contents: try? PropertyListEncoder().encode(["session": session, "user": user]), attributes: [.posixPermissions: 0o600])
     }
 
     func disconnect() {
@@ -121,15 +141,14 @@ final class LastFM {
         flushing = true
         defer { flushing = false }
 
+        if pending.contains(where: { $0["_uncertain"] != nil }) { await settle() }
+
         var size = 50
 
-        while !session.isEmpty, let first = pending.first {
-            if first["_uncertain"] != nil {
-                guard await settle() else { return }
-                continue
-            }
+        while !session.isEmpty {
+            let batch = Array(pending.lazy.filter { $0["_uncertain"] == nil }.prefix(size))
+            guard !batch.isEmpty else { return }
 
-            let batch = Array(pending.prefix { $0["_uncertain"] == nil }.prefix(size))
             var parameters: [String: String] = [:]
 
             for (index, entry) in batch.enumerated() {
@@ -140,7 +159,7 @@ final class LastFM {
 
             do {
                 let json = try await call("track.scrobble", parameters, session: true)
-                guard let codes = Self.codes(json, batch.count) else {
+                guard let codes = LastFM.codes(json, batch.count) else {
                     mark(batch)
                     return
                 }
@@ -171,7 +190,7 @@ final class LastFM {
                 default:
                     return
                 }
-            } catch let error as URLError where Self.unsent.contains(error.code) {
+            } catch let error as URLError where LastFM.unsent.contains(error.code) {
                 status = error.localizedDescription
                 return
             } catch {
@@ -196,12 +215,35 @@ final class LastFM {
         }
     }
 
-    private func settle() async -> Bool {
+    private func settle() async {
         let uncertain = pending.filter { $0["_uncertain"] != nil }
-        let stamps = uncertain.compactMap { $0["timestamp"].flatMap(Int.init) }
+        let now = Date.now.timeIntervalSince1970
         let marked = uncertain.compactMap { $0["_uncertain"].flatMap(Double.init) }.max() ?? 0
+        guard now - marked > configuration.settle else { return }
 
-        guard !user.isEmpty, let low = stamps.min(), let high = stamps.max(), Date.now.timeIntervalSince1970 - marked > 120 else { return false }
+        let stamps = uncertain.compactMap { $0["timestamp"].flatMap(Int.init) }
+
+        if let low = stamps.min(), let high = stamps.max(), let found = await history(low, high) {
+            remove(uncertain.filter { $0["timestamp"].map(found.contains) ?? false })
+
+            for index in pending.indices {
+                pending[index]["_uncertain"] = nil
+            }
+
+            return
+        }
+
+        let deadline = now - LastFM.limit + 86400
+
+        for index in pending.indices where pending[index]["_uncertain"] != nil {
+            if let stamp = pending[index]["timestamp"].flatMap(Double.init), stamp < deadline {
+                pending[index]["_uncertain"] = nil
+            }
+        }
+    }
+
+    private func history(_ low: Int, _ high: Int) async -> Set<String>? {
+        guard !user.isEmpty else { return nil }
 
         var found = Set<String>()
         var page = 1
@@ -209,9 +251,10 @@ final class LastFM {
 
         repeat {
             guard let json = try? await call("user.getRecentTracks", ["user": user, "from": String(low), "to": String(high + 1), "limit": "200", "page": String(page)]),
-                  let recent = json["recenttracks"] as? [String: Any] else { return false }
+                  let recent = json["recenttracks"] as? [String: Any] else { return nil }
 
             let tracks = recent["track"] as? [[String: Any]] ?? (recent["track"] as? [String: Any]).map { [$0] } ?? []
+
             for track in tracks {
                 if let date = track["date"] as? [String: Any], let uts = date["uts"] as? String { found.insert(uts) }
             }
@@ -220,13 +263,7 @@ final class LastFM {
             page += 1
         } while page <= pages
 
-        remove(uncertain.filter { $0["timestamp"].map(found.contains) ?? false })
-
-        for index in pending.indices {
-            pending[index]["_uncertain"] = nil
-        }
-
-        return true
+        return found
     }
 
     private static func codes(_ json: [String: Any], _ count: Int) -> [Int]? {
@@ -259,12 +296,12 @@ final class LastFM {
 
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 
-        var request = URLRequest(url: LastFM.endpoint)
+        var request = URLRequest(url: configuration.endpoint)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(parameters.map { "\($0.key.addingPercentEncoding(withAllowedCharacters: allowed)!)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)" }.joined(separator: "&").utf8)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await configuration.transport.data(for: request)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
 
         if let code = json["error"] as? Int {

@@ -5,6 +5,7 @@ let package = Package(
     name: "Overdrive",
     platforms: [.macOS(.v26)],
     targets: [
-        .executableTarget(name: "Overdrive", swiftSettings: [.defaultIsolation(MainActor.self)])
+        .executableTarget(name: "Overdrive", swiftSettings: [.defaultIsolation(MainActor.self)]),
+        .testTarget(name: "OverdriveTests", dependencies: ["Overdrive"]),
     ]
 )

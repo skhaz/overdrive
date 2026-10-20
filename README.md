@@ -56,7 +56,7 @@ The app makes the loudness of all songs the same, so you do not have to change t
 - The app keeps each scrobble in `~/Library/Application Support/Overdrive/Scrobbles.plist` before it sends it. The write is atomic and goes to the disk before the app continues.
 - The app removes a scrobble from the queue only when Last.fm accepts it.
 - When there is no network or Last.fm does not respond, the scrobbles stay in the queue. The app sends them when the network comes back, and tries again every minute.
-- If Last.fm gets a scrobble but the response does not arrive, the app does not know if Last.fm kept it. Before it sends it again, the app looks at the recent tracks on Last.fm and sends only the scrobbles that are not there. This prevents duplicate scrobbles.
+- If Last.fm gets a scrobble but the response does not arrive, the app does not know if Last.fm kept it. Before it sends it again, the app looks at the recent tracks on Last.fm and sends only the scrobbles that are not there. This prevents duplicate scrobbles. These scrobbles do not stop the app from sending other scrobbles. If the app cannot look at the recent tracks, it sends them again one day before the 14-day limit of Last.fm, so a scrobble is never lost.
 - When the daily scrobble limit of Last.fm is reached, the scrobbles stay in the queue for later.
 - The app keeps a scrobble that Last.fm rejects (for example, a filtered artist or a timestamp more than 14 days old) and shows the count in Settings.
 
@@ -98,6 +98,14 @@ The `--zap` option also removes the settings, the Last.fm session, and the lyric
 ```
 
 Use a local build only to debug or to profile.
+
+## Test
+
+```sh
+swift test
+```
+
+The tests use a fake Last.fm server, so they do not send scrobbles to a real account.
 
 ## Release
 
