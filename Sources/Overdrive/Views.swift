@@ -911,7 +911,7 @@ struct ContentView: View {
             navigate(value)
         })
         .onChange(of: player.current) {
-            if lyrics.visible, let current = player.current { lyrics.show(current) }
+            if let current = player.current { lyrics.show(current) }
         }
         .onChange(of: search) { searching = true }
         .onChange(of: page) {
