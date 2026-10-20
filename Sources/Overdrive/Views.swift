@@ -106,7 +106,6 @@ struct TrackMenu: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @Environment(YouTube.self) private var youTube
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         if !tracks.isEmpty {
@@ -114,11 +113,7 @@ struct TrackMenu: View {
             Button("Add to Queue") { player.insert(tracks, next: false) }
 
             if tracks.count == 1 {
-                Button("Watch Video on YouTube") {
-                    if youTube.key.isEmpty { return openSettings() }
-
-                    Task { await youTube.watch(tracks[0]) }
-                }
+                Button("Watch Video on YouTube") { youTube.watch(tracks[0]) }
                 .disabled(youTube.searching)
             }
 
@@ -1071,15 +1066,13 @@ struct SettingsView: View {
             }
 
             SwiftUI.Section {
-                TextField("API Key", text: $youTube.key)
+                Button("Sign Out") { Task { await youTube.signOut() } }
                 Picker("Open Videos In", selection: $youTube.browser) {
                     Text("Floating Window").tag(false)
                     Text("Default Browser").tag(true)
                 }
             } header: {
                 Text("YouTube")
-            } footer: {
-                Text("Watch Video on YouTube needs a YouTube Data API v3 key from the Google Cloud console.").foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

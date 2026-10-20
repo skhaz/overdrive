@@ -133,11 +133,12 @@ Do all tests on the release from GitHub and Homebrew, the same as a real install
 
 Right-click a song and choose Watch Video on YouTube.
 
-- The app needs a YouTube Data API v3 key. Get a key in the Google Cloud console and type it in Settings > YouTube. A key can do 100 searches each day.
 - The app searches YouTube for the artist and the song name. It plays the first result that has the song name and the artist in the title or the channel name. It ignores audio-only "Topic" channels and videos that cannot play outside YouTube. If no result agrees, the app tells you.
 - The app keeps the video of each song in `~/Library/Application Support/Overdrive/Videos.plist`, so it searches for each song only one time.
 - The video plays in a 16:9 window that stays on top of all windows. You can move it, resize it, and close it. The window shows only the video.
 - The app pauses the song that plays. While the window is open, the media keys play and pause the video. When you close the window, the media keys control the songs again.
 - The app blocks the known ad requests and removes the ad data from the YouTube player response. YouTube can change this at any time, so an ad can show.
-- The window keeps no cookies or other website data after you quit the app.
+- Before the video plays, the app makes sure that you are signed in to YouTube. If you are not signed in, or the session is expired, the window shows the Google sign-in page, and the video plays after you sign in. With YouTube Premium, the videos have no ads. Passkeys do not work in the window, because macOS lets only Google apps use passkeys for Google in an app. Click Try another way and use your phone or your password and a code.
+- The app keeps the session after you quit. Every 6 hours, while the window is closed, the app opens YouTube in the background for a short time, so Google renews the session and you do not have to sign in again.
+- To sign out, choose Settings > YouTube > Sign Out.
 - To open videos in the default browser, choose Settings > YouTube > Open Videos In > Default Browser.
