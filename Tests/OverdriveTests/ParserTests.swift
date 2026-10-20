@@ -20,7 +20,7 @@ struct ParserTests {
         var large = Data()
         withUnsafeBytes(of: UInt32(1).bigEndian) { large.append(contentsOf: $0) }
         large.append(contentsOf: Array("free".utf8))
-        withUnsafeBytes(of: UInt64(4).bigEndian) { large.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt64(0).bigEndian) { large.append(contentsOf: $0) }
 
         let url = try file(box("moov", large))
         defer { try? FileManager.default.removeItem(at: url) }
@@ -40,7 +40,7 @@ struct ParserTests {
 
         let ilst = box("ilst", box("\u{A9}nam", name))
         let meta = box("meta", Data(count: 4) + ilst)
-        let url = try file(box("moov", box("udta", meta) + huge))
+        let url = try file(box("moov", huge + box("udta", meta)))
         defer { try? FileManager.default.removeItem(at: url) }
 
         _ = MP4.read(url)

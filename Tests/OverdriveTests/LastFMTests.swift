@@ -27,6 +27,8 @@ final class Server: @unchecked Sendable {
     private var _history = true
     private var _received: [(track: String, timestamp: Int)] = []
     private var _batches: [Int] = []
+    private var _store: URL?
+    private var _snapshot: Data?
 
     var mode: Mode {
         get { lock.withLock { _mode } }
@@ -38,6 +40,12 @@ final class Server: @unchecked Sendable {
         set { lock.withLock { _history = newValue } }
     }
 
+    var store: URL? {
+        get { lock.withLock { _store } }
+        set { lock.withLock { _store = newValue } }
+    }
+
+    var snapshot: Data? { lock.withLock { _snapshot } }
     var received: [String] { lock.withLock { _received.map(\.track) } }
     var batches: [Int] { lock.withLock { _batches } }
 
@@ -62,6 +70,7 @@ final class Server: @unchecked Sendable {
                 return (track, timestamp)
             }
             _batches.append(batch.count)
+            if let _store { _snapshot = try? Data(contentsOf: _store) }
 
             switch _mode {
             case .unsent:
@@ -415,5 +424,46 @@ struct LastFMTests {
 
         #expect(try Data(contentsOf: url) == Data("second".utf8))
         #expect(!FileManager.default.fileExists(atPath: url.appendingPathExtension("tmp").path))
+    }
+
+    @Test func marksScrobblesOnDiskBeforeTheyAreSent() async throws {
+        let lastFM = client()
+        server.store = directory.appending(path: "Scrobbles.plist")
+        scrobble(lastFM, ["A"])
+        await settle(lastFM) { lastFM.pending.isEmpty }
+
+        let snapshot = try #require(server.snapshot)
+        let queue = try #require(try PropertyListSerialization.propertyList(from: snapshot, format: nil) as? [String: [[String: String]]])
+        #expect(queue["pending"]?.map { $0["track"] } == ["A"])
+        #expect(queue["pending"]?.allSatisfy { $0["_uncertain"] != nil } == true)
+    }
+
+    @Test func doesNotSendAgainAfterAQuitDuringTheSend() async throws {
+        let first = client()
+        let store = directory.appending(path: "Scrobbles.plist")
+        server.store = store
+        scrobble(first, ["A"])
+        await settle(first) { first.pending.isEmpty }
+        #expect(server.received == ["A"])
+
+        try #require(server.snapshot).write(to: store)
+        server.store = nil
+
+        let second = client()
+        #expect(second.pending.count == 1)
+        await settle(second) { second.pending.isEmpty }
+
+        #expect(second.pending.isEmpty)
+        #expect(server.received == ["A"])
+    }
+
+    @Test func doesNotCrashOnAnInvalidSignInResponse() async {
+        let lastFM = client()
+        lastFM.disconnect()
+
+        await lastFM.connect("user", "password")
+
+        #expect(lastFM.session.isEmpty)
+        #expect(!lastFM.status.isEmpty)
     }
 }
