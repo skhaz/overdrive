@@ -189,7 +189,6 @@ final class Player {
                 position = session.position
             }
 
-            if session.playing == true, !playing { resume() }
             update()
             save()
         }
