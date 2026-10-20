@@ -104,6 +104,9 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         super.init()
         web.navigationDelegate = self
         panel.delegate = self
+        player.resumed = { [weak self] in
+            if self?.panel.isVisible == true { self?.panel.close() }
+        }
 
         let rules = YouTube.blocked.map { ["trigger": ["url-filter": NSRegularExpression.escapedPattern(for: $0)], "action": ["type": "block"]] }
         guard let data = try? JSONSerialization.data(withJSONObject: rules), let store = WKContentRuleListStore(url: configuration.rules) else { return }

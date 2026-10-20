@@ -33,7 +33,7 @@ final class Player {
 
     private(set) var queue: [Track] = []
     private(set) var index = 0
-    private(set) var playing = false
+    private(set) var playing = false { didSet { if playing, !oldValue { resumed?() } } }
     private(set) var position = 0.0
     private(set) var artwork: NSImage?
 
@@ -67,6 +67,7 @@ final class Player {
     @ObservationIgnored private var restored = false
     @ObservationIgnored var view = (page: Player.saved?.page ?? "", path: Player.saved?.path ?? [], query: Player.saved?.query ?? "")
     @ObservationIgnored var intercept: ((Remote) -> Void)?
+    @ObservationIgnored var resumed: (() -> Void)?
     @ObservationIgnored private var seeks = 0
     @ObservationIgnored private var status: NSKeyValueObservation?
     @ObservationIgnored private var item: AVPlayerItem?
