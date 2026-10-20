@@ -83,7 +83,8 @@ nonisolated enum MP4 {
 
     private static func header(_ file: Int32, _ offset: Int64, _ limit: Int64) -> Box? {
         withUnsafeTemporaryAllocation(byteCount: 16, alignment: 8) { buffer in
-            guard pread(file, buffer.baseAddress, 16, offset) >= 8 else { return nil }
+            let read = pread(file, buffer.baseAddress, 16, offset)
+            guard read >= 8 else { return nil }
 
             let size = UInt32(bigEndian: buffer.loadUnaligned(as: UInt32.self))
             let type = UInt32(bigEndian: buffer.loadUnaligned(fromByteOffset: 4, as: UInt32.self))
@@ -91,6 +92,8 @@ nonisolated enum MP4 {
             switch size {
             case 0: return (type, offset + 8, limit)
             case 1:
+                guard read == 16 else { return nil }
+
                 let large = UInt64(bigEndian: buffer.loadUnaligned(fromByteOffset: 8, as: UInt64.self))
                 guard large >= 16 else { return nil }
 

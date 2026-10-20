@@ -14,7 +14,12 @@ nonisolated enum Picture {
         process.arguments = ["covers"]
         process.standardInput = input
         process.standardOutput = output
-        try! process.run()
+
+        do {
+            try process.run()
+        } catch {
+            return [Data?](repeating: nil, count: urls.count)
+        }
 
         let paths = Data(urls.map(\.path).joined(separator: "\0").utf8)
 
