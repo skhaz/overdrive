@@ -1045,6 +1045,7 @@ struct SettingsView: View {
                 } else {
                     LabeledContent("Account", value: lastFM.user)
                     LabeledContent("Pending Scrobbles", value: String(lastFM.pending.count))
+                    if !lastFM.rejected.isEmpty { LabeledContent("Rejected by Last.fm", value: String(lastFM.rejected.count)) }
                     Button("Disconnect", action: lastFM.disconnect)
                 }
 

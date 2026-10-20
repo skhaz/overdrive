@@ -14,7 +14,7 @@ Music player for macOS 26 or later.
 - Shows album covers from the embedded artwork or from an image in the album folder.
 - Shows and edits lyrics in a panel.
 - Makes the volume of all songs the same.
-- Sends scrobbles to Last.fm.
+- Sends scrobbles to Last.fm. See [Last.fm](#lastfm).
 - Opens tracks and albums in Mp3tag from the context menu.
 - Right-click a song and choose Information to see the format, sample rate, channels, bit depth, bit rate, and size of the file. Click an item to copy its value.
 - Right-click a song or an album and choose Play Next or Add to Queue.
@@ -50,6 +50,15 @@ The app makes the loudness of all songs the same, so you do not have to change t
 - The volume of a song does not go above its peak, so the sound does not clip.
 - When you change a song file, the app measures the song again.
 - To turn it off, choose Controls > Normalize Volume.
+
+## Last.fm
+
+- The app keeps each scrobble in `~/Library/Application Support/Overdrive/Scrobbles.plist` before it sends it. The write is atomic and goes to the disk before the app continues.
+- The app removes a scrobble from the queue only when Last.fm accepts it.
+- When there is no network or Last.fm does not respond, the scrobbles stay in the queue. The app sends them when the network comes back, and tries again every minute.
+- If Last.fm gets a scrobble but the response does not arrive, the app does not know if Last.fm kept it. Before it sends it again, the app looks at the recent tracks on Last.fm and sends only the scrobbles that are not there. This prevents duplicate scrobbles.
+- When the daily scrobble limit of Last.fm is reached, the scrobbles stay in the queue for later.
+- The app keeps a scrobble that Last.fm rejects (for example, a filtered artist or a timestamp more than 14 days old) and shows the count in Settings.
 
 ## Playlists
 
