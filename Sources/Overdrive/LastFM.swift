@@ -118,9 +118,9 @@ final class LastFM {
     }
 
     private func save() {
-        let manager = FileManager.default
-        try? manager.createDirectory(at: configuration.credentials.deletingLastPathComponent(), withIntermediateDirectories: true)
-        manager.createFile(atPath: configuration.credentials.path, contents: try? PropertyListEncoder().encode(["session": session, "user": user]), attributes: [.posixPermissions: 0o600])
+        guard let data = try? PropertyListEncoder().encode(["session": session, "user": user]) else { return }
+
+        Persist.write(data, to: configuration.credentials, wait: true)
     }
 
     func disconnect() {

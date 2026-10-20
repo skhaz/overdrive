@@ -126,8 +126,7 @@ final class Playlists {
     func delete(_ name: String) {
         let backup = directory.appending(path: name + ".backup.plist", directoryHint: .notDirectory)
 
-        try? FileManager.default.removeItem(at: backup)
-        guard (try? FileManager.default.moveItem(at: file(name), to: backup)) != nil else { return }
+        guard Persist.move(file(name), to: backup) else { return }
 
         paths[name] = nil
         names.removeAll { $0 == name }

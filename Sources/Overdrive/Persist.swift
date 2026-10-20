@@ -15,6 +15,10 @@ nonisolated enum Persist {
         queue.sync {}
     }
 
+    static func move(_ source: URL, to destination: URL) -> Bool {
+        queue.sync { relocate(source, destination) }
+    }
+
     private static func store(_ data: Data, _ url: URL) {
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -44,6 +48,27 @@ nonisolated enum Persist {
             return
         }
 
+        sync(directory)
+    }
+
+    private static func relocate(_ source: URL, _ destination: URL) -> Bool {
+        let directory = destination.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let moved = source.withUnsafeFileSystemRepresentation { from in
+            destination.withUnsafeFileSystemRepresentation { to in
+                guard let from, let to else { return false }
+                return rename(from, to) == 0
+            }
+        }
+
+        guard moved else { return false }
+
+        sync(directory)
+        return true
+    }
+
+    private static func sync(_ directory: URL) {
         let folder = open(directory.path, O_RDONLY)
         guard folder >= 0 else { return }
 
