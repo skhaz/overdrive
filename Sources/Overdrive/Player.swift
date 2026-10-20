@@ -8,6 +8,17 @@ final class Player {
         case off, all, one
     }
 
+    private nonisolated struct Session: Codable {
+        let queue: [String]
+        let order: [String]
+        let index: Int
+        let position: Double
+        let shuffle: Bool
+        let repeatMode: Int
+    }
+
+    private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
+
     private(set) var queue: [Track] = []
     private(set) var index = 0
     private(set) var playing = false
@@ -40,6 +51,8 @@ final class Player {
     @ObservationIgnored private var played = 0.0
     @ObservationIgnored private var started = Date.now
     @ObservationIgnored private var scrobbled = false
+    @ObservationIgnored private var announced = false
+    @ObservationIgnored private var restored = false
     @ObservationIgnored private var seeks = 0
     @ObservationIgnored private var status: NSKeyValueObservation?
     @ObservationIgnored private var item: AVPlayerItem?
@@ -53,6 +66,10 @@ final class Player {
 
         player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.tick(time.seconds) }
+        }
+
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.save() }
         }
 
         NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] notification in
@@ -125,15 +142,50 @@ final class Player {
         requeue()
     }
 
+    func restore(_ lookup: (String) -> Track?) {
+        guard !restored else { return }
+        restored = true
+
+        guard item == nil, let data = try? Data(contentsOf: Player.session),
+              let session = try? PropertyListDecoder().decode(Session.self, from: data) else { return }
+
+        let tracks = session.queue.compactMap(lookup)
+        guard !tracks.isEmpty else { return }
+
+        let path = session.queue.indices.contains(session.index) ? session.queue[session.index] : nil
+        let found = tracks.firstIndex { $0.url.path == path }
+
+        shuffle = session.shuffle
+        repeatMode = Repeat(rawValue: session.repeatMode) ?? .off
+        queue = tracks
+        order = session.order.compactMap(lookup)
+        if order.count != queue.count { order = queue }
+        index = found ?? 0
+
+        load(play: false)
+
+        if found != nil, session.position > 0 {
+            seek(session.position)
+            save()
+        }
+    }
+
     func toggle() {
         playing ? pause() : resume()
     }
 
     func resume() {
-        guard current != nil else { return }
+        guard let track = current else { return }
 
         player.play()
         playing = true
+
+        if !announced {
+            announced = true
+            started = .now
+            lastFM.nowPlaying(track)
+        }
+
         update()
     }
 
@@ -141,6 +193,7 @@ final class Player {
         player.pause()
         playing = false
         update()
+        save()
     }
 
     func next() {
@@ -184,13 +237,13 @@ final class Player {
         return repeatMode == .off || queue.isEmpty ? nil : 0
     }
 
-    private func load() {
+    private func load(play: Bool = true) {
         player.removeAllItems()
-        let item = enqueue(index, start: true)
+        let item = enqueue(index, start: play)
         self.item = item
         upcoming = following(index).map { enqueue($0) }
 
-        playing = true
+        playing = play
         begin()
     }
 
@@ -255,8 +308,21 @@ final class Player {
 
         status = Player.observe(item) { [weak self] in self?.next() }
 
-        lastFM.nowPlaying(track)
+        announced = playing
+        if playing { lastFM.nowPlaying(track) }
         update()
+        save()
+    }
+
+    private func save() {
+        let session = Session(queue: queue.map(\.url.path), order: order.map(\.url.path), index: index, position: position,
+                              shuffle: shuffle, repeatMode: repeatMode.rawValue)
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard let data = try? encoder.encode(session) else { return }
+
+        try? FileManager.default.createDirectory(at: Player.session.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: Player.session, options: .atomic)
     }
 
     private func tick(_ seconds: Double) {

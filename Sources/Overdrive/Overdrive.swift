@@ -32,6 +32,14 @@ struct Reopen: ViewModifier {
 }
 
 struct Overdrive: App {
+    private static let termination = {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler { NSApp.terminate(nil) }
+        source.resume()
+        return source
+    }()
+
     @NSApplicationDelegateAdaptor private var delegate: Delegate
     @State private var library: Library
     @State private var playlists = Playlists()
@@ -41,9 +49,13 @@ struct Overdrive: App {
     init() {
         let lastFM = LastFM()
         let loudness = Loudness()
+        let library = Library(loudness: loudness)
+        let player = Player(lastFM: lastFM, loudness: loudness)
+        library.loaded = { [unowned library] in player.restore(library.track) }
         _lastFM = State(initialValue: lastFM)
-        _library = State(initialValue: Library(loudness: loudness))
-        _player = State(initialValue: Player(lastFM: lastFM, loudness: loudness))
+        _library = State(initialValue: library)
+        _player = State(initialValue: player)
+        _ = Overdrive.termination
 
         Task { await lastFM.flush() }
         AppleMusic.block()

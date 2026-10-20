@@ -122,6 +122,7 @@ final class Library {
     @ObservationIgnored private var stream: FSEventStreamRef?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let loudness: Loudness
+    @ObservationIgnored var loaded: (() -> Void)?
 
     init(loudness: Loudness) {
         self.loudness = loudness
@@ -167,7 +168,12 @@ final class Library {
             search()
             scanning = false
             loudness.update(result.albums)
+            loaded?()
         }
+    }
+
+    func track(_ path: String) -> Track? {
+        lookup[path]
     }
 
     func rows(_ paths: [String]) -> [Row] {
