@@ -25,7 +25,7 @@ final class Lyrics {
     private(set) var status = ""
     private(set) var original = ""
     private(set) var saved = ""
-    var text = ""
+    var text = "" { didSet { if text != oldValue { synced = Lyrics.parse(text) } } }
     var visible = false
     var confirming = false
 
@@ -34,7 +34,7 @@ final class Lyrics {
 
     var modified: Bool { text != original }
     var changed: Bool { text != saved }
-    var synced: [SyncedLine] { Lyrics.parse(text) }
+    private(set) var synced: [SyncedLine] = []
 
     nonisolated static func ignored(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent
@@ -83,8 +83,11 @@ final class Lyrics {
                 try Data(text.utf8).write(to: url, options: .atomic)
                 try? FileManager.default.createDirectory(at: Lyrics.cache, withIntermediateDirectories: true)
                 try? Data(text.utf8).write(to: Lyrics.key(track), options: .atomic)
-            } else if FileManager.default.fileExists(atPath: url.path) {
-                try FileManager.default.removeItem(at: url)
+            } else {
+                if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+                try? FileManager.default.createDirectory(at: Lyrics.cache, withIntermediateDirectories: true)
+                try? Data().write(to: Lyrics.key(track), options: .atomic)
+                try? FileManager.default.removeItem(at: Lyrics.oldKey(track))
             }
 
             saved = text
@@ -124,8 +127,8 @@ final class Lyrics {
         original = ""
         text = ""
 
-        if let lyrics = Lyrics.cached(track), !lyrics.isEmpty {
-            apply(.success(lyrics), from: "cache")
+        if let lyrics = Lyrics.cached(track) {
+            if !lyrics.isEmpty { apply(.success(lyrics), from: "cache") }
             loading = false
             return
         }
@@ -204,12 +207,12 @@ final class Lyrics {
             var line = raw
             var times: [Double] = []
             var plain = true
-            while let open = line.firstIndex(of: "["), let close = line[open...].firstIndex(of: "]") {
-                let tag = String(line[line.index(after: open)..<close])
+            while line.first == "[", let close = line.firstIndex(of: "]") {
+                let tag = String(line[line.index(after: line.startIndex)..<close])
                 if let time = stamp(tag) {
                     times.append(time)
                 } else if tag.hasPrefix("offset:") {
-                    offset = (Double(tag.dropFirst(7).trimmingCharacters(in: .whitespaces)) ?? 0) / 1000
+                    offset = -(Double(tag.dropFirst(7).trimmingCharacters(in: .whitespaces)) ?? 0) / 1000
                 } else if !tag.contains(":") {
                     plain = false
                     break

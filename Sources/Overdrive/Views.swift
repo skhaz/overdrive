@@ -929,7 +929,7 @@ struct ContentView: View {
                                 case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
                                 }
                             }
-                            .id(library.version)
+                            .id(library.query)
                         }
                     }
                     .navigationTitle(page.title)

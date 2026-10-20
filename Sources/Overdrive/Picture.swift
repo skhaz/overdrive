@@ -107,7 +107,7 @@ nonisolated enum Picture {
     }
 
     static func read(_ file: Int32, _ offset: Int64, _ count: Int) -> Data? {
-        guard count > 0 else { return nil }
+        guard count > 0, count <= 1 << 26 else { return nil }
 
         var data = Data(count: count)
         let read = data.withUnsafeMutableBytes { pread(file, $0.baseAddress, count, offset) }
@@ -163,6 +163,8 @@ nonisolated enum Picture {
     }
 
     private static func picture(_ frame: UnsafeRawBufferPointer, _ start: Int, _ end: Int) -> Data? {
+        guard start < end else { return nil }
+
         let encoding = frame[start]
         var index = start + 1
 
@@ -192,11 +194,16 @@ nonisolated enum Picture {
 
                 if header[0] & 0x7F == 6, let block = read(file, offset + 4, length) {
                     return block.withUnsafeBytes { block -> Data? in
+                        func number(_ index: Int) -> Int? {
+                            index + 4 <= block.count ? Int(UInt32(bigEndian: block.loadUnaligned(fromByteOffset: index, as: UInt32.self))) : nil
+                        }
+
                         var index = 4
-                        index += 4 + Int(UInt32(bigEndian: block.loadUnaligned(fromByteOffset: index, as: UInt32.self)))
-                        index += 4 + Int(UInt32(bigEndian: block.loadUnaligned(fromByteOffset: index, as: UInt32.self)))
-                        index += 16
-                        let count = Int(UInt32(bigEndian: block.loadUnaligned(fromByteOffset: index, as: UInt32.self)))
+                        guard let mime = number(index) else { return nil }
+                        index += 4 + mime
+                        guard let description = number(index) else { return nil }
+                        index += 4 + description + 16
+                        guard let count = number(index) else { return nil }
                         index += 4
 
                         guard index + count <= block.count else { return nil }

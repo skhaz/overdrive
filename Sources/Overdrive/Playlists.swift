@@ -18,7 +18,7 @@ final class Playlists {
         paths = [:]
 
         for file in files where file.pathExtension == "playlist" {
-            let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+            guard let data = try? Data(contentsOf: file), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { continue }
             paths[file.deletingPathExtension().lastPathComponent] = text.split(whereSeparator: \.isNewline).map {
                 $0.hasPrefix("/") ? String($0) : Self.directory.appending(path: $0).standardized.path
             }

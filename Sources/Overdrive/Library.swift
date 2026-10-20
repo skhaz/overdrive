@@ -87,6 +87,7 @@ final class Library {
     private(set) var filtered: [Album] = []
     private(set) var tracks: [Track] = []
     private(set) var version = 0
+    @ObservationIgnored private var hits: Set<URL> = []
     var scanning = false
     var query = Player.saved?.query ?? "" { didSet { if query != oldValue { search() } } }
 
@@ -142,7 +143,7 @@ final class Library {
     }
 
     func add(_ urls: [URL]) {
-        let new = urls.filter { url in !folders.contains { url.path.hasPrefix($0.path + "/") || url == $0 } }
+        let new = urls.filter { url in !folders.contains { url.path.hasPrefix($0.path + "/") || url.path == $0.path } }
         guard !new.isEmpty else { return }
 
         folders = folders.filter { folder in !new.contains { folder.path.hasPrefix($0.path + "/") } } + new
@@ -177,17 +178,20 @@ final class Library {
     }
 
     func rows(_ paths: [String]) -> [Row] {
-        let hits = query.isEmpty ? nil : Set(tracks)
+        let hits = query.isEmpty ? nil : hits
 
         return paths.indices.compactMap { position in
-            guard let track = lookup[paths[position]], hits?.contains(track) ?? true else { return nil }
+            guard let track = lookup[paths[position]], hits?.contains(track.id) ?? true else { return nil }
 
             return Row(id: position, track: track)
         }
     }
 
     private func search() {
-        defer { version += 1 }
+        defer {
+            hits = query.isEmpty ? [] : Set(tracks.map(\.id))
+            version += 1
+        }
 
         filtered = query.isEmpty ? [] : albums.filter { $0.artist == query }
 

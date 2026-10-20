@@ -45,8 +45,8 @@ enum FileInfo {
             size = UInt32(MemoryLayout<Double>.size)
             AudioFileGetProperty(file, kAudioFilePropertyEstimatedDuration, &size, &duration)
 
-            if rate == 0, duration > 0 { rate = UInt32(Double(bytes) * 8 / duration) }
-            if rate > 0 { lines.append("Bit Rate: \((rate + 500) / 1000) kbps\(known && format.mFormatID == kAudioFormatMPEGLayer3 && MPEG.variable(url) ? " (VBR)" : "")") }
+            if rate == 0, duration > 1 { rate = UInt32(clamping: Int((Double(bytes) * 8 / duration).rounded())) }
+            if rate > 0 { lines.append("Bit Rate: \((UInt64(rate) + 500) / 1000) kbps\(known && format.mFormatID == kAudioFormatMPEGLayer3 && MPEG.variable(url) ? " (VBR)" : "")") }
         }
 
         lines.append("Size: \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")

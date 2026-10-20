@@ -90,9 +90,13 @@ nonisolated enum MP4 {
 
             switch size {
             case 0: return (type, offset + 8, limit)
-            case 1: return (type, offset + 16, offset + Int64(UInt64(bigEndian: buffer.loadUnaligned(fromByteOffset: 8, as: UInt64.self))))
+            case 1:
+                let large = UInt64(bigEndian: buffer.loadUnaligned(fromByteOffset: 8, as: UInt64.self))
+                guard large >= 16 else { return nil }
+
+                return (type, offset + 16, offset + Int64(min(large, UInt64(limit - offset))))
             case 2..<8: return nil
-            default: return (type, offset + 8, offset + Int64(size))
+            default: return (type, offset + 8, offset + min(Int64(size), limit - offset))
             }
         }
     }
@@ -122,7 +126,7 @@ nonisolated enum MP4 {
 
         let start = data.start + 8
         let count = Int(data.end - start)
-        guard count > 0 else { return "" }
+        guard count > 0, count <= 1 << 16 else { return "" }
 
         return String(unsafeUninitializedCapacity: count) { max(pread(file, $0.baseAddress, count, start), 0) }
     }
