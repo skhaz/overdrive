@@ -109,19 +109,7 @@ final class Playlists {
         paths[name] = list
 
         try? FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-        try? Data(list.map { Self.relative($0) + "\n" }.joined().utf8).write(to: file(name), options: .atomic)
-    }
-
-    private static func relative(_ path: String) -> String {
-        let base = directory.standardized.pathComponents
-        let target = URL(filePath: path).standardized.pathComponents
-        var common = 0
-
-        while common < min(base.count, target.count), base[common] == target[common] {
-            common += 1
-        }
-
-        return (repeatElement("..", count: base.count - common) + target[common...]).joined(separator: "/")
+        try? Data(list.map { $0 + "\n" }.joined().utf8).write(to: file(name), options: .atomic)
     }
 
     private func file(_ name: String) -> URL {
