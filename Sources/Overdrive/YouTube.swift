@@ -105,6 +105,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     @ObservationIgnored private var track: Track?
     @ObservationIgnored private var logged = false
     @ObservationIgnored private var signedIn = false
+    @ObservationIgnored private var canceled = false
 
     init(player: Player, _ configuration: Configuration = Configuration()) {
         self.configuration = configuration
@@ -146,7 +147,13 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         handle.dropped = { [weak self] in self?.snap() }
         handle.hovered = { [weak self] in self?.panel.standardWindowButton(.closeButton)?.animator().alphaValue = $0 ? 1 : 0 }
         player.resumed = { [weak self] in
-            if self?.panel.isVisible == true { self?.panel.close() }
+            guard let self else { return }
+
+            if panel.isVisible {
+                panel.close()
+            } else if searching {
+                canceled = true
+            }
         }
 
         let rules = YouTube.blocked.map { ["trigger": ["url-filter": NSRegularExpression.escapedPattern(for: $0)], "action": ["type": "block"]] }
@@ -182,6 +189,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         self.track = track
         searching = true
+        canceled = false
 
         switch mode {
         case .ready, .video: Task { await find() }
@@ -213,6 +221,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             }
         }
 
+        guard !canceled else { return }
         guard let id else { return stop("No video found for “\(track.artist) - \(track.title)”.") }
 
         if videos[name] != id {
@@ -239,6 +248,12 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         """
         _ = try? await web.callAsyncJavaScript(script, arguments: ["id": id], contentWorld: .page)
 
+        guard !canceled else {
+            player.intercept = nil
+            _ = try? await web.evaluateJavaScript("document.getElementById('movie_player').stopVideo()")
+            return
+        }
+
         showing = track
         show(.video)
     }
@@ -252,7 +267,9 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         let store = WKWebsiteDataStore.default()
         let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
         await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records.filter { $0.displayName.contains("youtube") || $0.displayName.contains("google") })
-        if !panel.isVisible { load() }
+        logged = false
+        if panel.isVisible { panel.close() }
+        load()
     }
 
     private func show(_ mode: Mode) {
@@ -305,9 +322,31 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
-        guard mode == .loading else { return }
+        failed(error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        failed(error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        mode = .failed
+        if panel.isVisible { panel.close() }
+        load()
+    }
+
+    private func failed(_ error: any Error) {
+        guard mode == .loading, (error as? URLError)?.code != .cancelled else { return }
 
         mode = .failed
+
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            guard let self, mode == .failed, !panel.isVisible else { return }
+
+            load()
+        }
+
         guard track != nil else { return }
 
         track = nil
