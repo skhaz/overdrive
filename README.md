@@ -5,79 +5,26 @@
 [![Release](https://github.com/skhaz/overdrive/actions/workflows/release.yml/badge.svg)](https://github.com/skhaz/overdrive/actions/workflows/release.yml)
 [![GitHub release](https://img.shields.io/github/v/release/skhaz/overdrive)](https://github.com/skhaz/overdrive/releases/latest)
 
-Music player for macOS 26 or later.
+A music player for macOS 26 or later. It plays the music in your folders, with no database and no import.
 
 ![Overdrive plays an album](.github/screenshot.png)
 
-- No database. It scans the music folders at launch and when they change. It writes to them only when you save lyrics.
-- Plays all formats that AVFoundation supports: AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
-- Shows album covers from the embedded artwork or from an image in the album folder.
-- Shows and edits lyrics in a panel.
-- Makes the volume of all songs the same.
-- Sends scrobbles to Last.fm. See [Last.fm](#lastfm).
-- Plays the music video of a song from YouTube. See [YouTube](#youtube).
-- Opens tracks and albums in Mp3tag from the context menu.
-- Right-click a song and choose Information to see the format, sample rate, channels, bit depth, bit rate, and size of the file. Click an item to copy its value.
-- Right-click a song or an album and choose Play Next or Add to Queue.
-- Right-click a song, an album, an artist, or the player bar and choose Copy to copy the song name, the artist, or the album. For a song, Artist - Song Name copies the text as "Iron Maiden - The Wicker Man".
-- Select more than one song with Command-click or Shift-click. Then right-click a selected song to use the menu on all selected songs. Right-click a song that is not selected to select it and use the menu on only that song.
-- The song that plays, or the video that plays, is selected in the list of songs and shows in the accent color. When the song changes, the selection changes.
-- Use the media keys to go to the previous song, play or pause, and go to the next song.
-- While the app is open, Apple Music cannot open. The app closes Apple Music when it starts, when Apple Music opens, and every second.
-- Press Control-P to clear the search field and type a new search.
-- Click the cover or the title in the player bar to open the album that plays.
-- When you quit the app, it saves the queue, the song, the position, play or pause, shuffle, repeat, the section, the open album or artist, and the search. When you open the app again, all of it is the same as before, but the song does not start to play. Click Play to continue. The app writes this state to `~/Library/Application Support/Overdrive/Session.plist` in one atomic write, so a crash or a power loss cannot leave a part of it.
-- Sorts the songs of an album by the disc number and then by the track number.
-- Uses the album artist tag for an album that has songs of different artists.
+## Features
 
-## Lyrics
-
-The app shows the lyrics of the song that plays in a panel.
-
-- The app reads the lyrics from the `.lrc` file next to the song, for example `Song.lrc` for `Song.mp3`.
-- When a song starts to play, the panel opens, also if the song has no lyrics, so you can type them. When the song changes, the panel shows the lyrics of the new song.
-- The panel shows only on a list of songs that has the song of the lyrics: the album of the song, Songs, or a playlist with the song. On Albums, Artists, the albums of an artist, or a different album, the panel does not show. When you go back to the album or the song, the panel shows again.
-- You can select and copy the lyrics, also synced lyrics. Click a line of synced lyrics to go to that time. While you select text, the lyrics do not scroll.
-- If there is no `.lrc` file, the app gets the lyrics from [LRCLIB](https://lrclib.net) one time and keeps them in `~/Library/Application Support/Overdrive/Lyrics`. It writes nothing to the music folder until you click Save.
-- Click Save (Command-S) to write the `.lrc` file. Save with an empty text to delete the file.
-- If the lyrics have unsaved changes, the app asks before it hides the panel or shows other lyrics. You can save, discard, or cancel and continue to edit.
-
-## Volume
-
-The app makes the loudness of all songs the same, so you do not have to change the volume between songs.
-
-- The app measures each song one time (EBU R128) and keeps the result in `~/Library/Application Support/Overdrive/Loudness.plist`. It writes nothing to the music folder.
-- The app measures the songs slowly in the background, so the Mac does not get hot. It stops in Low Power Mode and when the Mac is hot. A song that is not measured yet is measured before it starts to play. A song of more than 5 minutes starts at once and is measured for the next time.
-- When you play an album in order, the app changes the volume of the full album, so the quiet and loud songs of the album stay as they are. When shuffle is on, the app changes the volume of each song.
-- The volume of a song does not go above its peak, so the sound does not clip.
-- When you change a song file, the app measures the song again.
-- To turn it off, choose Controls > Normalize Volume.
-
-## Last.fm
-
-- The app keeps each scrobble in `~/Library/Application Support/Overdrive/Scrobbles.plist` before it sends it. The write is atomic and goes to the disk before the app continues.
-- The app removes a scrobble from the queue only when Last.fm accepts it.
-- When there is no network or Last.fm does not respond, the scrobbles stay in the queue. The app sends them when the network comes back, and tries again every minute.
-- If Last.fm gets a scrobble but the response does not arrive, the app does not know if Last.fm kept it. Before it sends it again, the app looks at the recent tracks on Last.fm and sends only the scrobbles that are not there. This prevents duplicate scrobbles. These scrobbles do not stop the app from sending other scrobbles. If the app cannot look at the recent tracks, it sends them again one day before the 14-day limit of Last.fm, so a scrobble is never lost.
-- When the daily scrobble limit of Last.fm is reached, the scrobbles stay in the queue for later.
-- The app keeps a scrobble that Last.fm rejects (for example, a filtered artist or a timestamp more than 14 days old) and shows the count in Settings.
-
-## Playlists
-
-- Each playlist is a file in `~/Music/Library/Playlists`, for example `Rock.playlist`. The file has one path of a song on each line. The path is relative to the `Playlists` folder, so the playlists continue to work if the user name or the home folder changes.
-- Click the + button in the sidebar or choose File > New Playlist (Command-N) to make a playlist.
-- Right-click a song or an album and choose Add to Playlist. Add to Playlist does not add a song that is already in the playlist. In a playlist, the menu does not show the playlist that is open.
-- Right-click a song in a playlist and choose Duplicate to have the same song two or more times.
-- Drag a song in a playlist to change the order.
-- Right-click a song in a playlist and choose Remove from Playlist, or select it and press Delete. The app asks before it removes the song. These actions also work on more than one selected song.
-- When you open a playlist, the app clears the search field.
-- Right-click a song in a playlist or in Songs and choose Go to Album or Go to Artist. Click Back to go back to the list.
-- Right-click a playlist in the sidebar and choose Delete Playlist. The app asks first, then renames the file to `{name}.backup` in the same folder. To restore the playlist, rename the file back to `{name}.playlist` and choose File > Rescan Library.
-- If you edit a playlist file in a different app, choose File > Rescan Library (Command-R).
-
-## Credits
-
-The app icon is "iPod Orange" by p_bluealt, from [macOSicons](https://macosicons.com/icon/ipod-orange-siHDxmuV8f). The MIT license does not apply to the icon.
+- **Your folders are the library.** The app scans the music folders at launch and when they change. It writes to them only when you save lyrics.
+- **All AVFoundation formats:** AAC, HE-AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, AIFF, and CAF.
+- **Album covers** from the embedded artwork or from an image in the album folder.
+- **Lyrics panel** with synced lyrics. It reads `.lrc` files, gets missing lyrics from [LRCLIB](https://lrclib.net), and lets you edit and save them.
+- **Same volume for all songs** (EBU R128), per album or per song.
+- **Last.fm scrobbles** that are never lost and never sent two times.
+- **YouTube music videos** in a small window that stays on top, with ads blocked.
+- **Playlists** as plain text files.
+- **Queue:** Play Next and Add to Queue.
+- **Session restore:** the queue, the song, the position, and the open screen are the same when you open the app again.
+- **Media keys** and Now Playing in Control Center.
+- **Apple Music cannot open** while the app is open, so the media keys always control Overdrive.
+- **File information:** format, sample rate, channels, bit depth, bit rate, and size.
+- **Mp3tag:** open songs and albums in Mp3tag from the context menu.
 
 ## Install
 
@@ -85,23 +32,145 @@ The app icon is "iPod Orange" by p_bluealt, from [macOSicons](https://macosicons
 brew install --cask skhaz/tap/overdrive
 ```
 
-## Uninstall
+To uninstall:
 
 ```sh
 brew uninstall --zap --cask overdrive
 ```
 
-The `--zap` option also removes the settings, the Last.fm session, and the lyrics cache. It does not remove the `.lrc` files in the music folders.
+The `--zap` option also removes the settings, the Last.fm session, and the lyrics cache. It does not remove the `.lrc` files in your music folders.
 
-## Build
+## How to use
+
+### Add your music
+
+Drag a music folder to the window, or choose Overdrive > Settings > Folders > Add Folder. You can add more than one folder. The app finds the songs in all subfolders.
+
+### Find and play
+
+- Use the sidebar to see **Albums**, **Artists**, or **Songs**.
+- Type in the search field to find an artist, an album, or a song.
+- Double-click a song to play it. On an album, click **Play** or **Shuffle**.
+- Use the player bar at the bottom to play, pause, go to the previous or next song, shuffle, repeat, seek, and change the volume.
+- Click the cover or the title in the player bar to open the album that plays.
+
+The song that plays is selected in the list and shows in the accent color.
+
+### Use the context menu
+
+Right-click a song, an album, or the player bar. You can:
+
+- **Play Next** or **Add to Queue**.
+- **Add to Playlist**.
+- **Watch Video on YouTube**.
+- **Go to Album** or **Go to Artist**.
+- **Copy** the song name, the artist, the album, or "Artist - Song Name".
+- See the **Information** of the file. Click an item to copy its value.
+- **Open in Mp3tag** or **Show in Finder**.
+
+To use the menu on more than one song, select the songs with Command-click or Shift-click, then right-click one of them.
+
+### Make playlists
+
+1. Click **+** in the sidebar, or choose File > New Playlist.
+2. Right-click songs or albums and choose **Add to Playlist**.
+3. Drag the songs in the playlist to change the order.
+4. To remove a song, right-click it and choose **Remove from Playlist**, or press Delete.
+
+To delete a playlist, right-click it in the sidebar. The app keeps a backup named `{name}.backup`.
+
+### Read and edit lyrics
+
+The lyrics panel opens when a song plays. Click a line of synced lyrics to go to that time. Edit the text and click **Save** (Command-S) to write the `.lrc` file next to the song. Save an empty text to delete the file.
+
+### Watch the music video
+
+1. Right-click a song and choose **Watch Video on YouTube**.
+2. The first time, sign in to Google in the window. Passkeys do not work in an app window, so click **Try another way** and use your phone or your password and a code.
+3. The video plays in a window in a corner of the screen. The song in Overdrive pauses.
+
+Drag the window to move it to a different corner. Move the pointer on the video to see the close button. When you play a song in Overdrive, the window closes.
+
+### Scrobble to Last.fm
+
+Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email) and password, and click **Connect**.
+
+### Settings
+
+| Setting | What it does |
+| --- | --- |
+| Folders | The music folders of the library. |
+| Last.fm | Connect or disconnect the Last.fm account. Shows the scrobbles that wait to be sent. |
+| YouTube > Open Videos In | Floating Window (default) or Default Browser. |
+| YouTube > Window Corner | The corner of the video window. |
+| YouTube > Sign Out | Signs out of YouTube. |
+| Controls > Normalize Volume | Turns the same volume for all songs on or off. |
+
+### Keyboard shortcuts
+
+| Keys | Action |
+| --- | --- |
+| Command-N | New playlist |
+| Command-R | Rescan the library |
+| Command-S | Save the lyrics |
+| Command-, | Settings |
+| Media keys | Previous, play or pause, next |
+
+## How it works
+
+### Volume
+
+- The app measures each song one time and keeps the result. It measures slowly in the background, and stops in Low Power Mode and when the Mac is hot.
+- When you play an album in order, the app changes the volume of the full album, so the quiet and loud songs stay as they are. With shuffle on, it changes the volume of each song.
+- The volume never goes above the peak of the song, so the sound does not clip.
+
+### Last.fm
+
+- The app writes each scrobble to the disk before it sends it, and removes it only when Last.fm accepts it.
+- With no network, the scrobbles wait and the app sends them later.
+- If the app does not know if Last.fm got a scrobble, it looks at your recent tracks on Last.fm before it sends it again. This prevents duplicates.
+- Scrobbles that Last.fm rejects show in Settings.
+
+### YouTube
+
+- The app searches YouTube for the artist and the song name, and plays the first result that has both. It ignores audio-only "Topic" channels and videos that cannot play outside YouTube.
+- The app keeps YouTube loaded in the background, so the video starts at once. It loads YouTube again every hour while the window is closed. This also keeps you signed in.
+- The app blocks the known ad requests. YouTube can change this at any time, so an ad can show. With YouTube Premium, there are no ads.
+
+### Playlists
+
+Each playlist is a text file in `~/Music/Library/Playlists`, with the path of one song on each line. The paths are relative to the `Playlists` folder. If you edit a file in a different app, choose File > Rescan Library.
+
+### Files
+
+The app keeps its data in `~/Library/Application Support/Overdrive`:
+
+| File | Content |
+| --- | --- |
+| `Session.plist` | The queue, the song, the position, and the open screen |
+| `Loudness.plist` | The volume of each song |
+| `Scrobbles.plist` | The scrobbles that wait to be sent |
+| `lastfm.plist` | The Last.fm session key |
+| `Videos.plist` | The YouTube video of each song |
+| `Lyrics/` | The lyrics from LRCLIB |
+
+The app writes the session and the scrobbles in one atomic write, so a crash or a power loss cannot damage them.
+
+## Development
+
+Build:
 
 ```sh
 ./build.sh
 ```
 
-Use a local build only to debug or to profile.
+To build with Last.fm, set the API key from https://www.last.fm/api/account/create:
 
-## Test
+```sh
+LASTFM_KEY=... LASTFM_SECRET=... ./build.sh
+```
+
+Test:
 
 ```sh
 swift test
@@ -109,37 +178,14 @@ swift test
 
 The tests use a fake Last.fm server, so they do not send scrobbles to a real account.
 
-## Release
-
-Do these steps for each change:
+Release:
 
 1. Commit the change and push it to `main`.
-2. Push a new tag, for example `v0.1.12`. The GitHub Action builds the app, creates the GitHub release, and updates the cask in `skhaz/homebrew-tap`.
-3. When the action completes, install the release:
+2. Push a new tag, for example `v0.1.12`. The GitHub Action runs the tests, builds the app, creates the GitHub release, and updates the cask in `skhaz/homebrew-tap`.
+3. When the action completes, install the release with `brew update && brew upgrade --cask overdrive`.
 
-```sh
-brew update
-brew upgrade --cask overdrive
-```
+Do all tests on the release from Homebrew, the same as a real installation. Use a local build only to debug or to profile.
 
-Do all tests on the release from GitHub and Homebrew, the same as a real installation. Use a local build only to debug or profile. Do not run a local build as the installed app.
+## Credits
 
-## Last.fm
-
-1. Get an API key at https://www.last.fm/api/account/create.
-2. Build with the key: `LASTFM_KEY=... LASTFM_SECRET=... ./build.sh`.
-3. Open Settings, enter the Last.fm username (not the email) and password, and click Connect. The app keeps only the session key, in `~/Library/Application Support/Overdrive/lastfm.plist`.
-
-## YouTube
-
-Right-click a song and choose Watch Video on YouTube.
-
-- The app searches YouTube for the artist and the song name. It plays the first result that has the song name and the artist in the title or the channel name. It ignores audio-only "Topic" channels and videos that cannot play outside YouTube. If no result agrees, the app tells you.
-- The app keeps the video of each song in `~/Library/Application Support/Overdrive/Videos.plist`, so it searches for each song only one time.
-- The video plays in a 16:9 window that stays on top of all windows, in a corner of the screen. Choose the corner in Settings > YouTube > Window Corner. When you drag the window and release it, it goes to the nearest corner. You can resize it and close it. The close button shows only when the pointer is on the video. The window shows only the video.
-- The app pauses the song that plays. While the window is open, the media keys play and pause the video. When you close the window, the media keys control the songs again. When a song starts to play in the app, the window closes, so you do not hear two sounds at the same time.
-- The app blocks the known ad requests and removes the ad data from the YouTube player response. YouTube can change this at any time, so an ad can show.
-- Before the video plays, the app makes sure that you are signed in to YouTube. If you are not signed in, or the session is expired, the window shows the Google sign-in page, and the video plays after you sign in. With YouTube Premium, the videos have no ads. Passkeys do not work in the window, because macOS lets only Google apps use passkeys for Google in an app. Click Try another way and use your phone or your password and a code.
-- The app keeps YouTube loaded in the background, so the video starts at once and the window opens only when the video plays. The app keeps the session after you quit. Every hour, while the window is closed, the app loads YouTube again, so Google renews the session and you do not have to sign in again. If you ask for a video while YouTube loads, the video starts when the load is complete.
-- To sign out, choose Settings > YouTube > Sign Out.
-- To open videos in the default browser, choose Settings > YouTube > Open Videos In > Default Browser.
+The app icon is "iPod Orange" by p_bluealt, from [macOSicons](https://macosicons.com/icon/ipod-orange-siHDxmuV8f). The MIT license does not apply to the icon.
