@@ -34,11 +34,14 @@ final class Loudness {
     private nonisolated static let workers = 2
 
     private var entries: [String: Entry]
-    private var albums: [String: [String]] = [:]
+    var albums: [String: [String]] = [:]
     private var worker: Task<Void, Never>?
+    private let file: URL
 
-    init() {
-        let stored = (try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: Loudness.file))) ?? [:]
+    init(file: URL = Loudness.file) {
+        self.file = file
+
+        let stored = (try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: file))) ?? [:]
         var migrated = false
         var entries: [String: Entry] = [:]
         entries.reserveCapacity(stored.count)
@@ -75,10 +78,15 @@ final class Loudness {
         guard !missing.isEmpty else { return }
 
         Task(priority: .utility) {
+            var measured = false
+
             for path in missing where entries[path] == nil {
                 guard let file = Loudness.file(URL(filePath: path)), let entry = await Loudness.measure(file) else { continue }
                 entries[path] = entry
+                measured = true
             }
+
+            if measured { save() }
         }
     }
 
@@ -139,7 +147,7 @@ final class Loudness {
 
         guard let data = try? encoder.encode(stored) else { return }
 
-        Persist.write(data, to: Loudness.file)
+        Persist.write(data, to: file)
     }
 
     private nonisolated static func idle() async {
