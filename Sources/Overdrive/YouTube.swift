@@ -2,7 +2,11 @@ import AppKit
 import WebKit
 
 private final class Handle: NSView {
-    override var mouseDownCanMoveWindow: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
 }
 
 @Observable
@@ -86,7 +90,6 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentAspectRatio = NSSize(width: 16, height: 9)
-        panel.isMovableByWindowBackground = true
 
         let container = NSView()
         for view in [web, handle] {
