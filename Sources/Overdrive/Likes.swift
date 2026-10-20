@@ -15,12 +15,14 @@ final class Likes {
     }
 
     func load() {
-        let list = (try? Data(contentsOf: file)).flatMap { try? PropertyListDecoder().decode([String].self, from: $0) } ?? []
+        let stored = (try? Data(contentsOf: file)).flatMap { try? PropertyListDecoder().decode([String].self, from: $0) } ?? []
         var seen: Set<String> = []
-        seen.reserveCapacity(list.count)
+        seen.reserveCapacity(stored.count)
 
-        paths = list.filter { seen.insert($0).inserted }
+        paths = stored.map(StoredPath.decode).filter { seen.insert($0).inserted }
         liked = seen
+
+        if paths.map(StoredPath.encode) != stored { save() }
     }
 
     func contains(_ track: Track) -> Bool {
@@ -58,7 +60,7 @@ final class Likes {
     private func save() {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(paths) else { return }
+        guard let data = try? encoder.encode(paths.map(StoredPath.encode)) else { return }
 
         Persist.write(data, to: file)
     }

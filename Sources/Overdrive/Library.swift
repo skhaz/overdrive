@@ -92,12 +92,22 @@ final class Library {
     var scanning = false
     var query = Player.saved?.query ?? "" { didSet { if query != oldValue { search() } } }
 
-    var folders: [URL] = UserDefaults.standard.stringArray(forKey: Library.key)?.map { URL(filePath: $0) } ?? [] {
+    var folders: [URL] = Library.savedFolders() {
         didSet {
-            UserDefaults.standard.set(folders.map(\.path), forKey: Library.key)
+            UserDefaults.standard.set(folders.map { StoredPath.encode($0.path) }, forKey: Library.key)
             watch()
             scan()
         }
+    }
+
+    private static func savedFolders() -> [URL] {
+        let stored = UserDefaults.standard.stringArray(forKey: key) ?? []
+        let paths = stored.map(StoredPath.decode)
+        let normalized = paths.map(StoredPath.encode)
+
+        if normalized != stored { UserDefaults.standard.set(normalized, forKey: key) }
+
+        return paths.map { URL(filePath: $0) }
     }
 
     var artists: [(name: String, albums: [Album])] {
@@ -469,7 +479,7 @@ final class Library {
             albumArtist: tags.albumArtist,
             year: original > 0 ? original : Int(tags.year.prefix(4)) ?? 0,
             duration: tags.duration,
-            albumID: "\(directory.path)\n\(album)"
+            albumID: StoredPath.normalizeID("\(directory.path)\n\(album)")
         )
     }
 }

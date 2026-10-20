@@ -16,26 +16,35 @@ final class Playlists {
         let files = (try? FileManager.default.contentsOfDirectory(at: Self.directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
 
         paths = [:]
-        var migrated: [String] = []
+        var migratedNames: [String] = []
 
         for file in files where file.pathExtension == "playlist" {
             guard let data = try? Data(contentsOf: file), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { continue }
-            var relative = false
+            var migrated = false
             let name = file.deletingPathExtension().lastPathComponent
 
             paths[name] = text.split(whereSeparator: \.isNewline).map {
-                guard !$0.hasPrefix("/") else { return String($0) }
+                let line = String($0)
+                let path: String
 
-                relative = true
-                return Self.directory.appending(path: $0).standardized.path
+                if line == "~" || line.hasPrefix("~/") {
+                    path = StoredPath.decode(line)
+                } else if line.hasPrefix("/") {
+                    path = line
+                } else {
+                    path = Self.directory.appending(path: line).standardized.path
+                }
+
+                if StoredPath.encode(path) != line { migrated = true }
+                return path
             }
 
-            if relative { migrated.append(name) }
+            if migrated { migratedNames.append(name) }
         }
 
         names = paths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
 
-        for name in migrated { save(name, paths[name] ?? []) }
+        for name in migratedNames { save(name, paths[name] ?? []) }
     }
 
     nonisolated static func ignored(_ path: String) -> Bool {
@@ -120,7 +129,7 @@ final class Playlists {
         paths[name] = list
 
         try? FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-        try? Data(list.map { $0 + "\n" }.joined().utf8).write(to: file(name), options: .atomic)
+        try? Data(list.map { StoredPath.encode($0) + "\n" }.joined().utf8).write(to: file(name), options: .atomic)
     }
 
     private func file(_ name: String) -> URL {

@@ -165,16 +165,16 @@ final class Player {
 
         guard item == nil, let session = Player.saved else { return }
 
-        let tracks = session.queue.compactMap(lookup)
+        let tracks = session.queue.compactMap { lookup(StoredPath.decode($0)) }
         guard !tracks.isEmpty else { return }
 
-        let path = session.queue.indices.contains(session.index) ? session.queue[session.index] : nil
+        let path = session.queue.indices.contains(session.index) ? StoredPath.decode(session.queue[session.index]) : nil
         let found = tracks.firstIndex { $0.url.path == path }
 
         shuffle = session.shuffle
         repeatMode = Repeat(rawValue: session.repeatMode) ?? .off
         queue = tracks
-        order = session.order.compactMap(lookup)
+        order = session.order.compactMap { lookup(StoredPath.decode($0)) }
         if order.count != queue.count { order = queue }
         index = found ?? 0
 
@@ -375,7 +375,7 @@ final class Player {
     }
 
     func save(wait: Bool = false) {
-        let session = Session(queue: queue.map(\.url.path), order: order.map(\.url.path), index: index, position: position,
+        let session = Session(queue: queue.map { StoredPath.encode($0.url.path) }, order: order.map { StoredPath.encode($0.url.path) }, index: index, position: position,
                               shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
                               started: started.timeIntervalSince1970, scrobbled: scrobbled,
                               page: view.page, path: view.path, query: view.query)

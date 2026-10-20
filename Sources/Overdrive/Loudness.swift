@@ -38,7 +38,20 @@ final class Loudness {
     private var worker: Task<Void, Never>?
 
     init() {
-        entries = (try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: Loudness.file))) ?? [:]
+        let stored = (try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: Loudness.file))) ?? [:]
+        var migrated = false
+        var entries: [String: Entry] = [:]
+        entries.reserveCapacity(stored.count)
+
+        for (key, entry) in stored {
+            let path = StoredPath.decode(key)
+            entries[path] = entry
+            if StoredPath.encode(path) != key { migrated = true }
+        }
+
+        self.entries = entries
+
+        if migrated { save() }
     }
 
     func gain(_ track: Track, album: Bool) -> Float? {
@@ -117,7 +130,14 @@ final class Loudness {
     private func save() {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(entries) else { return }
+        var stored: [String: Entry] = [:]
+        stored.reserveCapacity(entries.count)
+
+        for (path, entry) in entries {
+            stored[StoredPath.encode(path)] = entry
+        }
+
+        guard let data = try? encoder.encode(stored) else { return }
 
         Persist.write(data, to: Loudness.file)
     }

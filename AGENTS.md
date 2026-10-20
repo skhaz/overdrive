@@ -44,7 +44,7 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 | `Rules/` | The compiled ad block rules of the web view. |
 | `Lyrics/` | The lyrics from LRCLIB and lyrics.ovh. An empty file means "no lyrics". |
 
-Every song path that Overdrive stores in its data files is absolute, in the current files and in all future files. The Overdrive directories come from the current home directory at runtime.
+Every song path that Overdrive stores in its data files is home-relative with `~/` when it is under the home directory, in the current files and in all future files. Paths outside the home directory are absolute. The Overdrive directories come from the current home directory at runtime.
 
 ## Behavior
 
