@@ -77,4 +77,76 @@ import Testing
         let likes = Likes(file: file)
         #expect(likes.paths == [first.url.path])
     }
+
+    @Test @MainActor func startsEmptyWithoutFile() {
+        let directory = temporary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let likes = Likes(file: directory.appending(path: "Likes.plist"))
+        #expect(likes.paths.isEmpty)
+        #expect(!likes.contains(track("/Music/a.flac")))
+    }
+
+    @Test @MainActor func removesOnlySelected() {
+        let directory = temporary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = track("/Music/a.flac")
+        let second = track("/Music/b.flac")
+        let third = track("/Music/c.flac")
+        let likes = Likes(file: directory.appending(path: "Likes.plist"))
+        likes.add([first, second, third])
+        likes.remove([second, track("/Music/missing.flac")])
+
+        #expect(likes.paths == [first.url.path, third.url.path])
+        #expect(!likes.contains(second))
+    }
+
+    @Test @MainActor func reloadsChangesFromDisk() throws {
+        let directory = temporary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appending(path: "Likes.plist")
+        let first = track("/Music/a.flac")
+        let second = track("/Music/b.flac")
+        let likes = Likes(file: file)
+        likes.add([first])
+
+        try PropertyListEncoder().encode([second.url.path]).write(to: file)
+        likes.load()
+
+        #expect(likes.paths == [second.url.path])
+        #expect(!likes.contains(first))
+        #expect(likes.contains(second))
+    }
+
+    @Test @MainActor func likesEveryMissingTrackFromMixedSelection() {
+        let directory = temporary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = track("/Music/a.flac")
+        let second = track("/Music/b.flac")
+        let likes = Likes(file: directory.appending(path: "Likes.plist"))
+        likes.add([first])
+        likes.toggle([first, second])
+
+        #expect(likes.paths == [first.url.path, second.url.path])
+    }
+
+    @Test @MainActor func recoversFromInvalidFile() throws {
+        let directory = temporary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appending(path: "Likes.plist")
+        try Data("not a plist".utf8).write(to: file)
+
+        let first = track("/Music/a.flac")
+        let likes = Likes(file: file)
+        #expect(likes.paths.isEmpty)
+
+        likes.add([first])
+        #expect(Likes(file: file).paths == [first.url.path])
+    }
 }
