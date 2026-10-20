@@ -55,4 +55,14 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: directory.appending(path: "Mix.backup.plist").path))
         #expect(Playlists(directory: directory).names.isEmpty)
     }
+
+    @Test @MainActor func rejectsBackupNames() throws {
+        let directory = temporary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let playlists = Playlists(directory: directory)
+        #expect(playlists.create("Mix.backup", [URL(filePath: StoredPath.home + "/Music/a.flac")]) == nil)
+        #expect(playlists.names.isEmpty)
+    }
 }

@@ -62,7 +62,7 @@ final class Playlists {
     func valid(_ name: String) -> Bool {
         let name = name.trimmingCharacters(in: .whitespaces)
 
-        return !name.isEmpty && !name.hasPrefix(".") && !name.contains("/") && !name.contains(":")
+        return !name.isEmpty && !name.hasPrefix(".") && !name.hasSuffix(".backup") && !name.contains("/") && !name.contains(":")
             && !names.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
     }
 
