@@ -781,6 +781,7 @@ struct ContentView: View {
     @State private var deleting: String?
     @State private var path = NavigationPath()
     @FocusState private var searching: Bool
+    @Environment(\.controlActiveState) private var active
 
     var body: some View {
         @Bindable var library = library
@@ -914,6 +915,12 @@ struct ContentView: View {
             if let current = player.current { lyrics.show(current) }
         }
         .onChange(of: search) { searching = true }
+        .onAppear { searching = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUpdateNotification)) { _ in
+            guard !searching, active == .key, playlists.naming == nil, deleting == nil, !lyrics.confirming,
+                  !(NSApp.keyWindow?.firstResponder is NSText) else { return }
+            searching = true
+        }
         .onChange(of: page) {
             path = NavigationPath()
             if case .playlist = page { library.query = "" }
