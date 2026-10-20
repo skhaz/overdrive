@@ -18,6 +18,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.
 - **Playlists** and a queue (Play Next and Add to Queue).
+- **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar.
 - **Continues where you stopped.** When you open the app again, it shows the same song, at the same time.
 - **Keyboard media keys** and Control Center play, pause, and change songs.
 - **Apple Music does not open by accident** while you use Overdrive.
@@ -70,6 +71,12 @@ To do this for more than one song, select the songs with Command-click or Shift-
 4. To remove a song, right-click it and choose **Remove from Playlist**, or press Delete.
 
 To delete a playlist, right-click it in the sidebar. The app keeps a backup copy in the Playlists folder (Music > Library > Playlists).
+
+### Like songs
+
+Click the heart in the bottom bar to like the song that plays. You can also right-click any song or album and choose **Like Song**. A heart shows next to each liked song in the lists.
+
+Click **Liked Songs** in the sidebar, below Songs, to see all liked songs. To remove a like, right-click the song and choose **Unlike Song**, or click the heart again while the song plays.
 
 ### Lyrics
 

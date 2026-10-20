@@ -38,6 +38,7 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 | `Session.plist` | The queue, the order, the song, the position, shuffle, repeat, the scrobble state, and the open screen. One atomic and durable write. |
 | `Loudness.plist` | The EBU R128 loudness of each song. |
 | `Scrobbles.plist` | The pending and rejected scrobbles. One atomic and durable write before each send. |
+| `Likes.plist` | The paths of the liked songs. Loaded at boot and written on each like or unlike. |
 | `lastfm.plist` | The Last.fm session key and user name. |
 | `Videos.plist` | The YouTube video ID of each song. |
 | `Rules/` | The compiled ad block rules of the web view. |

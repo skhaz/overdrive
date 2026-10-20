@@ -18,10 +18,13 @@ enum Section: String, CaseIterable, Identifiable {
 enum Page: Hashable {
     case section(Section)
     case playlist(String)
+    case liked
 
     init?(key: String) {
         if key.hasPrefix("playlist:") {
             self = .playlist(String(key.dropFirst(9)))
+        } else if key == "liked" {
+            self = .liked
         } else if let section = Section(rawValue: key) {
             self = .section(section)
         } else {
@@ -33,6 +36,7 @@ enum Page: Hashable {
         switch self {
         case .section(let section): section.rawValue
         case .playlist(let name): "playlist:" + name
+        case .liked: "liked"
         }
     }
 
@@ -40,6 +44,7 @@ enum Page: Hashable {
         switch self {
         case .section(let section): section.rawValue
         case .playlist(let name): name
+        case .liked: "Liked Songs"
         }
     }
 }
@@ -105,12 +110,16 @@ struct TrackMenu: View {
     var exclude: String?
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
+    @Environment(Likes.self) private var likes
     @Environment(YouTube.self) private var youTube
 
     var body: some View {
         if !tracks.isEmpty {
             Button("Play Next") { player.insert(tracks, next: true) }
             Button("Add to Queue") { player.insert(tracks, next: false) }
+
+            let liked = tracks.allSatisfy(likes.contains)
+            Button((liked ? "Unlike " : "Like ") + (tracks.count == 1 ? "Song" : "Songs"), systemImage: liked ? "heart.slash" : "heart") { likes.toggle(tracks) }
 
             if tracks.count == 1 {
                 Button("Watch Video on YouTube") { youTube.watch(tracks[0]) }
@@ -509,6 +518,7 @@ struct AlbumView: View {
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Lyrics.self) private var lyrics
+    @Environment(Likes.self) private var likes
     @Environment(\.go) private var go
     @State private var selection: Set<Track.ID> = []
     @State private var anchor: Int?
@@ -564,6 +574,10 @@ struct AlbumView: View {
                                 .frame(width: 28, alignment: .trailing)
 
                                 Text(track.title).foregroundStyle(track == youTube.showing ?? player.current ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+
+                                if likes.contains(track) {
+                                    Image(systemName: "heart.fill").font(.caption).foregroundStyle(.secondary)
+                                }
 
                                 if album.artist != track.artist {
                                     Text(track.artist).foregroundStyle(.secondary)
@@ -693,12 +707,19 @@ struct GoMenu: View {
 struct Cell: View {
     let text: String
     let playing: Bool
+    var liked = false
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
-        Text(text)
-            .foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-            .padding(.vertical, Stripe.padding)
+        HStack(spacing: 4) {
+            Text(text)
+                .foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+
+            if liked {
+                Image(systemName: "heart.fill").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, Stripe.padding)
     }
 }
 
@@ -706,13 +727,14 @@ struct SongTable: View {
     let tracks: [Track]
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
+    @Environment(Likes.self) private var likes
     @State private var selection: Set<Track.ID> = []
 
     var body: some View {
         let now = youTube.showing ?? player.current
 
         Table(tracks, selection: $selection) {
-            TableColumn("Title") { Cell(text: $0.title, playing: $0 == now) }
+            TableColumn("Title") { Cell(text: $0.title, playing: $0 == now, liked: likes.contains($0)) }
             TableColumn("Artist") { Cell(text: $0.artist, playing: $0 == now) }
             TableColumn("Album") { Cell(text: $0.album, playing: $0 == now) }
             TableColumn("Time") { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
@@ -743,6 +765,7 @@ struct PlaylistView: View {
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Playlists.self) private var playlists
+    @Environment(Likes.self) private var likes
     @State private var selection: Set<Row.ID> = []
     @State private var removing: [Row] = []
 
@@ -754,7 +777,7 @@ struct PlaylistView: View {
             ContentUnavailableView("No Songs", systemImage: "music.note.list", description: Text("Right-click a song or an album and choose Add to Playlist."))
         } else {
             Table(of: Row.self, selection: $selection) {
-                TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now) }
+                TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now, liked: likes.contains($0.track)) }
                 TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
                 TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
                 TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
@@ -824,9 +847,62 @@ struct PlaylistView: View {
     }
 }
 
+struct LikedView: View {
+    @Environment(Library.self) private var library
+    @Environment(Player.self) private var player
+    @Environment(YouTube.self) private var youTube
+    @Environment(Likes.self) private var likes
+    @State private var selection: Set<Row.ID> = []
+
+    var body: some View {
+        let rows = library.rows(likes.paths)
+        let now = youTube.showing ?? player.current
+
+        if likes.paths.isEmpty {
+            ContentUnavailableView("No Liked Songs", systemImage: "heart", description: Text("Right-click a song and choose Like Song, or click the heart next to the song that plays."))
+        } else {
+            Table(of: Row.self, selection: $selection) {
+                TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now) }
+                TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
+                TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
+                TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
+            } rows: {
+                ForEach(rows) { TableRow($0) }
+            }
+            .contextMenu(forSelectionType: Row.ID.self) { ids in
+                let picked = rows.filter { ids.contains($0.id) }
+
+                if !picked.isEmpty {
+                    TrackMenu(tracks: picked.map(\.track))
+
+                    if picked.count == 1 {
+                        GoMenu(track: picked[0].track)
+                    }
+
+                    CopyMenu(tracks: picked.map(\.track))
+                    FileMenu(urls: picked.map(\.track.url))
+                }
+            } primaryAction: { ids in
+                guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
+
+                player.play(rows.map(\.track), at: index)
+            }
+            .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+                guard let track else { return }
+
+                if let row = rows.first(where: { $0.track == track }) {
+                    selection = [row.id]
+                }
+            }
+            .navigationSubtitle(count(rows.count, "song"))
+        }
+    }
+}
+
 struct Controls: View {
     let open: (Track) -> Void
     @Environment(Player.self) private var player
+    @Environment(Likes.self) private var likes
     @State private var scrub: Double?
 
     var body: some View {
@@ -850,6 +926,17 @@ struct Controls: View {
             .buttonStyle(.plain)
             .contextMenu {
                 CopyMenu(tracks: player.current.map { [$0] } ?? [])
+            }
+
+            if let track = player.current {
+                let liked = likes.contains(track)
+
+                Button(liked ? "Unlike Song" : "Like Song", systemImage: liked ? "heart.fill" : "heart") {
+                    likes.toggle([track])
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(liked ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
             }
 
             HStack(spacing: 14) {
@@ -894,6 +981,7 @@ struct ContentView: View {
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
+    @Environment(Likes.self) private var likes
     @State private var lyrics = Lyrics()
     @State private var page = Page(key: Player.saved?.page ?? "") ?? .section(.albums)
     @State private var name = ""
@@ -912,6 +1000,8 @@ struct ContentView: View {
                     ForEach(Section.allCases) { section in
                         row(section.rawValue, section.symbol, .section(section))
                     }
+
+                    row("Liked Songs", "heart", .liked)
 
                     SwiftUI.Section {
                         ForEach(playlists.names, id: \.self) { name in
@@ -950,6 +1040,7 @@ struct ContentView: View {
                                 case .section(.albums): AlbumGrid(albums: library.filtered)
                                 case .section(.artists): ArtistList(artists: library.artists)
                                 case .playlist(let name): PlaylistView(name: name)
+                                case .liked: LikedView()
                                 case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
                                 }
                             }
@@ -1051,7 +1142,10 @@ struct ContentView: View {
         .onChange(of: page) {
             remember()
             path = []
-            if case .playlist = page { library.query = "" }
+            switch page {
+            case .playlist, .liked: library.query = ""
+            case .section: break
+            }
         }
         .onChange(of: library.query) {
             navigate([])
@@ -1088,6 +1182,7 @@ struct ContentView: View {
         case (.artist, _): return false
         case (nil, .section(.songs)): return library.tracks.contains(track)
         case (nil, .playlist(let name)): return playlists.paths[name]?.contains(track.url.path) ?? false
+        case (nil, .liked): return likes.contains(track)
         case (nil, .section): return false
         }
     }

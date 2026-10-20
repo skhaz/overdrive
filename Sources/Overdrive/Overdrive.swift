@@ -81,6 +81,7 @@ struct Overdrive: App {
     @NSApplicationDelegateAdaptor private var delegate: Delegate
     @State private var library = Overdrive.shared.library
     @State private var playlists = Playlists()
+    @State private var likes = Likes()
     @State private var lastFM = Overdrive.shared.lastFM
     @State private var player = Overdrive.shared.player
     @State private var youTube = Overdrive.shared.youTube
@@ -91,6 +92,7 @@ struct Overdrive: App {
                 .environment(library)
                 .environment(player)
                 .environment(playlists)
+                .environment(likes)
                 .environment(youTube)
                 .modifier(Reopen(delegate: delegate))
         }
@@ -110,6 +112,7 @@ struct Overdrive: App {
                 Button("Rescan Library") {
                     library.scan()
                     playlists.load()
+                    likes.load()
                 }
                 .keyboardShortcut("r")
             }
