@@ -211,6 +211,7 @@ struct LyricsView: View {
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
     @State private var editing = false
+    @FocusState private var typing: Bool
 
     var body: some View {
         @Bindable var lyrics = lyrics
@@ -244,6 +245,7 @@ struct LyricsView: View {
                         SyncedLyrics(lines: lines, current: current) { player.seek($0) }
                     } else {
                         TextEditor(text: $lyrics.text)
+                            .focused($typing)
                             .font(.body)
                             .scrollContentBackground(.hidden)
                             .padding(6)
@@ -264,6 +266,10 @@ struct LyricsView: View {
             }
             .padding()
             .onChange(of: track) { editing = false }
+            .onReceive(NotificationCenter.default.publisher(for: .editLyrics)) { _ in
+                if !lines.isEmpty { editing = true }
+                Task { typing = true }
+            }
         }
     }
 }
@@ -529,10 +535,12 @@ struct AlbumGrid: View {
 extension Notification.Name {
     static let rightClick = Notification.Name("rightClick")
     static let key = Notification.Name("key")
+    static let reveal = Notification.Name("reveal")
+    static let editLyrics = Notification.Name("editLyrics")
 }
 
 enum Key {
-    case up, down, left, right, enter, menu
+    case up, down, left, right, enter, menu, delete, extendUp, extendDown
 }
 
 func showMenu(at point: CGPoint? = nil, in table: NSTableView? = nil) {
@@ -577,6 +585,8 @@ struct Keys: ViewModifier {
     let select: (Int) -> Void
     let enter: (Int) -> Void
     var point: ((Int) -> CGPoint?)?
+    var extend: ((Int) -> Void)?
+    var delete: (() -> Void)?
     @Environment(\.active) private var active
 
     func body(content: Content) -> some View {
@@ -593,6 +603,9 @@ struct Keys: ViewModifier {
             case .right where columns > 1: select(last.map { min($0 + 1, count - 1) } ?? 0)
             case .enter: if let first { enter(first) }
             case .menu: if let first { showMenu(at: point?(first)) }
+            case .delete: if first != nil { delete?() }
+            case .extendUp: if let first, first > 0 { extend?(first - 1) }
+            case .extendDown: if let last, last < count - 1 { extend?(last + 1) }
             case .left, .right: break
             }
         }
@@ -699,7 +712,10 @@ struct AlbumView: View {
                 selection = [album.tracks[index].id]
                 anchor = index
                 proxy.scrollTo(index)
-            }, enter: { player.start(album.tracks, at: $0) }, point: { CGPoint(x: list.rect.minX + 40, y: list.rect.minY + (CGFloat($0) + 0.5) * Stripe.height) }))
+            }, enter: { player.start(album.tracks, at: $0) }, point: { CGPoint(x: list.rect.minX + 40, y: list.rect.minY + (CGFloat($0) + 0.5) * Stripe.height) }, extend: { index in
+                selection.insert(album.tracks[index].id)
+                proxy.scrollTo(index)
+            }))
         }
         .navigationTitle(album.title)
         .onReceive(NotificationCenter.default.publisher(for: .rightClick)) { notification in
@@ -863,7 +879,10 @@ struct SongTable: View {
             .modifier(Keys(count: tracks.count, selected: { selection.contains(tracks[$0].id) }, select: { index in
                 selection = [tracks[index].id]
                 proxy.scrollTo(tracks[index].id)
-            }, enter: { player.start(tracks, at: $0) }))
+            }, enter: { player.start(tracks, at: $0) }, extend: { index in
+                selection.insert(tracks[index].id)
+                proxy.scrollTo(tracks[index].id)
+            }))
         }
     }
 }
@@ -942,7 +961,10 @@ struct PlaylistView: View {
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
-                }, enter: { player.start(rows.map(\.track), at: $0) }))
+                }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
+                    selection.insert(rows[index].id)
+                    proxy.scrollTo(rows[index].id)
+                }, delete: { removing = rows.filter { selection.contains($0.id) } }))
             }
         }
     }
@@ -1014,7 +1036,10 @@ struct LikedView: View {
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
-                }, enter: { player.start(rows.map(\.track), at: $0) }))
+                }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
+                    selection.insert(rows[index].id)
+                    proxy.scrollTo(rows[index].id)
+                }))
             }
         }
     }
@@ -1103,6 +1128,7 @@ struct ContentView: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
+    @Environment(YouTube.self) private var youTube
     @State private var lyrics = Lyrics()
     @State private var page = Page(key: Player.saved?.page ?? "") ?? .section(.albums)
     @State private var name = ""
@@ -1144,6 +1170,9 @@ struct ContentView: View {
                 }
                 .navigationSplitViewColumnWidth(180)
                 .focused($focus, equals: .sidebar)
+                .onDeleteCommand {
+                    if case .playlist(let name) = page { deleting = name }
+                }
             } detail: {
                 NavigationStack(path: Binding { path } set: { navigate($0) }) {
                     Group {
@@ -1196,10 +1225,7 @@ struct ContentView: View {
             .searchFocused($focus, equals: .search)
 
             Divider()
-            Controls { track in
-                guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
-                navigate([.album(album)])
-            }
+            Controls(open: reveal)
             .background(.bar)
         }
         .dropDestination(for: URL.self) { urls, _ in
@@ -1250,6 +1276,9 @@ struct ContentView: View {
 
             navigate(value)
         })
+        .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
+            if let current = player.current { reveal(current) }
+        }
         .onChange(of: player.current) {
             if let current = player.current { lyrics.show(current) }
         }
@@ -1309,6 +1338,17 @@ struct ContentView: View {
 
         guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
 
+        if event.keyCode == 53, youTube.showing != nil {
+            youTube.close()
+            return true
+        }
+
+        if event.keyCode == 53, focus == nil, window.firstResponder is NSTextView {
+            window.makeFirstResponder(nil)
+            return true
+        }
+
+        let shift = event.modifierFlags.contains(.shift)
         let key: Key
         switch (event.keyCode, focus) {
         case (48, .search):
@@ -1317,11 +1357,12 @@ struct ContentView: View {
         case (48, .sidebar), (36, .sidebar), (76, .sidebar):
             focus = .search
             return true
-        case (126, .search): key = .up
-        case (125, .search): key = .down
+        case (126, .search): key = shift ? .extendUp : .up
+        case (125, .search): key = shift ? .extendDown : .down
         case (123, .search) where library.query.isEmpty: key = .left
         case (124, .search) where library.query.isEmpty: key = .right
         case (36, .search), (76, .search): key = .enter
+        case (51, .search) where library.query.isEmpty: key = .delete
         case (49, .search) where library.query.isEmpty:
             player.toggle()
             return true
@@ -1333,6 +1374,11 @@ struct ContentView: View {
 
         NotificationCenter.default.post(name: .key, object: key)
         return true
+    }
+
+    private func reveal(_ track: Track) {
+        guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
+        navigate([.album(album)])
     }
 
     private func remember() {

@@ -135,7 +135,30 @@ struct Overdrive: App {
                 Button("Decrease Volume", systemImage: "speaker.wave.1.fill") { player.volume = max(player.volume - 0.1, 0) }
                     .keyboardShortcut(.downArrow)
                 Divider()
+                Button("Seek Forward", systemImage: "goforward.10") { player.seek(min(player.position + 10, player.duration)) }
+                    .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                    .disabled(player.current == nil)
+                Button("Seek Backward", systemImage: "gobackward.10") { player.seek(max(player.position - 10, 0)) }
+                    .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                    .disabled(player.current == nil)
+                Divider()
+                Button("Go to Current Song") { NotificationCenter.default.post(name: .reveal, object: nil) }
+                    .keyboardShortcut("l")
+                    .disabled(player.current == nil)
+                Button(player.current.map(likes.contains) == true ? "Unlike Song" : "Like Song", systemImage: "heart") {
+                    if let current = player.current { likes.toggle([current]) }
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
+                .disabled(player.current == nil)
+                Button("Edit Lyrics", systemImage: "pencil") { NotificationCenter.default.post(name: .editLyrics, object: nil) }
+                    .keyboardShortcut("e")
+                Divider()
                 Toggle("Shuffle", systemImage: "shuffle", isOn: $player.shuffle)
+                    .keyboardShortcut("s", modifiers: [.command, .option])
+                Button("Repeat: " + ["Off", "All", "One"][player.repeatMode.rawValue], systemImage: "repeat") {
+                    player.repeatMode = Player.Repeat(rawValue: (player.repeatMode.rawValue + 1) % 3)!
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
                 Toggle("Normalize Volume", systemImage: "speaker.wave.2", isOn: $player.normalize)
             }
         }

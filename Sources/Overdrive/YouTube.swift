@@ -273,6 +273,10 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         alert(message)
     }
 
+    func close() {
+        if panel.isVisible { panel.close() }
+    }
+
     func signOut() async {
         let store = WKWebsiteDataStore.default()
         let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
