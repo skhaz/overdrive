@@ -6,16 +6,17 @@ final class LyricsPanel {
 
     init(lyrics: Lyrics, player: Player) {
         let width: CGFloat = 340
-        let height: CGFloat = 560
+        let height: CGFloat = 380
         let screen = NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
         let visible = screen.visibleFrame
 
         window = NSPanel(
             contentRect: NSRect(x: visible.maxX - width - 24, y: visible.maxY - height - 24, width: width, height: height),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
+        window.minSize = NSSize(width: 280, height: 240)
         window.level = .floating
         window.isMovableByWindowBackground = true
         window.becomesKeyOnlyIfNeeded = true
