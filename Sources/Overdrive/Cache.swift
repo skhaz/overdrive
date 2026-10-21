@@ -61,7 +61,7 @@ nonisolated final class Cache {
         """
 
     let folder: URL
-    private let root: String
+    let root: String
     private var db: OpaquePointer?
 
     init?(_ folder: URL, file: URL? = nil) {

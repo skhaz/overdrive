@@ -424,7 +424,7 @@ final class Library {
             let cache = caches[number]
             var known = knowns[number]
 
-            if let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+            if let enumerator = FileManager.default.enumerator(at: cache.map { URL(filePath: $0.root) } ?? folder, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
                 while let url = enumerator.nextObject() as? URL {
                     guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
 
