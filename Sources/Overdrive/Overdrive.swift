@@ -117,6 +117,12 @@ struct Overdrive: App {
                 .keyboardShortcut("r")
             }
 
+            CommandGroup(after: .textEditing) {
+                Button("Clear Search") { library.query = "" }
+                    .keyboardShortcut("k")
+                    .disabled(library.query.isEmpty)
+            }
+
             CommandMenu("Controls") {
                 Button(player.playing ? "Pause" : "Play", systemImage: "playpause.fill", action: player.toggle)
                 Button("Next", systemImage: "forward.fill", action: player.next)

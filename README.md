@@ -112,6 +112,7 @@ To turn off the same volume for all songs, choose Controls > Normalize Volume.
 | --- | --- |
 | Command-N | New playlist |
 | Command-R | Look for new music in your folders |
+| Command-K | Clear the search |
 | Command-S | Save the lyrics |
 | Command-, | Settings |
 | Media keys | Previous song, play or pause, next song |
