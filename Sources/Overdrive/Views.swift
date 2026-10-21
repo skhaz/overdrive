@@ -1193,11 +1193,10 @@ struct ContentView: View {
     @State private var monitor: Any?
     @State private var swipe: CGFloat = 0
     @State private var navigator = Navigator()
+    @State private var search = ""
     @FocusState private var focus: Focus?
 
     var body: some View {
-        @Bindable var library = library
-
         VStack(spacing: 0) {
             NavigationSplitView {
                 List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { navigation.open(value, leaving: tracker.position) } } }) {
@@ -1284,8 +1283,13 @@ struct ContentView: View {
                         .disabled(navigation.forward.isEmpty)
                 }
             }
-            .searchable(text: $library.query, placement: .toolbarPrincipal)
+            .searchable(text: $search, placement: .toolbarPrincipal)
             .searchFocused($focus, equals: .search)
+            .task(id: search) {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled else { return }
+                library.query = search
+            }
 
             Divider()
             Controls(open: reveal)
@@ -1349,6 +1353,7 @@ struct ContentView: View {
             navigator.progress = { swipe = $0 }
             navigator.go = { $0 ? goBack() : goForward() }
             focus = .search
+            search = library.query
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { press($0) ? nil : $0 }
         }
         .onDisappear {
@@ -1365,6 +1370,9 @@ struct ContentView: View {
         .onChange(of: navigation.place) {
             tracker.position = navigation.place.position
             remember()
+        }
+        .onChange(of: library.query, initial: true) {
+            if search != library.query { search = library.query }
         }
         .onChange(of: library.query) {
             navigate([])
@@ -1478,7 +1486,7 @@ struct ContentView: View {
             return true
         }
 
-        let typing = focus == .search && !library.query.isEmpty
+        let typing = focus == .search && !search.isEmpty
         let key: Key
         switch (event.keyCode, sidebar) {
         case (48, false):
@@ -1487,10 +1495,10 @@ struct ContentView: View {
         case (48, true), (36, true), (76, true):
             focus = .search
             return true
-        case (126, false): key = .step(flags == .shift ? .extendUp : .up)
-        case (125, false): key = .step(flags == .shift ? .extendDown : .down)
-        case (123, false) where !typing: key = .step(.left)
-        case (124, false) where !typing: key = .step(.right)
+        case (126, _): key = .step(flags == .shift ? .extendUp : .up)
+        case (125, _): key = .step(flags == .shift ? .extendDown : .down)
+        case (123, _) where !typing: key = .step(.left)
+        case (124, _) where !typing: key = .step(.right)
         case (36, false), (76, false): key = .enter
         case (51, false) where !typing: key = .delete
         case (49, false) where !typing:
