@@ -20,9 +20,6 @@ Commit each change when it is complete. Do not ask before you commit.
 - Build: `./build.sh`. To build with Last.fm, set the API key from https://www.last.fm/api/account/create: `LASTFM_KEY=... LASTFM_SECRET=... ./build.sh`.
 - Test: `swift test`. The tests use a fake Last.fm server, so they do not send scrobbles to a real account. The `Release` action runs the tests before the build.
 - Do all tests on the release from Homebrew, the same as a real installation. Use a local build only to debug or to profile.
-- Benchmark: `LibraryBenchmarks` runs only when `OVERDRIVE_BENCH` is set to a music folder. It only reads the folder:
-  `OVERDRIVE_BENCH=~/Music/Library swift test -c release -Xswiftc -enable-testing --filter LibraryBenchmarks`.
-  It prints the time of `Library.load` (the scan at launch) and of the folder walk alone. With 4906 songs in a release build: 1.31 s with a cold disk cache, 0.51 s with a warm disk cache, 0.21 to 0.27 s for the walk alone, and almost nothing for the covers. A cache of the tags can save at most the difference between the load and the walk (about 0.25 s, or 0.7 to 1 s after a reboot), because the walk is necessary to find every added and removed file.
 - Sanitizers: `swift test --sanitize=address`, `swift test --sanitize=undefined`, and `swift test --sanitize=thread`.
 - Fuzzing: run the libFuzzer targets in Docker (OrbStack), because the macOS toolchain has no libFuzzer runtime:
   `docker run --rm -v "$PWD":/src:ro -v /tmp/fuzz:/out -e OUT=/out --shm-size=256m swift:latest sh /src/Fuzz/fuzz.sh 300`.
