@@ -10,7 +10,7 @@ final class Lyrics {
     }
 
     private nonisolated static let cache = URL.applicationSupportDirectory.appending(path: "Overdrive/Lyrics")
-    private nonisolated static let agent = "Overdrive/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")"
+    private nonisolated static let agent = "Overdrive/v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0")"
     private nonisolated static let timeout: TimeInterval = 10
     private nonisolated static let attempts = 3
     private nonisolated static let retryDelay: ClosedRange<Double> = 1...3
