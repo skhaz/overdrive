@@ -106,6 +106,15 @@ func count(_ number: Int, _ noun: String) -> String {
     "\(number) \(noun)\(number == 1 ? "" : "s")"
 }
 
+func summary(_ tracks: some Collection<Track>) -> String {
+    count(tracks.count, "song") + " · " + tracks.reduce(0) { $0 + $1.duration }.time
+}
+
+func summary(_ albums: [Album]) -> String {
+    let (songs, seconds) = albums.reduce((0, 0.0)) { total, album in album.tracks.reduce((total.0 + album.tracks.count, total.1)) { ($0.0, $0.1 + $1.duration) } }
+    return count(songs, "song") + " · " + seconds.time
+}
+
 extension Double {
     var time: String {
         guard isFinite, self > 0 else { return "0:00" }
@@ -569,8 +578,10 @@ func showMenu(at point: CGPoint? = nil, in table: NSTableView? = nil) {
     }
 
     guard let event = NSEvent.mouseEvent(with: .rightMouseDown, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return }
-    window.sendEvent(event)
+                                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1),
+          let frame = content.superview, let view = frame.hitTest(frame.convert(location, from: nil)) else { return }
+
+    view.rightMouseDown(with: event)
 }
 
 extension EnvironmentValues {
@@ -682,10 +693,11 @@ struct AlbumView: View {
                                 }
                                 .frame(width: 28, alignment: .trailing)
 
-                                Text(track.title).foregroundStyle(track == youTube.showing ?? player.current ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                                let now = track == youTube.showing ?? player.current
+                                Text(track.title).foregroundStyle(now ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
 
                                 if likes.contains(track) {
-                                    Image(systemName: "heart.fill").font(.caption).foregroundStyle(.red)
+                                    Image(systemName: "heart").font(.caption).foregroundStyle(now ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                                 }
 
                                 if album.artist != track.artist {
@@ -840,7 +852,7 @@ struct Cell: View {
                 .foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
 
             if liked {
-                Image(systemName: "heart.fill").font(.caption).foregroundStyle(.red)
+                Image(systemName: "heart").font(.caption).foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
             }
         }
         .padding(.vertical, Stripe.padding)
@@ -962,7 +974,7 @@ struct PlaylistView: View {
                         playlists.remove(Set(removing.map(\.id)), from: name)
                     }
                 }
-                .navigationSubtitle(count(rows.count, "song"))
+                .navigationSubtitle(summary(rows.map(\.track)))
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
@@ -1037,7 +1049,7 @@ struct LikedView: View {
                         selection = [row.id]
                     }
                 }
-                .navigationSubtitle(count(rows.count, "song"))
+                .navigationSubtitle(summary(rows.map(\.track)))
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
@@ -1144,7 +1156,6 @@ struct ContentView: View {
     @State private var history = History<Place>()
     @State private var restoring: [Route]?
     @FocusState private var focus: Focus?
-    @Environment(\.controlActiveState) private var active
 
     var body: some View {
         @Bindable var library = library
@@ -1196,11 +1207,11 @@ struct ContentView: View {
                         } else {
                             Group {
                                 switch page {
-                                case .section(.albums): AlbumGrid(albums: library.filtered)
-                                case .section(.artists): ArtistList(artists: library.artists)
+                                case .section(.albums): AlbumGrid(albums: library.filtered).navigationSubtitle(summary(library.filtered))
+                                case .section(.artists): ArtistList(artists: library.artists).navigationSubtitle(summary(library.artists.flatMap(\.albums)))
                                 case .playlist(let name): PlaylistView(name: name)
                                 case .liked: LikedView()
-                                case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
+                                case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(summary(library.tracks))
                                 }
                             }
                             .environment(\.active, path.isEmpty)
@@ -1212,7 +1223,8 @@ struct ContentView: View {
                         Group {
                             switch route {
                             case .album(let album): AlbumView(album: album)
-                            case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name)
+                            case .artist(let name): let albums = library.albums.filter { $0.artist == name }
+                            AlbumGrid(albums: albums).navigationTitle(name).navigationSubtitle(summary(albums))
                             }
                         }
                         .environment(\.active, path.last == route)
@@ -1311,11 +1323,6 @@ struct ContentView: View {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUpdateNotification)) { _ in
-            guard focus == nil, active == .key, playlists.naming == nil, deleting == nil, !lyrics.confirming,
-                  !(NSApp.keyWindow?.firstResponder is NSText) else { return }
-            focus = .search
-        }
         .onChange(of: library.version) {
             guard let saved, !library.albums.isEmpty else { return }
 
@@ -1343,7 +1350,7 @@ struct ContentView: View {
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
-        guard let window = event.window, window.isKeyWindow, window.attachedSheet == nil else { return event }
+        guard let window = event.window, window.isKeyWindow, window.identifier?.rawValue.hasPrefix("main") == true, window.attachedSheet == nil else { return event }
 
         switch event.type {
         case .keyDown: return press(event) ? nil : event
@@ -1397,48 +1404,54 @@ struct ContentView: View {
     }
 
     private func press(_ event: NSEvent) -> Bool {
-        guard let window = event.window, window.isKeyWindow, window.attachedSheet == nil, playlists.naming == nil, deleting == nil, !lyrics.confirming else { return false }
+        guard let window = event.window, window.isKeyWindow, window.identifier?.rawValue.hasPrefix("main") == true, window.attachedSheet == nil,
+              playlists.naming == nil, deleting == nil, !lyrics.confirming else { return false }
 
-        if event.modifierFlags.intersection([.command, .option, .control, .shift]) == .control, event.keyCode == 36 || event.keyCode == 76 {
-            switch focus {
-            case .sidebar: showMenu(in: window.firstResponder as? NSTableView)
-            case .search: NotificationCenter.default.post(name: .key, object: Key.menu)
-            case nil: return false
-            }
+        let sidebar = focus == .sidebar
+        guard sidebar || focus == .search || !(window.firstResponder is NSText) else {
+            guard event.keyCode == 53, event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
+
+            focus = .search
             return true
         }
 
-        guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if flags == .command, event.keyCode == 3 {
+            focus = .search
+            return true
+        }
+
+        if flags == .control, event.keyCode == 36 || event.keyCode == 76 {
+            if sidebar { showMenu(in: window.firstResponder as? NSTableView) } else { NotificationCenter.default.post(name: .key, object: Key.menu) }
+            return true
+        }
+
+        guard flags.isDisjoint(with: [.command, .option, .control]) else { return false }
 
         if event.keyCode == 53, youTube.showing != nil {
             youTube.close()
             return true
         }
 
-        if event.keyCode == 53, focus == nil, window.firstResponder is NSTextView {
-            window.makeFirstResponder(nil)
-            return true
-        }
-
-        let shift = event.modifierFlags.contains(.shift)
+        let typing = focus == .search && !library.query.isEmpty
         let key: Key
-        switch (event.keyCode, focus) {
-        case (48, .search):
+        switch (event.keyCode, sidebar) {
+        case (48, false):
             focus = .sidebar
             return true
-        case (48, .sidebar), (36, .sidebar), (76, .sidebar):
+        case (48, true), (36, true), (76, true):
             focus = .search
             return true
-        case (126, .search): key = .step(shift ? .extendUp : .up)
-        case (125, .search): key = .step(shift ? .extendDown : .down)
-        case (123, .search) where library.query.isEmpty: key = .step(.left)
-        case (124, .search) where library.query.isEmpty: key = .step(.right)
-        case (36, .search), (76, .search): key = .enter
-        case (51, .search) where library.query.isEmpty: key = .delete
-        case (49, .search) where library.query.isEmpty:
+        case (126, false): key = .step(flags == .shift ? .extendUp : .up)
+        case (125, false): key = .step(flags == .shift ? .extendDown : .down)
+        case (123, false) where !typing: key = .step(.left)
+        case (124, false) where !typing: key = .step(.right)
+        case (36, false), (76, false): key = .enter
+        case (51, false) where !typing: key = .delete
+        case (49, false) where !typing:
             player.toggle()
             return true
-        case (53, .search) where library.query.isEmpty && !path.isEmpty:
+        case (53, false) where !typing && !path.isEmpty:
             navigate(Array(path.dropLast()))
             return true
         default: return false
