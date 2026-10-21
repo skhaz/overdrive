@@ -34,6 +34,13 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         Set(Cache(folder)!.entries().values.map(\.track.url.path))
     }
 
+    private func consistent(_ folder: URL) -> Bool {
+        var db: OpaquePointer?
+        sqlite3_open(folder.appending(path: Cache.name).path, &db)
+        defer { sqlite3_close(db) }
+        return sqlite3_exec(db, "INSERT INTO search(search, rank) VALUES ('integrity-check', 1)", nil, nil, nil) == SQLITE_OK
+    }
+
     private func execute(_ folder: URL, _ sql: String) {
         var db: OpaquePointer?
         sqlite3_open(folder.appending(path: Cache.name).path, &db)
@@ -297,10 +304,13 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
                 break
             }
 
-            let result = await Library.load([folder], [:])
+            let steps = Steps()
+            let result = await load(folder, steps)
 
             #expect(paths(result) == audio(folder), "round \(round)")
             #expect(stored(folder) == audio(folder), "round \(round)")
+            #expect(consistent(folder), "round \(round)")
+            #expect(steps.synced.dropFirst().allSatisfy { $0 }, "round \(round)")
 
             let fresh = await Library.load([try copy(folder)], [:])
             #expect(result.albums.flatMap(\.tracks).map(\.duration).sorted() == fresh.albums.flatMap(\.tracks).map(\.duration).sorted(), "round \(round)")
@@ -403,6 +413,7 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
     private final class Steps: @unchecked Sendable {
         var counts: [Int] = []
         var titles: [[String]] = []
+        var synced: [Bool] = []
         let stop: Int?
 
         init(stop: Int? = nil) {
@@ -414,8 +425,81 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         await Library.load([folder], [:]) { snapshot in
             steps.counts.append(snapshot.albums.reduce(0) { $0 + $1.tracks.count })
             steps.titles.append(snapshot.albums.flatMap(\.tracks).map(\.title))
+            steps.synced.append(Set(snapshot.albums.flatMap(\.tracks).map(\.url.path)) == stored(folder) && consistent(folder))
             return steps.stop.map { steps.counts.count < $0 } ?? true
         }
+    }
+
+    @Test func everyStepAfterTheWalkMatchesTheCache() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for number in 0..<300 {
+            try add(samples[number % samples.count], to: folder, as: "Album \(number / 20)/\(number).mp3")
+        }
+        _ = await Library.load([folder], [:])
+        for number in stride(from: 0, to: 300, by: 3) {
+            try FileManager.default.removeItem(at: folder.appending(path: "Album \(number / 20)/\(number).mp3"))
+        }
+        for number in 300..<600 {
+            try add(samples[number % samples.count], to: folder, as: "Album \(number / 20)/\(number).mp3")
+        }
+
+        let steps = Steps()
+        let result = await load(folder, steps)
+
+        #expect(steps.synced.count >= 3)
+        #expect(steps.synced.dropFirst().allSatisfy { $0 })
+        #expect(paths(result) == audio(folder))
+        #expect(stored(folder) == audio(folder))
+        #expect(consistent(folder))
+    }
+
+    @Test func aScanStoppedAfterTheWalkKeepsItsRemovals() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "one.mp3")
+        _ = await Library.load([folder], [:])
+
+        try add("vbr.mp3", to: folder, as: "two.mp3")
+        try FileManager.default.removeItem(at: folder.appending(path: "one.mp3"))
+        _ = await load(folder, Steps(stop: 2))
+
+        #expect(stored(folder).isEmpty)
+        #expect(consistent(folder))
+    }
+
+    @Test func aDeletedCacheIsBuiltAgain() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "one.mp3")
+        try add("vbr.mp3", to: folder, as: "two.mp3")
+        _ = await Library.load([folder], [:])
+
+        for suffix in ["", "-wal", "-shm"] {
+            try? FileManager.default.removeItem(at: folder.appending(path: Cache.name + suffix))
+        }
+        let result = await Library.load([folder], [:])
+
+        #expect(paths(result) == audio(folder))
+        #expect(stored(folder) == audio(folder))
+        #expect(consistent(folder))
+    }
+
+    @Test func rescansOnlyForRelevantPaths() throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        #expect(Library.relevant([folder.path + "/Album/one.mp3"]))
+        #expect(Library.relevant([folder.path + "/Album"]))
+        #expect(!Library.relevant([folder.path + "/.hidden/one.mp3"]))
+        #expect(!Library.relevant([folder.path + "/Album/one.lrc"]))
+        #expect(!Library.relevant([]))
+
+        #expect(Library.relevant([folder.path + "/" + Cache.name]))
+        _ = Cache(folder)
+        #expect(!Library.relevant([folder.path + "/" + Cache.name]))
+        #expect(!Library.relevant([folder.path + "/" + Cache.name + "-wal", folder.path + "/" + Cache.name + "-shm"]))
+        #expect(Library.relevant([folder.path + "/" + Cache.name + "-wal", folder.path + "/Album/one.mp3"]))
     }
 
     @Test func showsTheCacheFirstAndTheFilesystemLast() async throws {
@@ -479,7 +563,7 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(stored(folder).count == 300)
     }
 
-    @Test func aReplacedScanSavesNothing() async throws {
+    @Test func aScanStoppedAtTheCacheSavesNothing() async throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
         try add("cbr.mp3", to: folder, as: "one.mp3")

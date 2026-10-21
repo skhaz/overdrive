@@ -147,6 +147,12 @@ final class Library {
         self.loudness = loudness
         watch()
         scan()
+
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scan() }
+            }
+        }
     }
 
     func choose() {
@@ -207,7 +213,7 @@ final class Library {
         index = snapshot.index
         everything = snapshot.albums.flatMap(\.tracks)
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
-        if readers.map(\.folder) != folders { readers = folders.compactMap { Cache($0) } }
+        readers = folders.compactMap { Cache($0) }
         albums = snapshot.albums
         search()
     }
@@ -362,7 +368,7 @@ final class Library {
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
             let paths = unsafeBitCast(paths, to: NSArray.self)
-            guard (0..<count).contains(where: { let path = paths[$0] as! String; return !path.contains("/.") && !Lyrics.ignored(path) && !Playlists.ignored(path) && !Cache.ignored(path) }) else { return }
+            guard Library.relevant((0..<count).map { paths[$0] as! String }) else { return }
 
             MainActor.assumeIsolated {
                 Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
@@ -372,6 +378,16 @@ final class Library {
         stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes))
         FSEventStreamSetDispatchQueue(stream!, .main)
         FSEventStreamStart(stream!)
+    }
+
+    nonisolated static func relevant(_ paths: [String]) -> Bool {
+        paths.contains { path in
+            if Cache.ignored(path) {
+                return !FileManager.default.fileExists(atPath: (path as NSString).deletingLastPathComponent + "/" + Cache.name)
+            }
+
+            return !path.contains("/.") && !Lyrics.ignored(path) && !Playlists.ignored(path)
+        }
     }
 
     typealias Snapshot = (albums: [Album], index: Index, covers: [String: Data])
@@ -430,12 +446,15 @@ final class Library {
         }
 
         if !pending.isEmpty || removed.contains(where: { !$0.isEmpty }) {
+            for (number, cache) in caches.enumerated() where !removed[number].isEmpty {
+                cache?.save([], removed: removed[number], covers: [:])
+            }
+
             let (albums, index) = assemble(slots.compactMap(\.self))
             guard await progress((albums, index, stored)) else { return (albums, index, stored) }
         }
 
         let work = pending
-        var changes = Array(repeating: [Cache.Change](), count: folders.count)
 
         for start in stride(from: 0, to: work.count, by: batch) {
             let part = work[start..<min(start + batch, work.count)]
@@ -455,14 +474,21 @@ final class Library {
                 read.initializeElement(at: offset, to: (hash != nil && hash == old.hash ? old.track.at(item.url) : Library.read(item.url, item.mp4), hash))
             }
 
+            var changes = Array(repeating: [Cache.Change](), count: folders.count)
+            var failed = Array(repeating: [String](), count: folders.count)
+
             for (offset, item) in part.enumerated() {
                 slots[item.slot] = read[offset].track
 
                 if let track = read[offset].track {
                     changes[item.folder].append(Cache.Change(path: item.path, modified: item.modified, size: item.size, hash: read[offset].hash, track: track))
                 } else {
-                    removed[item.folder].append(item.path)
+                    failed[item.folder].append(item.path)
                 }
+            }
+
+            for (number, cache) in caches.enumerated() where !changes[number].isEmpty || !failed[number].isEmpty {
+                cache?.save(changes[number], removed: failed[number], covers: [:])
             }
 
             if part.endIndex < work.count {
@@ -476,13 +502,14 @@ final class Library {
         var fresh = Array(repeating: [String: Data](), count: folders.count)
 
         for album in albums {
-            guard let number = folders.firstIndex(where: { album.tracks[0].url.path.hasPrefix($0.path + "/") }), !saved[number].contains(album.id), let cover = covers[album.id] else { continue }
+            let url = album.tracks[0].url
+            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), !saved[number].contains(album.id), let cover = covers[album.id] else { continue }
 
             fresh[number][album.id] = cover
         }
 
-        for (number, cache) in caches.enumerated() where !changes[number].isEmpty || !removed[number].isEmpty || !fresh[number].isEmpty {
-            cache?.save(changes[number], removed: removed[number], covers: fresh[number])
+        for (number, cache) in caches.enumerated() where !fresh[number].isEmpty {
+            cache?.save([], removed: [], covers: fresh[number])
         }
 
         return (albums, index, covers)

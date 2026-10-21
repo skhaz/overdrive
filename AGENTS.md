@@ -36,6 +36,14 @@ Commit each change when it is complete. Do not ask before you commit.
 
 ## Library cache
 
+**Hard requirement:** the filesystem, the cache (`Cache.sqlite`), and the full-text index (FTS5, `bm25`) must be in strict sync, in every situation and without exception. A change that can break this sync is a bug, even for a moment that the app can avoid. Every change to the scan, the cache, the watcher, or the search must keep these rules, with tests:
+
+- The cache and the full-text index change only in the same transaction (the triggers), so they can never differ. `LibraryCacheTests` runs the FTS5 `integrity-check` after every scan step.
+- The scan commits each step, then shows it. The UI never shows a state that the cache does not have: after the walk (removals), after each batch (adds and changes), and at the end (covers). Each commit is one atomic transaction that matches the filesystem at that moment. A scan that a newer scan replaces keeps what it committed, and the newer scan does the rest. Only the first snapshot (the cache, before the walk) can show files that changed while the app was closed.
+- Every change in a library folder starts a scan: the FSEvents watcher (`Library.relevant`), the mount and unmount of a volume, a change of the folders, and the launch. Changes to the cache files do not start a scan, except when `Cache.sqlite` is deleted, which starts a scan that builds the cache again.
+- The search opens new connections after every step, so it always reads the current cache file.
+- A failed write leaves the last good state, and the next scan repairs every difference, because each scan compares every file with every row.
+
 - SQLite is used only as a cache of the libraries. It holds nothing that the app cannot build again from the music files. Each library folder has its own cache at its root (`Cache.sqlite`), wherever the folder is, with the paths relative to the folder (from its real path, `realpath`), so the cache moves with the music. It is the only data that is not a binary plist.
 - Tables: `tracks` (integer `id`, unique `path`, `modified`, `size`, nullable `hash`, and the tags), the index `tracks_album` on `album_id`, `covers` (`album_id`, JPEG `data`), and the FTS5 table `search` (`title`, `artist`, `album`, external content of `tracks`, `tokenize = 'trigram remove_diacritics 1'`), kept in sync by the `tracks_insert`, `tracks_delete`, and `tracks_update` triggers. Upserts use `ON CONFLICT(path) DO UPDATE`, because external content FTS does not support `REPLACE`.
 - Settings: `page_size = 65536` (set before WAL creates the file), `mmap_size = 1073741824` (the maximum of the system SQLite, `MAX_MMAP_SIZE`), WAL, `synchronous = FULL`, `fullfsync = ON`, `checkpoint_fullfsync = ON`, and an infinite `busy_timeout`. The cache has no version. To change the schema, delete the `Cache.sqlite` files: the app creates them again. A file that does not open is deleted and created again.
