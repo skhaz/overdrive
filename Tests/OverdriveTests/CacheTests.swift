@@ -76,7 +76,7 @@ import Testing
             return sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
         }
 
-        #expect(value("PRAGMA page_size") == "16384")
+        #expect(value("PRAGMA page_size") == "65536")
         #expect(value("PRAGMA journal_mode") == "wal")
         #expect(value("SELECT sql FROM sqlite_schema WHERE name = 'covers'").contains("WITHOUT ROWID") == false)
         #expect(value("SELECT name FROM sqlite_schema WHERE name = 'tracks_album'") == "tracks_album")

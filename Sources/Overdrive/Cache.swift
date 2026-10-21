@@ -188,7 +188,7 @@ nonisolated final class Cache {
 
         guard sqlite3_open_v2(file.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK,
               sqlite3_busy_timeout(db, Int32.max) == SQLITE_OK,
-              exec("PRAGMA page_size = 16384; PRAGMA mmap_size = 268435456; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON")
+              exec("PRAGMA page_size = 65536; PRAGMA mmap_size = 1073741824; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON")
         else { return false }
 
         return exec(Self.schema)
