@@ -153,6 +153,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 ## Good to know
 
 - The app never changes your songs. It only saves the lyrics that you save.
+- The app keeps a file named `Cache.sqlite` in each music folder. With it, the app opens faster. You can delete it at any time: the app makes it again.
 - When you play an album in order, the quiet and loud songs of the album stay as the artist made them.
 - No Last.fm play is lost. If there is no internet, the app sends them later.
 - The video window opens at once, and you stay signed in to YouTube.

@@ -1,6 +1,7 @@
 import AppKit
 import AudioToolbox
 import AVFoundation
+import CryptoKit
 import CoreServices
 import UniformTypeIdentifiers
 
@@ -17,6 +18,10 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
     let albumID: String
 
     var id: URL { url }
+
+    func at(_ url: URL) -> Track {
+        Track(url: url, title: title, artist: artist, album: album, number: number, disc: disc, albumArtist: albumArtist, year: year, duration: duration, albumID: albumID)
+    }
 
     static func == (lhs: Track, rhs: Track) -> Bool {
         lhs.url == rhs.url
@@ -123,6 +128,8 @@ final class Library {
     @ObservationIgnored private var index = Index()
     @ObservationIgnored private var everything: [Track] = []
     @ObservationIgnored private var lookup: [String: Track] = [:]
+    @ObservationIgnored private var readers: [Cache] = []
+    @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var grouped: (version: Int, artists: [(name: String, albums: [Album])]) = (-1, [])
     @ObservationIgnored private var bytes: [UInt8] = []
     @ObservationIgnored private var tokens: [Range<Int>] = []
@@ -168,7 +175,11 @@ final class Library {
 
         scanning = true
 
-        Task {
+        let previous = running
+        running = Task {
+            await previous?.value
+            guard generation == self.generation else { return }
+
             let result = await Library.load(folders, covers)
             guard generation == self.generation else { return }
 
@@ -176,6 +187,7 @@ final class Library {
             index = result.index
             everything = result.albums.flatMap(\.tracks)
             lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
+            if readers.map(\.folder) != folders { readers = folders.compactMap { Cache($0) } }
             albums = result.albums
             search()
             scanning = false
@@ -287,6 +299,14 @@ final class Library {
         tracks = []
         tracks.reserveCapacity(ranked.count)
         for hit in ranked { tracks.append(everything[Int(hit.item)]) }
+
+        let words = tokens.map { String(decoding: bytes[$0], as: UTF8.self) }
+        let exact = readers.flatMap { $0.search(words) }
+        guard !exact.isEmpty else { return }
+
+        let order = Dictionary(exact.enumerated().map { ($1, $0) }) { first, _ in first }
+        let first = tracks.filter { order[$0.url.path] != nil }.sorted { order[$0.url.path]! < order[$1.url.path]! }
+        tracks = first + tracks.filter { order[$0.url.path] == nil }
     }
 
     private func rank(_ hits: [(score: Int32, item: Int32)], _ limit: Int) {
@@ -326,7 +346,7 @@ final class Library {
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
             let paths = unsafeBitCast(paths, to: NSArray.self)
-            guard (0..<count).contains(where: { let path = paths[$0] as! String; return !path.contains("/.") && !Lyrics.ignored(path) && !Playlists.ignored(path) }) else { return }
+            guard (0..<count).contains(where: { let path = paths[$0] as! String; return !path.contains("/.") && !Lyrics.ignored(path) && !Playlists.ignored(path) && !Cache.ignored(path) }) else { return }
 
             MainActor.assumeIsolated {
                 Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
@@ -339,32 +359,77 @@ final class Library {
     }
 
     @concurrent
-    private nonisolated static func load(_ folders: [URL], _ previous: [String: Data]) async -> (albums: [Album], index: Index, covers: [String: Data]) {
+    nonisolated static func load(_ folders: [URL], _ previous: [String: Data]) async -> (albums: [Album], index: Index, covers: [String: Data]) {
         let types = AVURLAsset.audiovisualContentTypes.filter { $0.conforms(to: .audio) }
-        var urls: [(url: URL, mp4: Bool)] = []
+        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        let caches = folders.map { Cache($0) }
+        var stored = previous
+        var saved: [Set<String>] = []
+        var slots: [Track?] = []
+        var pending: [(slot: Int, url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int, old: Cache.Entry?)] = []
+        var removed: [[String]] = []
 
-        for folder in folders {
-            guard let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.contentTypeKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
+        for (number, folder) in folders.enumerated() {
+            let cache = caches[number]
+            var known = cache?.entries() ?? [:]
+            let covers = cache?.covers() ?? [:]
+            saved.append(Set(covers.keys))
+            stored.merge(covers) { current, _ in current }
 
-            while let url = enumerator.nextObject() as? URL {
-                guard let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType, types.contains(where: type.conforms) else { continue }
+            if let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+                while let url = enumerator.nextObject() as? URL {
+                    guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
 
-                urls.append((url, type.conforms(to: .mpeg4Audio)))
+                    let path = cache?.relative(url) ?? url.path
+                    let modified = values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
+                    let size = values.fileSize ?? 0
+
+                    let entry = known.removeValue(forKey: path)
+
+                    if let entry, entry.modified == modified, entry.size == size {
+                        slots.append(entry.track.at(url))
+                    } else {
+                        pending.append((slots.count, url, type.conforms(to: .mpeg4Audio), number, path, modified, size, entry))
+                        slots.append(nil)
+                    }
+                }
             }
+
+            removed.append(Array(known.keys))
         }
 
-        let files = urls
+        let work = pending
 
-        nonisolated(unsafe) let tracks = UnsafeMutableBufferPointer<Track?>.allocate(capacity: files.count)
-        defer { tracks.deinitialize().deallocate() }
+        nonisolated(unsafe) let read = UnsafeMutableBufferPointer<(track: Track?, hash: Data?)>.allocate(capacity: work.count)
+        defer { read.deinitialize().deallocate() }
 
-        DispatchQueue.concurrentPerform(iterations: files.count) { index in
-            tracks.initializeElement(at: index, to: read(files[index].url, files[index].mp4))
+        DispatchQueue.concurrentPerform(iterations: work.count) { index in
+            let item = work[index]
+
+            guard let old = item.old, old.size == item.size else {
+                read.initializeElement(at: index, to: (Library.read(item.url, item.mp4), nil))
+                return
+            }
+
+            let hash = Library.hash(item.url)
+            read.initializeElement(at: index, to: (hash != nil && hash == old.hash ? old.track.at(item.url) : Library.read(item.url, item.mp4), hash))
+        }
+
+        var changes = Array(repeating: [Cache.Change](), count: folders.count)
+
+        for (index, item) in work.enumerated() {
+            slots[item.slot] = read[index].track
+
+            if let track = read[index].track {
+                changes[item.folder].append(Cache.Change(path: item.path, modified: item.modified, size: item.size, hash: read[index].hash, track: track))
+            } else {
+                removed[item.folder].append(item.path)
+            }
         }
 
         var groups: [String: [Track]] = [:]
 
-        for case let track? in tracks {
+        for case let track? in slots {
             groups[track.albumID, default: []].append(track)
         }
 
@@ -388,7 +453,7 @@ final class Library {
         }
 
         var index = Index()
-        index.spans.reserveCapacity(files.count)
+        index.spans.reserveCapacity(slots.count)
         index.albums.reserveCapacity(albums.count + 1)
 
         for album in albums {
@@ -405,7 +470,26 @@ final class Library {
             index.albums.append(Int32(index.spans.count))
         }
 
-        return (albums, index, covers(albums, previous))
+        let covers = covers(albums, stored)
+        var fresh = Array(repeating: [String: Data](), count: folders.count)
+
+        for album in albums {
+            guard let number = folders.firstIndex(where: { album.tracks[0].url.path.hasPrefix($0.path + "/") }), !saved[number].contains(album.id), let cover = covers[album.id] else { continue }
+
+            fresh[number][album.id] = cover
+        }
+
+        for (number, cache) in caches.enumerated() where !changes[number].isEmpty || !removed[number].isEmpty || !fresh[number].isEmpty {
+            cache?.save(changes[number], removed: removed[number], covers: fresh[number])
+        }
+
+        return (albums, index, covers)
+    }
+
+    nonisolated static func hash(_ url: URL) -> Data? {
+        guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return nil }
+
+        return Data(SHA256.hash(data: data))
     }
 
     private nonisolated static func covers(_ albums: [Album], _ previous: [String: Data]) -> [String: Data] {

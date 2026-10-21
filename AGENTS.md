@@ -29,6 +29,26 @@ Commit each change when it is complete. Do not ask before you commit.
 - `FuzzTests` mutates the seeds on macOS on each `swift test` run, also through `AudioToolbox` and `ImageIO`.
 - Uninstall: `brew uninstall --zap --cask overdrive`. The `--zap` option also removes the settings, the Last.fm session, and the lyrics cache. It does not remove the `.lrc` files in the music folders.
 
+## Music library
+
+- The music library is read-only. The app never writes, moves, renames, or deletes an audio file. It opens them only to read (AudioToolbox with `readPermission`, the MP4 and ID3 parsers, and `Data` with `.alwaysMapped` for the hash). `LibraryCacheTests.neverWritesTheMusicFiles` checks it.
+- The only files that the app writes in a music folder are its cache (`Cache.sqlite` and its `-wal` and `-shm` files, at the root of each library folder) and the `.lrc` lyrics next to the songs. The FSEvents watcher ignores them, so they do not start a scan.
+
+## Library cache
+
+- Each library folder has its own SQLite cache at its root (`Cache.sqlite`), with the paths relative to the folder (from its real path, `realpath`), so the cache moves with the music. It is the only data that is not a binary plist.
+- Tables: `tracks` (integer `id`, unique `path`, `modified`, `size`, nullable `hash`, and the tags), the index `tracks_album` on `album_id`, `covers` (`album_id`, JPEG `data`), and the FTS5 table `search` (`title`, `artist`, `album`, external content of `tracks`, `tokenize = 'trigram remove_diacritics 1'`), kept in sync by the `tracks_insert`, `tracks_delete`, and `tracks_update` triggers. Upserts use `ON CONFLICT(path) DO UPDATE`, because external content FTS does not support `REPLACE`.
+- Settings: `page_size = 16384` (set before WAL creates the file), `mmap_size = 268435456`, WAL, `synchronous = FULL`, `fullfsync = ON`, `checkpoint_fullfsync = ON`, and an infinite `busy_timeout`. `PRAGMA user_version` is `Cache.version`. A different version or a file that does not open drops and recreates the cache. While the layout changes, keep the version at 1 and recreate the cache.
+- The schema was chosen by measurement on a real library (4906 songs, 424 albums, 32.9 MB of covers, release build). Against the first schema, the chosen one writes everything 2.2 times faster (53 to 61 ms), reads all covers 4.7 times faster (1.5 ms), and runs 20 searches 1.8 times faster (2.7 to 2.9 ms), for 1.5 % more disk (37.2 MB). Without the `album_id` index, the removal of orphan covers is 5 times slower. `covers` with `WITHOUT ROWID` is slower, because its rows are large. `detail = column` breaks the search (it allows only terms of up to 3 characters).
+- Each scan walks all the library folders (the path, the type, the modification date, and the size, without opening the files). A file with the same date and size uses the cached tags. A file with a new size is read again. A file with the same size and a new date is hashed (SHA-256 from CryptoKit, which uses the SHA instructions of Apple silicon, on a read-only mapping): the same hash keeps the cached tags, another hash reads the tags again. A new file gets no hash, so the first scan does not read every file completely. A file that is gone, or that cannot be read, leaves the cache.
+- Every scan writes its adds, changes, removes, new covers, and the removal of orphan covers in one transaction (`BEGIN IMMEDIATE` to `COMMIT`, or `ROLLBACK`). Scans run one at a time, in order, so an older scan never commits after a newer one. A failed write leaves the last good state, and the next scan repairs every difference, because it compares every file with every row.
+- Search: the fuzzy search finds the matches, and the FTS matches (only when every word has 3 or more characters) come first, in `bm25` order. FTS matches are always fuzzy matches too, so the FTS never removes a result.
+- Measured on the same library (release build): the scan at launch takes 0.17 to 0.19 s with the cache and 0.51 s without it. The first scan, which fills the cache, takes 1.1 s.
+
+## Atomic writes
+
+- Every write of app data is atomic and durable: the binary plists with `Persist`, and the cache with SQLite transactions with `fullfsync`. Never write a partial state.
+
 ## Data files
 
 The app keeps its data in `~/Library/Application Support/Overdrive`:
@@ -45,7 +65,7 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 | `Rules/` | The compiled ad block rules of the web view. |
 | `Lyrics/` | The lyrics from LRCLIB and lyrics.ovh. An empty file means "no lyrics". |
 
-Every file that the app produces for its data is a binary plist. Do not add plain text, JSON, or other formats for app data.
+Every file that the app produces for its data is a binary plist. Do not add plain text, JSON, or other formats for app data. The only exception is the library cache (`Cache.sqlite` at the root of each library folder, see "Library cache").
 
 All file writes, replacements, moves, and deletes must be atomic and durable. Use `Persist.write`, `Persist.move`, and `Persist.remove`. They call `F_FULLFSYNC`, rename, and sync the directory. Never write in place and never use `Data.write` directly.
 

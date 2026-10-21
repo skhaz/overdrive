@@ -23,8 +23,10 @@ nonisolated enum Picture {
 
         let paths = Data(urls.map(\.path).joined(separator: "\0").utf8)
 
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+
         DispatchQueue.global().async {
-            input.fileHandleForWriting.write(paths)
+            try? input.fileHandleForWriting.write(contentsOf: paths)
             try? input.fileHandleForWriting.close()
         }
 
