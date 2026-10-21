@@ -161,7 +161,7 @@ struct Overdrive: App {
                 .disabled(player.current == nil)
                 Button("Edit Lyrics", systemImage: "pencil") { NotificationCenter.default.post(name: .editLyrics, object: nil) }
                     .keyboardShortcut("e")
-                Button("Show Lyrics in a Floating Window", systemImage: "pip.enter") { NotificationCenter.default.post(name: .floatLyrics, object: nil) }
+                Button("Show Lyrics in a Floating Window", systemImage: "macwindow") { NotificationCenter.default.post(name: .floatLyrics, object: nil) }
                     .keyboardShortcut("u")
                     .disabled(player.current == nil)
                 Divider()

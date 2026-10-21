@@ -68,17 +68,20 @@ struct FloatingLyrics: View {
                         Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
+                            .controlSize(.small)
                     }
 
                     if !lines.isEmpty {
                         Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
+                            .controlSize(.small)
                     }
 
                     Button("Put the lyrics back in the window", systemImage: "xmark") { lyrics.floating = false }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
+                        .controlSize(.small)
                 }
 
                 Group {

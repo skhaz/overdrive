@@ -231,18 +231,22 @@ struct LyricsView: View {
                     Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
-                    Button("Show in a Floating Window", systemImage: "pip.enter") { lyrics.floating = true }
+                        .controlSize(.small)
+                    Button("Show in a Floating Window", systemImage: "macwindow") { lyrics.floating = true }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
+                        .controlSize(.small)
                     if !lyrics.text.isEmpty, lyrics.remote {
                         Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
+                            .controlSize(.small)
                     }
                     if !lines.isEmpty {
                         Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
+                            .controlSize(.small)
                     }
                 }
 
