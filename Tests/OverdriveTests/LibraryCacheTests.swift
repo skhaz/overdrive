@@ -400,6 +400,101 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(before.map(\.2) == after.map(\.2))
     }
 
+    private final class Steps: @unchecked Sendable {
+        var counts: [Int] = []
+        var titles: [[String]] = []
+        let stop: Int?
+
+        init(stop: Int? = nil) {
+            self.stop = stop
+        }
+    }
+
+    private func load(_ folder: URL, _ steps: Steps) async -> Library.Snapshot {
+        await Library.load([folder], [:]) { snapshot in
+            steps.counts.append(snapshot.albums.reduce(0) { $0 + $1.tracks.count })
+            steps.titles.append(snapshot.albums.flatMap(\.tracks).map(\.title))
+            return steps.stop.map { steps.counts.count < $0 } ?? true
+        }
+    }
+
+    @Test func showsTheCacheFirstAndTheFilesystemLast() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "gone.mp3")
+        try add("vbr.mp3", to: folder, as: "kept.mp3")
+        _ = await Library.load([folder], [:])
+
+        try FileManager.default.removeItem(at: folder.appending(path: "gone.mp3"))
+        try add("abr.mp3", to: folder, as: "new.mp3")
+        let steps = Steps()
+        let result = await load(folder, steps)
+
+        #expect(steps.counts.first == 2)
+        #expect(paths(result) == audio(folder))
+        #expect(stored(folder) == audio(folder))
+    }
+
+    @Test func anUnchangedLibrarySendsOnlyTheCache() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "one.mp3")
+        _ = await Library.load([folder], [:])
+
+        let steps = Steps()
+        _ = await load(folder, steps)
+
+        #expect(steps.counts == [1])
+    }
+
+    @Test func aChangedSongKeepsItsOldTagsUntilItIsRead() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "one.mp3")
+        let first = await Library.load([folder], [:])
+
+        execute(folder, "UPDATE tracks SET title = 'Old', size = size + 1")
+        let steps = Steps()
+        let result = await load(folder, steps)
+
+        #expect(steps.titles.first == ["Old"])
+        #expect(steps.titles.dropFirst().first == ["Old"])
+        #expect(title(result, folder.path + "/one.mp3") == title(first, folder.path + "/one.mp3"))
+    }
+
+    @Test func newFilesArriveInBatches() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for number in 0..<300 {
+            try add(samples[number % samples.count], to: folder, as: "Album \(number / 20)/\(number).mp3")
+        }
+
+        let steps = Steps()
+        let result = await load(folder, steps)
+
+        #expect(steps.counts.count >= 2)
+        #expect(steps.counts == steps.counts.sorted())
+        #expect(steps.counts.last! < 300)
+        #expect(paths(result).count == 300)
+        #expect(stored(folder).count == 300)
+    }
+
+    @Test func aReplacedScanSavesNothing() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "one.mp3")
+        _ = await Library.load([folder], [:])
+
+        try add("vbr.mp3", to: folder, as: "two.mp3")
+        try FileManager.default.removeItem(at: folder.appending(path: "one.mp3"))
+        _ = await load(folder, Steps(stop: 1))
+
+        #expect(stored(folder) == [folder.path + "/one.mp3"])
+
+        _ = await Library.load([folder], [:])
+        #expect(stored(folder) == audio(folder))
+    }
+
     private func copy(_ folder: URL) throws -> URL {
         let target = FileManager.default.temporaryDirectory.appending(path: "OverdriveCopy-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: folder, to: target)

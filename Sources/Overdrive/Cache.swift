@@ -3,7 +3,6 @@ import SQLite3
 
 nonisolated final class Cache {
     static let name = "Cache.sqlite"
-    static let version: Int32 = 1
 
     struct Entry {
         let modified: Double
@@ -191,13 +190,6 @@ nonisolated final class Cache {
               sqlite3_busy_timeout(db, Int32.max) == SQLITE_OK,
               exec("PRAGMA page_size = 16384; PRAGMA mmap_size = 268435456; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON")
         else { return false }
-
-        var version: Int32 = -1
-        query("PRAGMA user_version") { version = sqlite3_column_int($0, 0) }
-
-        if version != Self.version {
-            guard exec("DROP TABLE IF EXISTS search; DROP TABLE IF EXISTS covers; DROP TABLE IF EXISTS tracks; PRAGMA user_version = \(Self.version)") else { return false }
-        }
 
         return exec(Self.schema)
     }

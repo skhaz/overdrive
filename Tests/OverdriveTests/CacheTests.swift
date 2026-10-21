@@ -78,7 +78,6 @@ import Testing
 
         #expect(value("PRAGMA page_size") == "16384")
         #expect(value("PRAGMA journal_mode") == "wal")
-        #expect(value("PRAGMA user_version") == String(Cache.version))
         #expect(value("SELECT sql FROM sqlite_schema WHERE name = 'covers'").contains("WITHOUT ROWID") == false)
         #expect(value("SELECT name FROM sqlite_schema WHERE name = 'tracks_album'") == "tracks_album")
         #expect(value("SELECT sql FROM sqlite_schema WHERE name = 'search'").contains("trigram remove_diacritics 1"))
@@ -215,19 +214,6 @@ import Testing
         cache.save([Cache.Change(path: "/Elsewhere/two.mp3", modified: 1, size: 1, track: track(folder, "x", title: "Outside"))], removed: [], covers: [:])
         #expect(cache.entries()["/Elsewhere/two.mp3"]?.track.url == URL(filePath: "/Elsewhere/two.mp3"))
         #expect(cache.search(["outside"]) == ["/Elsewhere/two.mp3"])
-    }
-
-    @Test func rebuildsAnOlderFormat() throws {
-        let folder = try folder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-
-        Cache(folder)!.save([change(folder, "one.mp3")], removed: [], covers: [:])
-        execute(folder.appending(path: Cache.name), "PRAGMA user_version = \(Cache.version - 1)")
-
-        let cache = try #require(Cache(folder))
-        #expect(cache.entries().isEmpty)
-        #expect(cache.save([change(folder, "two.mp3")], removed: [], covers: [:]))
-        #expect(cache.entries().count == 1)
     }
 
     @Test func replacesACorruptFile() throws {
