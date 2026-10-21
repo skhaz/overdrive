@@ -88,6 +88,7 @@ final class Lyrics {
 
         saved = value
         original = value
+        loading = false
     }
 
     func settle(_ action: @escaping () -> Void) {
