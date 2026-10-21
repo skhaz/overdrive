@@ -1486,6 +1486,12 @@ struct ContentView: View {
             return true
         }
 
+        if !(window.firstResponder is NSText), let characters = event.characters, characters.count == 1, let character = characters.first, character.isLetter || character.isNumber {
+            focus = .search
+            search.append(character)
+            return true
+        }
+
         let typing = focus == .search && !search.isEmpty
         let key: Key
         switch (event.keyCode, sidebar) {
