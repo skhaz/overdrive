@@ -339,7 +339,7 @@ final class Library {
     }
 
     @concurrent
-    private nonisolated static func load(_ folders: [URL], _ previous: [String: Data]) async -> (albums: [Album], index: Index, covers: [String: Data]) {
+    nonisolated static func load(_ folders: [URL], _ previous: [String: Data]) async -> (albums: [Album], index: Index, covers: [String: Data]) {
         let types = AVURLAsset.audiovisualContentTypes.filter { $0.conforms(to: .audio) }
         var urls: [(url: URL, mp4: Bool)] = []
 
