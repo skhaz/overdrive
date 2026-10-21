@@ -38,6 +38,7 @@ final class LyricsPanel {
 struct FloatingLyrics: View {
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
+    @State private var scrub: Double?
 
     var body: some View {
         if let track = lyrics.track {
@@ -69,7 +70,8 @@ struct FloatingLyrics: View {
                         SyncedLyrics(lines: lines, current: current) { player.seek($0) }
                     } else {
                         ScrollView {
-                            Text(lyrics.text.isEmpty ? lyrics.status : lyrics.text)
+                            Text(lyrics.text.isEmpty ? "No lyrics." : lyrics.text)
+                                .foregroundStyle(lyrics.text.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(6)
@@ -78,13 +80,29 @@ struct FloatingLyrics: View {
                 }
                 .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
 
-                HStack {
-                    Text(lyrics.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Spacer()
-                    Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
+                HStack(spacing: 8) {
+                    Text((scrub ?? player.position).time).monospacedDigit().foregroundStyle(.secondary).font(.caption)
+                    Slider(value: Binding { scrub ?? player.position } set: { scrub = $0 }, in: 0...max(player.duration, 1)) { editing in
+                        if !editing, let scrub {
+                            player.seek(scrub)
+                            self.scrub = nil
+                        }
+                    }
+                    Text(player.duration.time).monospacedDigit().foregroundStyle(.secondary).font(.caption)
                 }
+                .disabled(player.current == nil)
+
+                HStack {
+                    Spacer()
+                    Button("Previous", systemImage: "backward.fill", action: player.previous)
+                    Button(player.playing ? "Pause" : "Play", systemImage: player.playing ? "pause.fill" : "play.fill", action: player.toggle)
+                        .font(.title3)
+                    Button("Next", systemImage: "forward.fill", action: player.next)
+                    Spacer()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .disabled(player.current == nil)
             }
             .padding(10)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
