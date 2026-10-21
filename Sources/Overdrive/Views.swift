@@ -1,81 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum Section: String, CaseIterable, Identifiable {
-    case albums = "Albums", artists = "Artists", songs = "Songs"
-
-    var id: Self { self }
-
-    var symbol: String {
-        switch self {
-        case .albums: "square.stack"
-        case .artists: "music.microphone"
-        case .songs: "music.note"
-        }
-    }
-}
-
-enum Page: Hashable {
-    case section(Section)
-    case playlist(String)
-    case liked
-
-    init?(key: String) {
-        if key.hasPrefix("playlist:") {
-            self = .playlist(String(key.dropFirst(9)))
-        } else if key == "liked" {
-            self = .liked
-        } else if let section = Section(rawValue: key) {
-            self = .section(section)
-        } else {
-            return nil
-        }
-    }
-
-    var key: String {
-        switch self {
-        case .section(let section): section.rawValue
-        case .playlist(let name): "playlist:" + name
-        case .liked: "liked"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .section(let section): section.rawValue
-        case .playlist(let name): name
-        case .liked: "Liked Songs"
-        }
-    }
-}
-
-enum Route: Hashable {
-    case album(Album)
-    case artist(String)
-
-    init?(key: String, albums: [Album]) {
-        if key.hasPrefix("artist:") {
-            self = .artist(String(key.dropFirst(7)))
-        } else if key.hasPrefix("album:"), let album = albums.first(where: { $0.id == StoredPath.normalizeID(String(key.dropFirst(6))) }) {
-            self = .album(album)
-        } else {
-            return nil
-        }
-    }
-
-    var key: String {
-        switch self {
-        case .album(let album): "album:" + album.id
-        case .artist(let name): "artist:" + name
-        }
-    }
-}
-
-struct Place: Equatable {
-    let page: Page
-    let path: [Route]
-}
-
 enum Focus {
     case search, sidebar
 }
@@ -1148,14 +1073,11 @@ struct ContentView: View {
     @Environment(Likes.self) private var likes
     @Environment(YouTube.self) private var youTube
     @State private var lyrics = Lyrics()
-    @State private var page = Page(key: Player.saved?.page ?? "") ?? .section(.albums)
+    @State private var navigation = Navigation(page: Page(key: Player.saved?.page ?? "") ?? .section(.albums))
     @State private var name = ""
     @State private var deleting: String?
-    @State private var path: [Route] = []
     @State private var saved = Player.saved?.path
     @State private var monitor: Any?
-    @State private var history = History<Place>()
-    @State private var restoring: [Route]?
     @State private var swipe: CGFloat = 0
     @State private var navigator = Navigator()
     @FocusState private var focus: Focus?
@@ -1165,7 +1087,7 @@ struct ContentView: View {
 
         VStack(spacing: 0) {
             NavigationSplitView {
-                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { visit { page = value } } } }) {
+                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { navigation.open(value) } } }) {
                     ForEach(Section.allCases) { section in
                         row(section.rawValue, section.symbol, .section(section))
                     }
@@ -1260,10 +1182,10 @@ struct ContentView: View {
                 ToolbarItemGroup(placement: .navigation) {
                     Button("Back", systemImage: "chevron.backward", action: goBack)
                         .keyboardShortcut("[")
-                        .disabled(history.back.isEmpty)
+                        .disabled(navigation.back.isEmpty)
                     Button("Forward", systemImage: "chevron.forward", action: goForward)
                         .keyboardShortcut("]")
-                        .disabled(history.forward.isEmpty)
+                        .disabled(navigation.forward.isEmpty)
                 }
             }
             .searchable(text: $library.query, placement: .toolbarPrincipal)
@@ -1287,7 +1209,7 @@ struct ContentView: View {
             TextField("Name", text: $name)
             Button("Create") {
                 let urls = playlists.naming ?? []
-                if let created = playlists.create(name, urls), urls.isEmpty { page = .playlist(created) }
+                if let created = playlists.create(name, urls), urls.isEmpty { navigation.open(.playlist(created)) }
                 name = ""
             }
             .disabled(!playlists.valid(name))
@@ -1296,8 +1218,7 @@ struct ContentView: View {
         .confirmationDialog("Delete the playlist “\(deleting ?? "")”?", isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } }) {
             Button("Delete", role: .destructive) {
                 if let deleting {
-                    if page == .playlist(deleting) { page = .section(.albums) }
-                    history.removeAll { $0.page == .playlist(deleting) }
+                    navigation.remove(.playlist(deleting), fallback: .section(.albums))
                     playlists.delete(deleting)
                 }
             }
@@ -1313,10 +1234,7 @@ struct ContentView: View {
             case .artist(let name): value.append(.artist(name))
             case .search(let text):
                 lyrics.confirm {
-                    visit {
-                        page = .section(.albums)
-                        path = []
-                    }
+                    navigation.open(.section(.albums))
                     library.query = text
                 }
                 return
@@ -1331,7 +1249,7 @@ struct ContentView: View {
             if let current = player.current { lyrics.show(current) }
         }
         .onAppear {
-            navigator.available = { (!history.back.isEmpty, !history.forward.isEmpty) }
+            navigator.available = { (!navigation.back.isEmpty, !navigation.forward.isEmpty) }
             navigator.progress = { swipe = $0 }
             navigator.go = { $0 ? goBack() : goForward() }
             focus = .search
@@ -1342,17 +1260,13 @@ struct ContentView: View {
             monitor = nil
         }
         .onChange(of: library.version) {
+            navigation.refresh(library.albums)
             guard let saved, !library.albums.isEmpty else { return }
 
             self.saved = nil
-            if path.isEmpty { path = saved.compactMap { Route(key: $0, albums: library.albums) } }
+            navigation.restore(saved.compactMap { Route(key: $0, albums: library.albums) })
         }
-        .onChange(of: path) { remember() }
-        .onChange(of: page) {
-            remember()
-            path = restoring ?? []
-            restoring = nil
-        }
+        .onChange(of: navigation.place) { remember() }
         .onChange(of: library.query) {
             navigate([])
             remember()
@@ -1368,31 +1282,15 @@ struct ContentView: View {
             .tag(value)
     }
 
-    private func visit(_ change: () -> Void) {
-        let old = Place(page: page, path: path)
-        change()
-        history.visit(from: old, to: Place(page: page, path: path))
-    }
+    private var page: Page { navigation.page }
+    private var path: [Route] { navigation.path }
 
     private func goBack() {
-        lyrics.confirm {
-            if let place = history.goBack(from: Place(page: page, path: path)) { travel(place) }
-        }
+        lyrics.confirm { navigation.goBack() }
     }
 
     private func goForward() {
-        lyrics.confirm {
-            if let place = history.goForward(from: Place(page: page, path: path)) { travel(place) }
-        }
-    }
-
-    private func travel(_ place: Place) {
-        if place.page == page {
-            path = place.path
-        } else {
-            restoring = place.path
-            page = place.page
-        }
+        lyrics.confirm { navigation.goForward() }
     }
 
     private func press(_ event: NSEvent) -> Bool {
@@ -1465,9 +1363,9 @@ struct ContentView: View {
 
     private func navigate(_ value: [Route]) {
         if shown(path, page), !shown(value, page) {
-            lyrics.confirm { visit { path = value } }
+            lyrics.confirm { navigation.show(value) }
         } else {
-            visit { path = value }
+            navigation.show(value)
         }
     }
 

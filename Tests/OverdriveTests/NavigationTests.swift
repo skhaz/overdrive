@@ -2,45 +2,228 @@ import Testing
 @testable import Overdrive
 
 struct NavigationTests {
-    @Test func goesBackAndForward() {
-        var history = History<String>()
-        history.visit(from: "albums", to: "album")
-        history.visit(from: "album", to: "artist")
+    private static func album(_ id: String, _ title: String = "Title") -> Album {
+        Album(id: id, title: title, artist: "Artist", year: 2000, tracks: [])
+    }
 
-        #expect(history.goBack(from: "artist") == "album")
-        #expect(history.goBack(from: "album") == "albums")
-        #expect(history.goBack(from: "albums") == nil)
-        #expect(history.goForward(from: "albums") == "album")
-        #expect(history.goForward(from: "album") == "artist")
-        #expect(history.goForward(from: "artist") == nil)
+    private let albums = Page.section(.albums)
+    private let songs = Page.section(.songs)
+    private let mix = Page.playlist("Mix")
+
+    @Test func startsWithoutHistory() {
+        let navigation = Navigation(page: songs)
+
+        #expect(navigation.page == songs)
+        #expect(navigation.path.isEmpty)
+        #expect(navigation.back.isEmpty)
+        #expect(navigation.forward.isEmpty)
+    }
+
+    @Test func goesBackAndForwardAcrossPagesAndPaths() {
+        var moved = false
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+        navigation.open(songs)
+        navigation.show([.artist("Artist")])
+
+        moved = navigation.goBack()
+        #expect(moved)
+        #expect(navigation.place == Place(page: songs, path: []))
+        moved = navigation.goBack()
+        #expect(moved)
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+        moved = navigation.goBack()
+        #expect(moved)
+        #expect(navigation.place == Place(page: albums, path: []))
+        moved = navigation.goBack()
+        #expect(!moved)
+        #expect(navigation.place == Place(page: albums, path: []))
+
+        moved = navigation.goForward()
+        #expect(moved)
+        moved = navigation.goForward()
+        #expect(moved)
+        moved = navigation.goForward()
+        #expect(moved)
+        #expect(navigation.place == Place(page: songs, path: [.artist("Artist")]))
+        moved = navigation.goForward()
+        #expect(!moved)
+        #expect(navigation.back.count == 3)
     }
 
     @Test func newVisitClearsForward() {
-        var history = History<String>()
-        history.visit(from: "albums", to: "album")
-        _ = history.goBack(from: "album")
-        history.visit(from: "albums", to: "songs")
+        var navigation = Navigation(page: albums)
+        navigation.open(songs)
+        navigation.goBack()
+        navigation.open(.liked)
 
-        #expect(history.forward.isEmpty)
-        #expect(history.back == ["albums"])
+        #expect(navigation.forward.isEmpty)
+        #expect(navigation.back == [Place(page: albums, path: [])])
     }
 
-    @Test func ignoresVisitToSamePlace() {
-        var history = History<String>()
-        history.visit(from: "albums", to: "albums")
+    @Test func ignoresVisitToTheSamePlace() {
+        var navigation = Navigation(page: albums)
+        navigation.open(albums)
+        navigation.show([])
 
-        #expect(history.back.isEmpty)
+        #expect(navigation.back.isEmpty)
     }
 
-    @Test func removesDeletedPlaces() {
-        var history = History<String>()
-        history.visit(from: "mix", to: "albums")
-        history.visit(from: "albums", to: "songs")
-        _ = history.goBack(from: "songs")
-        history.removeAll { $0 == "mix" || $0 == "songs" }
+    @Test func openingTheCurrentPageGoesToItsRoot() {
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(Self.album("one"))])
+        navigation.open(albums)
 
-        #expect(history.back.isEmpty)
-        #expect(history.forward.isEmpty)
+        #expect(navigation.path.isEmpty)
+        #expect(navigation.back.count == 2)
+    }
+
+    @Test func goingBackThenForwardKeepsBothStacks() {
+        var navigation = Navigation(page: albums)
+        navigation.open(songs)
+        navigation.open(.liked)
+        navigation.goBack()
+
+        #expect(navigation.back == [Place(page: albums, path: [])])
+        #expect(navigation.forward == [Place(page: .liked, path: [])])
+        navigation.goBack()
+        navigation.goForward()
+        #expect(navigation.page == songs)
+        #expect(navigation.forward == [Place(page: .liked, path: [])])
+    }
+
+    @Test func restoresOnlyAnEmptyPathWithoutHistory() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.restore([.album(one)])
+
+        #expect(navigation.path == [.album(one)])
+        #expect(navigation.back.isEmpty)
+
+        navigation.restore([.artist("Other")])
+        #expect(navigation.path == [.album(one)])
+    }
+
+    @Test func deletingTheCurrentPlaylistOpensTheFallback() {
+        var navigation = Navigation(page: albums)
+        navigation.open(mix)
+        navigation.remove(mix, fallback: albums)
+
+        #expect(navigation.place == Place(page: albums, path: []))
+        #expect(navigation.back.isEmpty)
+        #expect(navigation.forward.isEmpty)
+    }
+
+    @Test func deletingAPlaylistMergesTheScreensAroundIt() {
+        var navigation = Navigation(page: albums)
+        navigation.open(mix)
+        navigation.open(albums)
+        navigation.open(mix)
+        navigation.open(songs)
+        navigation.remove(mix, fallback: albums)
+
+        #expect(navigation.back == [Place(page: albums, path: [])])
+        #expect(navigation.page == songs)
+    }
+
+    @Test func deletingAPlaylistDropsNeighborsEqualToTheCurrentScreen() {
+        var moved = false
+        var navigation = Navigation(page: songs)
+        navigation.open(mix)
+        navigation.open(songs)
+        navigation.open(mix)
+        navigation.open(songs)
+        navigation.goBack()
+        navigation.goBack()
+        navigation.remove(mix, fallback: albums)
+
+        #expect(navigation.page == songs)
+        #expect(navigation.back.isEmpty)
+        #expect(navigation.forward.isEmpty)
+        moved = navigation.goBack()
+        #expect(!moved)
+        moved = navigation.goForward()
+        #expect(!moved)
+    }
+
+    @Test func deletingAnotherPlaylistKeepsTheCurrentScreen() {
+        var navigation = Navigation(page: albums)
+        navigation.open(.playlist("Other"))
+        navigation.open(songs)
+        navigation.remove(mix, fallback: albums)
+
+        #expect(navigation.page == songs)
+        #expect(navigation.back.count == 2)
+    }
+
+    @Test func refreshReplacesStaleAlbums() {
+        let old = Self.album("one", "Old")
+        let new = Self.album("one", "New")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(old)])
+        navigation.open(songs)
+        navigation.goBack()
+        navigation.refresh([new])
+
+        #expect(navigation.path == [.album(new)])
+        #expect(navigation.forward == [Place(page: songs, path: [])])
+    }
+
+    @Test func refreshCutsPathsAtMissingAlbums() {
+        let one = Self.album("one")
+        let two = Self.album("two")
+        var navigation = Navigation(page: albums)
+        navigation.show([.artist("Artist"), .album(one)])
+        navigation.open(songs)
+        navigation.show([.album(two)])
+        navigation.refresh([two])
+
+        #expect(navigation.back == [Place(page: albums, path: []), Place(page: albums, path: [.artist("Artist")]), Place(page: songs, path: [])])
+        #expect(navigation.path == [.album(two)])
+    }
+
+    @Test func refreshMergesPlacesThatBecomeEqual() {
+        let one = Self.album("one")
+        let two = Self.album("two")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+        navigation.show([])
+        navigation.show([.album(two)])
+        navigation.refresh([])
+
+        #expect(navigation.place == Place(page: albums, path: []))
+        #expect(navigation.back.isEmpty)
+    }
+
+    @Test func refreshKeepsTheFirstOfRepeatedAlbumIDs() {
+        let first = Self.album("one", "First")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(Self.album("one"))])
+        navigation.refresh([first, Self.album("one", "Second")])
+
+        #expect(navigation.path == [.album(first)])
+    }
+
+    @Test func pagesRoundTripTheirKeys() {
+        for page in [albums, songs, .section(.artists), .liked, mix, .playlist("")] {
+            #expect(Page(key: page.key) == page)
+        }
+        #expect(Page(key: "unknown") == nil)
+        #expect(albums.title == "Albums")
+        #expect(mix.title == "Mix")
+        #expect(Page.liked.title == "Liked Songs")
+        #expect(Section.allCases.map(\.symbol) == ["square.stack", "music.microphone", "music.note"])
+        #expect(Section.songs.id == .songs)
+    }
+
+    @Test func routesRoundTripTheirKeys() {
+        let one = Self.album("/Music/one")
+
+        #expect(Route(key: Route.album(one).key, albums: [one]) == .album(one))
+        #expect(Route(key: Route.artist("Artist").key, albums: []) == .artist("Artist"))
+        #expect(Route(key: "album:missing", albums: [one]) == nil)
+        #expect(Route(key: "unknown", albums: [one]) == nil)
     }
 
     @Test func stepsInList() {
@@ -61,6 +244,9 @@ struct NavigationTests {
         #expect(Step.up.index(first: 2, last: 2, count: 10, columns: 4) == 0)
         #expect(Step.left.index(first: 5, last: 5, count: 10, columns: 4) == 4)
         #expect(Step.right.index(first: 9, last: 9, count: 10, columns: 4) == 9)
+        #expect(Step.left.index(first: nil, last: nil, count: 10, columns: 4) == 9)
+        #expect(Step.right.index(first: nil, last: nil, count: 10, columns: 4) == 0)
+        #expect(Step.right.index(first: 2, last: 2, count: 5, columns: 1) == nil)
     }
 
     @Test func extendsSelection() {
