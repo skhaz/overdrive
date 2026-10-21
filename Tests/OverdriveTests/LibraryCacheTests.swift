@@ -507,9 +507,12 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(Library.relevant([(cache, removed)]))
         #expect(Library.relevant([(cache, renamed)]))
         #expect(Library.relevant([(cache + "-wal", modified), (folder.path + "/Album/one.mp3", modified)]))
-        #expect(!Library.relevant([(folder.path + "/Likes.plist", modified)], folders: [folder]))
-        #expect(!Library.relevant([(folder.path + "/Playlists", removed)], folders: [folder]))
-        #expect(!Library.relevant([(folder.path + "/Playlists/mix.plist", modified)], folders: [folder]))
+        #expect(!Library.relevant([(folder.path + "/Likes.plist", modified)]))
+        #expect(!Library.relevant([(folder.path + "/Likes.plist.tmp", modified)]))
+        #expect(!Library.relevant([(folder.path + "/Playlists/mix.plist", modified)]))
+        #expect(!Library.relevant([(folder.path + "/.DS_Store", modified)]))
+        #expect(!Library.relevant([(folder.path + "/Album/one.lrc.tmp", modified)]))
+        #expect(!Library.relevant([(folder.path + "/readme.txt", modified)]))
     }
 
     @Test func showsTheCacheFirstAndTheFilesystemLast() async throws {

@@ -32,7 +32,7 @@ final class Lyrics {
 
     nonisolated static func ignored(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent
-        return name.hasSuffix(".lrc") || name.contains(".lrc.sb-")
+        return name.hasSuffix(".lrc") || name.hasSuffix(".lrc.tmp") || name.contains(".lrc.sb-")
     }
 
     func show(_ track: Track) {

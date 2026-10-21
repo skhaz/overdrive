@@ -377,11 +377,12 @@ final class Library {
 
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
-            let library = Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue()
             let paths = unsafeBitCast(paths, to: NSArray.self)
-            guard Library.relevant((0..<count).map { (paths[$0] as! String, flags[$0]) }, folders: library.folders) else { return }
+            guard Library.relevant((0..<count).map { (paths[$0] as! String, flags[$0]) }) else { return }
 
-            MainActor.assumeIsolated { library.scan() }
+            MainActor.assumeIsolated {
+                Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
+            }
         }
 
         stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes))
@@ -389,7 +390,7 @@ final class Library {
         FSEventStreamStart(stream!)
     }
 
-    nonisolated static func relevant(_ events: [(path: String, flags: FSEventStreamEventFlags)], folders: [URL] = []) -> Bool {
+    nonisolated static func relevant(_ events: [(path: String, flags: FSEventStreamEventFlags)]) -> Bool {
         events.contains { path, flags in
             if Cache.ignored(path) {
                 let main = (path as NSString).lastPathComponent == Cache.name
@@ -397,18 +398,25 @@ final class Library {
                 return main && gone || !FileManager.default.fileExists(atPath: (path as NSString).deletingLastPathComponent + "/" + Cache.name)
             }
 
-            for folder in folders {
-                if path == folder.path + "/Likes.plist" { return false }
-                if path == folder.path + "/Playlists" || path.hasPrefix(folder.path + "/Playlists/") { return false }
-            }
+            let name = (path as NSString).lastPathComponent
+            if name == ".DS_Store" { return false }
+            if Lyrics.ignored(path) { return false }
+            if name.hasSuffix(".plist") || name.hasSuffix(".plist.tmp") { return false }
+            if path.contains("/.") { return false }
 
-            return !path.contains("/.") && !Lyrics.ignored(path)
+            if audio.contains((name as NSString).pathExtension.lowercased()) { return true }
+
+            if (try? FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType) == .typeDirectory { return true }
+
+            let gone = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0
+            return gone
         }
     }
 
     typealias Snapshot = (albums: [Album], index: Index, covers: [String: Data])
 
     private nonisolated static let batch = 256
+    private nonisolated static let audio: Set<String> = ["mp3", "m4a", "m4b", "mp4", "aac", "flac", "ogg", "opus", "wav", "aiff", "aif", "caf"]
 
     @concurrent
     nonisolated static func load(_ folders: [URL], _ previous: [String: Data], progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
