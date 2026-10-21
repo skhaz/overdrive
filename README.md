@@ -109,6 +109,8 @@ To turn off the same volume for all songs, choose Controls > Normalize Volume.
 
 ### Keyboard shortcuts
 
+The Song menu at the top of the screen has the same actions as the right-click menu, for the selected songs or album. The menus show the shortcut of each action that has one.
+
 | Keys | Action |
 | --- | --- |
 | Up Arrow, Down Arrow | Go to the previous or next item |
@@ -122,6 +124,13 @@ To turn off the same volume for all songs, choose Controls > Normalize Volume.
 | Command-[ | Go back to the previous screen |
 | Command-] | Go forward again |
 | Control-Return | Open the menu of the item, as with a right-click |
+| Command-Return | Play the selected songs next |
+| Option-Command-Return | Add the selected songs to the queue |
+| Shift-Command-L | Like or unlike the selected songs |
+| Shift-Command-Y | Watch the video of the selected song on YouTube |
+| Shift-Command-N | New playlist with the selected songs |
+| Shift-Command-R | Show the selected songs in Finder |
+| Command-Delete | Remove the selected songs from the playlist |
 | Command-Right Arrow | Next song |
 | Command-Left Arrow | Previous song |
 | Option-Command-Right Arrow | Go forward 10 seconds |

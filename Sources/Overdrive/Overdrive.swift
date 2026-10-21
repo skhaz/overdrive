@@ -123,6 +123,15 @@ struct Overdrive: App {
                     .disabled(library.query.isEmpty)
             }
 
+            CommandMenu("Song") {
+                SongMenu()
+                    .environment(library)
+                    .environment(player)
+                    .environment(playlists)
+                    .environment(likes)
+                    .environment(youTube)
+            }
+
             CommandMenu("Controls") {
                 Button(player.playing ? "Pause" : "Play", systemImage: "playpause.fill", action: player.toggle)
                 Button("Next", systemImage: "forward.fill", action: player.next)

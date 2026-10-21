@@ -27,6 +27,60 @@ extension EnvironmentValues {
     @Entry var go = GoAction { _ in }
 }
 
+struct Selection {
+    let tracks: [Track]
+    let album: Album?
+    let playlist: String?
+    let remove: (() -> Void)?
+    let go: GoAction
+}
+
+extension FocusedValues {
+    @Entry var selection: Selection?
+}
+
+struct Selected: ViewModifier {
+    let tracks: [Track]
+    var album: Album?
+    var playlist: String?
+    var remove: (() -> Void)?
+    @Environment(\.active) private var active
+    @Environment(\.go) private var go
+
+    func body(content: Content) -> some View {
+        content.focusedSceneValue(\.selection, active && !tracks.isEmpty ? Selection(tracks: tracks, album: album, playlist: playlist, remove: remove, go: go) : nil)
+    }
+}
+
+struct SongMenu: View {
+    @FocusedValue(\.selection) private var selection
+
+    var body: some View {
+        if let selection {
+            Group {
+                TrackMenu(tracks: selection.tracks, exclude: selection.playlist)
+
+                if let remove = selection.remove {
+                    Button("Remove from Playlist", action: remove)
+                        .keyboardShortcut(.delete)
+                    Divider()
+                }
+
+                if selection.tracks.count == 1 {
+                    GoMenu(track: selection.tracks[0])
+                }
+
+                CopyMenu(tracks: selection.tracks, album: selection.album)
+                FileMenu(urls: selection.tracks.map(\.url))
+            }
+            .environment(\.go, selection.go)
+        } else {
+            Button("No Song Selected") {}
+                .disabled(true)
+        }
+    }
+}
+
 func count(_ number: Int, _ noun: String) -> String {
     "\(number) \(noun)\(number == 1 ? "" : "s")"
 }
@@ -59,14 +113,18 @@ struct TrackMenu: View {
     var body: some View {
         if !tracks.isEmpty {
             Button("Play Next") { player.insert(tracks, next: true) }
+                .keyboardShortcut(.return, modifiers: .command)
             Button("Add to Queue") { player.insert(tracks, next: false) }
+                .keyboardShortcut(.return, modifiers: [.command, .option])
 
             let liked = tracks.allSatisfy(likes.contains)
             Button((liked ? "Unlike " : "Like ") + (tracks.count == 1 ? "Song" : "Songs"), systemImage: liked ? "heart.slash" : "heart") { likes.toggle(tracks) }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
 
             if tracks.count == 1 {
                 Button("Watch Video on YouTube") { youTube.watch(tracks[0]) }
-                .disabled(youTube.searching)
+                    .keyboardShortcut("y", modifiers: [.command, .shift])
+                    .disabled(youTube.searching)
             }
 
             Menu("Add to Playlist") {
@@ -79,6 +137,7 @@ struct TrackMenu: View {
                 if !names.isEmpty { Divider() }
 
                 Button("New Playlist…") { playlists.naming = tracks.map(\.url) }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
             }
 
             Divider()
@@ -103,6 +162,7 @@ struct FileMenu: View {
         }
 
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
     }
 }
 
@@ -468,6 +528,7 @@ struct AlbumGrid: View {
                 selected = albums[index].id
                 proxy.scrollTo(albums[index].id)
             }, enter: { go(.album(albums[$0])) }, point: { _ in CGPoint(x: frame.rect.midX, y: frame.rect.midY) }))
+            .modifier(Selected(tracks: albums.first { $0.id == selected }?.tracks ?? [], album: albums.first { $0.id == selected }))
         }
     }
 }
@@ -659,6 +720,7 @@ struct AlbumView: View {
                 selection.insert(album.tracks[index].id)
                 proxy.scrollTo(index)
             }))
+            .modifier(Selected(tracks: album.tracks.filter { selection.contains($0.id) }))
         }
         .navigationTitle(album.title)
         .onReceive(NotificationCenter.default.publisher(for: .rightClick)) { notification in
@@ -826,6 +888,7 @@ struct SongTable: View {
                 selection.insert(tracks[index].id)
                 proxy.scrollTo(tracks[index].id)
             }))
+            .modifier(Selected(tracks: tracks.filter { selection.contains($0.id) }))
         }
     }
 }
@@ -866,6 +929,7 @@ struct PlaylistView: View {
                     if !picked.isEmpty {
                         TrackMenu(tracks: picked.map(\.track), exclude: name)
                         Button("Remove from Playlist") { removing = picked }
+                        .keyboardShortcut(.delete)
                         Button("Duplicate") {
                             selection = []
                             playlists.duplicate(Set(ids), in: name)
@@ -908,6 +972,7 @@ struct PlaylistView: View {
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
                 }, delete: { removing = rows.filter { selection.contains($0.id) } }))
+                .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track), playlist: name) { removing = rows.filter { selection.contains($0.id) } })
             }
         }
     }
@@ -983,6 +1048,7 @@ struct LikedView: View {
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
                 }))
+                .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
             }
         }
     }
@@ -1099,6 +1165,7 @@ struct ContentView: View {
                             row(name, "music.note.list", .playlist(name))
                                 .contextMenu {
                                     Button("Delete Playlist") { deleting = name }
+                                        .keyboardShortcut(.delete, modifiers: [])
                                 }
                         }
                     } header: {
