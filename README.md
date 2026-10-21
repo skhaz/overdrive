@@ -110,6 +110,17 @@ To turn off the same volume for all songs, choose Controls > Normalize Volume.
 
 | Keys | Action |
 | --- | --- |
+| Up Arrow, Down Arrow | Go to the previous or next item |
+| Left Arrow, Right Arrow | Go to the previous or next album (when the search field is empty) |
+| Return | Open the album or the artist, or play the song. If the song plays, pause it |
+| Space | Play or pause (when the search field is empty) |
+| Escape | Go back (when the search field is empty) |
+| Tab | Go between the side bar and the main area |
+| Control-Return | Open the menu of the item, as with a right-click |
+| Command-Right Arrow | Next song |
+| Command-Left Arrow | Previous song |
+| Command-Up Arrow | Increase the volume |
+| Command-Down Arrow | Decrease the volume |
 | Command-N | New playlist |
 | Command-R | Look for new music in your folders |
 | Command-K | Clear the search |

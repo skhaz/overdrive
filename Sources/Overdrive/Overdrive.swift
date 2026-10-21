@@ -126,7 +126,14 @@ struct Overdrive: App {
             CommandMenu("Controls") {
                 Button(player.playing ? "Pause" : "Play", systemImage: "playpause.fill", action: player.toggle)
                 Button("Next", systemImage: "forward.fill", action: player.next)
+                    .keyboardShortcut(.rightArrow)
                 Button("Previous", systemImage: "backward.fill", action: player.previous)
+                    .keyboardShortcut(.leftArrow)
+                Divider()
+                Button("Increase Volume", systemImage: "speaker.wave.3.fill") { player.volume = min(player.volume + 0.1, 1) }
+                    .keyboardShortcut(.upArrow)
+                Button("Decrease Volume", systemImage: "speaker.wave.1.fill") { player.volume = max(player.volume - 0.1, 0) }
+                    .keyboardShortcut(.downArrow)
                 Divider()
                 Toggle("Shuffle", systemImage: "shuffle", isOn: $player.shuffle)
                 Toggle("Normalize Volume", systemImage: "speaker.wave.2", isOn: $player.normalize)

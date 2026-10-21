@@ -71,6 +71,10 @@ enum Route: Hashable {
     }
 }
 
+enum Focus {
+    case search, sidebar
+}
+
 enum Destination {
     case album(Album)
     case artist(String)
@@ -477,35 +481,122 @@ struct Cover: View {
 
 struct AlbumGrid: View {
     let albums: [Album]
+    @Environment(\.go) private var go
+    @State private var selected: Album.ID?
+    @State private var columns = 1
+    @State private var frame = Frame()
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 20)], spacing: 24) {
-                ForEach(albums) { album in
-                    NavigationLink(value: Route.album(album)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Cover(track: album.tracks[0]).shadow(radius: 2, y: 1)
-                            Text(album.title).lineLimit(1).padding(.top, 4)
-                            Text(album.artist).lineLimit(1).foregroundStyle(.secondary)
-                            Text(count(album.tracks.count, "song")).font(.caption).foregroundStyle(.tertiary)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 20)], spacing: 24) {
+                    ForEach(albums) { album in
+                        NavigationLink(value: Route.album(album)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Cover(track: album.tracks[0])
+                                    .shadow(radius: 2, y: 1)
+                                    .overlay {
+                                        if album.id == selected {
+                                            RoundedRectangle(cornerRadius: 6).stroke(.tint, lineWidth: 3)
+                                        }
+                                    }
+                                    .onGeometryChange(for: CGRect?.self) { album.id == selected ? $0.frame(in: .global) : nil } action: { if let rect = $0 { frame.rect = rect } }
+                                Text(album.title).lineLimit(1).padding(.top, 4)
+                                Text(album.artist).lineLimit(1).foregroundStyle(.secondary)
+                                Text(count(album.tracks.count, "song")).font(.caption).foregroundStyle(.tertiary)
+                            }
+                            .contentShape(.rect)
                         }
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        TrackMenu(tracks: album.tracks)
-                        CopyMenu(tracks: album.tracks, album: album)
-                        FileMenu(urls: album.tracks.map(\.url))
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            TrackMenu(tracks: album.tracks)
+                            CopyMenu(tracks: album.tracks, album: album)
+                            FileMenu(urls: album.tracks.map(\.url))
+                        }
                     }
                 }
+                .padding(20)
             }
-            .padding(20)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columns = max(Int(($0 - 20) / 180), 1) }
+            .modifier(Keys(count: albums.count, columns: columns, selected: { albums[$0].id == selected }, select: { index in
+                selected = albums[index].id
+                proxy.scrollTo(albums[index].id)
+            }, enter: { go(.album(albums[$0])) }, point: { _ in CGPoint(x: frame.rect.midX, y: frame.rect.midY) }))
         }
     }
 }
 
 extension Notification.Name {
     static let rightClick = Notification.Name("rightClick")
+    static let key = Notification.Name("key")
+}
+
+enum Key {
+    case up, down, left, right, enter, menu
+}
+
+func showMenu(at point: CGPoint? = nil, in table: NSTableView? = nil) {
+    guard let window = NSApp.keyWindow, let content = window.contentView else { return }
+
+    let location: CGPoint
+    if let point {
+        location = content.convert(point, to: nil)
+    } else {
+        var tables: [NSTableView] = []
+        var views = [content]
+        while table == nil, let view = views.popLast() {
+            if let table = view as? NSTableView, !table.isHiddenOrHasHiddenAncestor, table.selectedRow >= 0 { tables.append(table) } else { views += view.subviews }
+        }
+
+        guard let table = table ?? tables.max(by: { $0.convert(CGPoint.zero, to: nil).x < $1.convert(CGPoint.zero, to: nil).x }), table.selectedRow >= 0 else { return }
+
+        let rect = table.rect(ofRow: table.selectedRow)
+        table.scrollRowToVisible(table.selectedRow)
+        location = table.convert(CGPoint(x: rect.minX + 40, y: rect.midY), to: nil)
+    }
+
+    guard let event = NSEvent.mouseEvent(with: .rightMouseDown, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return }
+    window.sendEvent(event)
+}
+
+extension EnvironmentValues {
+    @Entry var active = true
+}
+
+extension Player {
+    func start(_ tracks: [Track], at index: Int) {
+        if tracks[index] == current { toggle() } else { play(tracks, at: index) }
+    }
+}
+
+struct Keys: ViewModifier {
+    let count: Int
+    var columns = 1
+    let selected: (Int) -> Bool
+    let select: (Int) -> Void
+    let enter: (Int) -> Void
+    var point: ((Int) -> CGPoint?)?
+    @Environment(\.active) private var active
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .key)) { notification in
+            guard active, count > 0, let key = notification.object as? Key else { return }
+
+            let first = (0..<count).first(where: selected)
+            let last = (0..<count).last(where: selected)
+
+            switch key {
+            case .up: select(first.map { max($0 - columns, 0) } ?? count - 1)
+            case .down: select(last.map { min($0 + columns, count - 1) } ?? 0)
+            case .left where columns > 1: select(first.map { max($0 - 1, 0) } ?? count - 1)
+            case .right where columns > 1: select(last.map { min($0 + 1, count - 1) } ?? 0)
+            case .enter: if let first { enter(first) }
+            case .menu: if let first { showMenu(at: point?(first)) }
+            case .left, .right: break
+            }
+        }
+    }
 }
 
 final class Frame {
@@ -604,6 +695,11 @@ struct AlbumView: View {
                 .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
             }
             .task { reveal(proxy) }
+            .modifier(Keys(count: album.tracks.count, selected: { selection.contains(album.tracks[$0].id) }, select: { index in
+                selection = [album.tracks[index].id]
+                anchor = index
+                proxy.scrollTo(index)
+            }, enter: { player.start(album.tracks, at: $0) }, point: { CGPoint(x: list.rect.minX + 40, y: list.rect.minY + (CGFloat($0) + 0.5) * Stripe.height) }))
         }
         .navigationTitle(album.title)
         .onReceive(NotificationCenter.default.publisher(for: .rightClick)) { notification in
@@ -665,23 +761,30 @@ struct AlbumView: View {
 struct ArtistList: View {
     let artists: [(name: String, albums: [Album])]
     @Environment(\.go) private var go
+    @State private var selected: String?
 
     var body: some View {
-        List(artists, id: \.name) { artist in
-            Button { go(.artist(artist.name)) } label: {
-                HStack {
-                    Cover(track: artist.albums[0].tracks[0]).frame(width: 40)
-                    Text(artist.name)
-                    Spacer()
-                    Text(count(artist.albums.count, "album") + " · " + count(artist.albums.reduce(0) { $0 + $1.tracks.count }, "song")).foregroundStyle(.secondary)
-                    Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+        ScrollViewReader { proxy in
+            List(artists, id: \.name, selection: $selected) { artist in
+                Button { go(.artist(artist.name)) } label: {
+                    HStack {
+                        Cover(track: artist.albums[0].tracks[0]).frame(width: 40)
+                        Text(artist.name)
+                        Spacer()
+                        Text(count(artist.albums.count, "album") + " · " + count(artist.albums.reduce(0) { $0 + $1.tracks.count }, "song")).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
                 }
-                .contentShape(.rect)
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("Copy Artist") { copy([artist.name]) }
+                }
             }
-            .buttonStyle(.plain)
-            .contextMenu {
-                Button("Copy Artist") { copy([artist.name]) }
-            }
+            .modifier(Keys(count: artists.count, selected: { artists[$0].name == selected }, select: { index in
+                selected = artists[index].name
+                proxy.scrollTo(artists[index].name)
+            }, enter: { go(.artist(artists[$0].name)) }))
         }
     }
 }
@@ -733,28 +836,34 @@ struct SongTable: View {
     var body: some View {
         let now = youTube.showing ?? player.current
 
-        Table(tracks, selection: $selection) {
-            TableColumn("Title") { Cell(text: $0.title, playing: $0 == now, liked: likes.contains($0)) }
-            TableColumn("Artist") { Cell(text: $0.artist, playing: $0 == now) }
-            TableColumn("Album") { Cell(text: $0.album, playing: $0 == now) }
-            TableColumn("Time") { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
-        }
-        .contextMenu(forSelectionType: Track.ID.self) { ids in
-            TrackMenu(tracks: tracks.filter { ids.contains($0.id) })
-
-            if ids.count == 1, let track = tracks.first(where: { ids.contains($0.id) }) {
-                GoMenu(track: track)
+        ScrollViewReader { proxy in
+            Table(tracks, selection: $selection) {
+                TableColumn("Title") { Cell(text: $0.title, playing: $0 == now, liked: likes.contains($0)) }
+                TableColumn("Artist") { Cell(text: $0.artist, playing: $0 == now) }
+                TableColumn("Album") { Cell(text: $0.album, playing: $0 == now) }
+                TableColumn("Time") { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
             }
+            .contextMenu(forSelectionType: Track.ID.self) { ids in
+                TrackMenu(tracks: tracks.filter { ids.contains($0.id) })
 
-            CopyMenu(tracks: tracks.filter { ids.contains($0.id) })
-            FileMenu(urls: Array(ids))
-        } primaryAction: { ids in
-            guard let id = ids.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
+                if ids.count == 1, let track = tracks.first(where: { ids.contains($0.id) }) {
+                    GoMenu(track: track)
+                }
 
-            player.play(tracks, at: index)
-        }
-        .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
-            if let track, tracks.contains(track) { selection = [track.id] }
+                CopyMenu(tracks: tracks.filter { ids.contains($0.id) })
+                FileMenu(urls: Array(ids))
+            } primaryAction: { ids in
+                guard let id = ids.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
+
+                player.play(tracks, at: index)
+            }
+            .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+                if let track, tracks.contains(track) { selection = [track.id] }
+            }
+            .modifier(Keys(count: tracks.count, selected: { selection.contains(tracks[$0].id) }, select: { index in
+                selection = [tracks[index].id]
+                proxy.scrollTo(tracks[index].id)
+            }, enter: { player.start(tracks, at: $0) }))
         }
     }
 }
@@ -776,59 +885,65 @@ struct PlaylistView: View {
         if playlists.paths[name]?.isEmpty ?? true {
             ContentUnavailableView("No Songs", systemImage: "music.note.list", description: Text("Right-click a song or an album and choose Add to Playlist."))
         } else {
-            Table(of: Row.self, selection: $selection) {
-                TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now, liked: likes.contains($0.track)) }
-                TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
-                TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
-                TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
-            } rows: {
-                ForEach(rows) { TableRow($0).draggable(String($0.id)) }
-                    .dropDestination(for: String.self) { index, ids in move(rows, ids.compactMap { Int($0) }, to: index) }
-            }
-            .onDeleteCommand {
-                removing = rows.filter { selection.contains($0.id) }
-            }
-            .contextMenu(forSelectionType: Row.ID.self) { ids in
-                let picked = rows.filter { ids.contains($0.id) }
+            ScrollViewReader { proxy in
+                Table(of: Row.self, selection: $selection) {
+                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now, liked: likes.contains($0.track)) }
+                    TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
+                    TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
+                    TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
+                } rows: {
+                    ForEach(rows) { TableRow($0).draggable(String($0.id)) }
+                        .dropDestination(for: String.self) { index, ids in move(rows, ids.compactMap { Int($0) }, to: index) }
+                }
+                .onDeleteCommand {
+                    removing = rows.filter { selection.contains($0.id) }
+                }
+                .contextMenu(forSelectionType: Row.ID.self) { ids in
+                    let picked = rows.filter { ids.contains($0.id) }
 
-                if !picked.isEmpty {
-                    TrackMenu(tracks: picked.map(\.track), exclude: name)
-                    Button("Remove from Playlist") { removing = picked }
-                    Button("Duplicate") {
+                    if !picked.isEmpty {
+                        TrackMenu(tracks: picked.map(\.track), exclude: name)
+                        Button("Remove from Playlist") { removing = picked }
+                        Button("Duplicate") {
+                            selection = []
+                            playlists.duplicate(Set(ids), in: name)
+                        }
+                        Divider()
+
+                        if picked.count == 1 {
+                            GoMenu(track: picked[0].track)
+                        }
+
+                        CopyMenu(tracks: picked.map(\.track))
+                        FileMenu(urls: picked.map(\.track.url))
+                    }
+                } primaryAction: { ids in
+                    guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
+
+                    player.play(rows.map(\.track), at: index)
+                }
+                .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+                    guard let track else { return }
+
+                    let index = player.index
+                    if rows.indices.contains(index), rows[index].track == track, youTube.showing == nil {
+                        selection = [rows[index].id]
+                    } else if let row = rows.first(where: { $0.track == track }) {
+                        selection = [row.id]
+                    }
+                }
+                .confirmationDialog(removing.count == 1 ? "Remove “\(removing[0].track.title)” from the playlist?" : "Remove \(count(removing.count, "song")) from the playlist?", isPresented: Binding { !removing.isEmpty } set: { if !$0 { removing = [] } }) {
+                    Button("Remove", role: .destructive) {
                         selection = []
-                        playlists.duplicate(Set(ids), in: name)
+                        playlists.remove(Set(removing.map(\.id)), from: name)
                     }
-                    Divider()
-
-                    if picked.count == 1 {
-                        GoMenu(track: picked[0].track)
-                    }
-
-                    CopyMenu(tracks: picked.map(\.track))
-                    FileMenu(urls: picked.map(\.track.url))
                 }
-            } primaryAction: { ids in
-                guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
-
-                player.play(rows.map(\.track), at: index)
-            }
-            .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
-                guard let track else { return }
-
-                let index = player.index
-                if rows.indices.contains(index), rows[index].track == track, youTube.showing == nil {
+                .navigationSubtitle(count(rows.count, "song"))
+                .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
-                } else if let row = rows.first(where: { $0.track == track }) {
-                    selection = [row.id]
-                }
+                    proxy.scrollTo(rows[index].id)
+                }, enter: { player.start(rows.map(\.track), at: $0) }))
             }
-            .confirmationDialog(removing.count == 1 ? "Remove “\(removing[0].track.title)” from the playlist?" : "Remove \(count(removing.count, "song")) from the playlist?", isPresented: Binding { !removing.isEmpty } set: { if !$0 { removing = [] } }) {
-                Button("Remove", role: .destructive) {
-                    selection = []
-                    playlists.remove(Set(removing.map(\.id)), from: name)
-                }
-            }
-            .navigationSubtitle(count(rows.count, "song"))
         }
     }
 
@@ -861,40 +976,46 @@ struct LikedView: View {
         if likes.paths.isEmpty {
             ContentUnavailableView("No Liked Songs", systemImage: "heart", description: Text("Right-click a song and choose Like Song, or click the heart next to the song that plays."))
         } else {
-            Table(of: Row.self, selection: $selection) {
-                TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now) }
-                TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
-                TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
-                TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
-            } rows: {
-                ForEach(rows) { TableRow($0) }
-            }
-            .contextMenu(forSelectionType: Row.ID.self) { ids in
-                let picked = rows.filter { ids.contains($0.id) }
+            ScrollViewReader { proxy in
+                Table(of: Row.self, selection: $selection) {
+                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now) }
+                    TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
+                    TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
+                    TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
+                } rows: {
+                    ForEach(rows) { TableRow($0) }
+                }
+                .contextMenu(forSelectionType: Row.ID.self) { ids in
+                    let picked = rows.filter { ids.contains($0.id) }
 
-                if !picked.isEmpty {
-                    TrackMenu(tracks: picked.map(\.track))
+                    if !picked.isEmpty {
+                        TrackMenu(tracks: picked.map(\.track))
 
-                    if picked.count == 1 {
-                        GoMenu(track: picked[0].track)
+                        if picked.count == 1 {
+                            GoMenu(track: picked[0].track)
+                        }
+
+                        CopyMenu(tracks: picked.map(\.track))
+                        FileMenu(urls: picked.map(\.track.url))
                     }
+                } primaryAction: { ids in
+                    guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
-                    CopyMenu(tracks: picked.map(\.track))
-                    FileMenu(urls: picked.map(\.track.url))
+                    player.play(rows.map(\.track), at: index)
                 }
-            } primaryAction: { ids in
-                guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
+                .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+                    guard let track else { return }
 
-                player.play(rows.map(\.track), at: index)
-            }
-            .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
-                guard let track else { return }
-
-                if let row = rows.first(where: { $0.track == track }) {
-                    selection = [row.id]
+                    if let row = rows.first(where: { $0.track == track }) {
+                        selection = [row.id]
+                    }
                 }
+                .navigationSubtitle(count(rows.count, "song"))
+                .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
+                    selection = [rows[index].id]
+                    proxy.scrollTo(rows[index].id)
+                }, enter: { player.start(rows.map(\.track), at: $0) }))
             }
-            .navigationSubtitle(count(rows.count, "song"))
         }
     }
 }
@@ -988,7 +1109,8 @@ struct ContentView: View {
     @State private var deleting: String?
     @State private var path: [Route] = []
     @State private var saved = Player.saved?.path
-    @FocusState private var searching: Bool
+    @State private var monitor: Any?
+    @FocusState private var focus: Focus?
     @Environment(\.controlActiveState) private var active
 
     var body: some View {
@@ -1021,6 +1143,7 @@ struct ContentView: View {
                     }
                 }
                 .navigationSplitViewColumnWidth(180)
+                .focused($focus, equals: .sidebar)
             } detail: {
                 NavigationStack(path: Binding { path } set: { navigate($0) }) {
                     Group {
@@ -1044,15 +1167,19 @@ struct ContentView: View {
                                 case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(count(library.tracks.count, "song"))
                                 }
                             }
+                            .environment(\.active, path.isEmpty)
                             .id(library.query)
                         }
                     }
                     .navigationTitle(page.title)
                     .navigationDestination(for: Route.self) { route in
-                        switch route {
-                        case .album(let album): AlbumView(album: album)
-                        case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name)
+                        Group {
+                            switch route {
+                            case .album(let album): AlbumView(album: album)
+                            case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name }).navigationTitle(name)
+                            }
                         }
+                        .environment(\.active, path.last == route)
                     }
                 }
             }
@@ -1066,7 +1193,7 @@ struct ContentView: View {
                 }
             }
             .searchable(text: $library.query, placement: .toolbarPrincipal)
-            .searchFocused($searching)
+            .searchFocused($focus, equals: .search)
 
             Divider()
             Controls { track in
@@ -1126,11 +1253,18 @@ struct ContentView: View {
         .onChange(of: player.current) {
             if let current = player.current { lyrics.show(current) }
         }
-        .onAppear { searching = true }
+        .onAppear {
+            focus = .search
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { press($0) ? nil : $0 }
+        }
+        .onDisappear {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUpdateNotification)) { _ in
-            guard !searching, active == .key, playlists.naming == nil, deleting == nil, !lyrics.confirming,
+            guard focus == nil, active == .key, playlists.naming == nil, deleting == nil, !lyrics.confirming,
                   !(NSApp.keyWindow?.firstResponder is NSText) else { return }
-            searching = true
+            focus = .search
         }
         .onChange(of: library.version) {
             guard let saved, !library.albums.isEmpty else { return }
@@ -1159,6 +1293,46 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .tag(value)
+    }
+
+    private func press(_ event: NSEvent) -> Bool {
+        guard let window = event.window, window.isKeyWindow, window.attachedSheet == nil, playlists.naming == nil, deleting == nil, !lyrics.confirming else { return false }
+
+        if event.modifierFlags.intersection([.command, .option, .control, .shift]) == .control, event.keyCode == 36 || event.keyCode == 76 {
+            switch focus {
+            case .sidebar: showMenu(in: window.firstResponder as? NSTableView)
+            case .search: NotificationCenter.default.post(name: .key, object: Key.menu)
+            case nil: return false
+            }
+            return true
+        }
+
+        guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
+
+        let key: Key
+        switch (event.keyCode, focus) {
+        case (48, .search):
+            focus = .sidebar
+            return true
+        case (48, .sidebar), (36, .sidebar), (76, .sidebar):
+            focus = .search
+            return true
+        case (126, .search): key = .up
+        case (125, .search): key = .down
+        case (123, .search) where library.query.isEmpty: key = .left
+        case (124, .search) where library.query.isEmpty: key = .right
+        case (36, .search), (76, .search): key = .enter
+        case (49, .search) where library.query.isEmpty:
+            player.toggle()
+            return true
+        case (53, .search) where library.query.isEmpty && !path.isEmpty:
+            navigate(path.dropLast())
+            return true
+        default: return false
+        }
+
+        NotificationCenter.default.post(name: .key, object: key)
+        return true
     }
 
     private func remember() {
