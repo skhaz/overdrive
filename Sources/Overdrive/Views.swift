@@ -71,6 +71,11 @@ enum Route: Hashable {
     }
 }
 
+struct Place: Equatable {
+    let page: Page
+    let path: [Route]
+}
+
 enum Focus {
     case search, sidebar
 }
@@ -540,7 +545,7 @@ extension Notification.Name {
 }
 
 enum Key {
-    case up, down, left, right, enter, menu, delete, extendUp, extendDown
+    case step(Step), enter, menu, delete
 }
 
 func showMenu(at point: CGPoint? = nil, in table: NSTableView? = nil) {
@@ -597,16 +602,16 @@ struct Keys: ViewModifier {
             let last = (0..<count).last(where: selected)
 
             switch key {
-            case .up: select(first.map { max($0 - columns, 0) } ?? count - 1)
-            case .down: select(last.map { min($0 + columns, count - 1) } ?? 0)
-            case .left where columns > 1: select(first.map { max($0 - 1, 0) } ?? count - 1)
-            case .right where columns > 1: select(last.map { min($0 + 1, count - 1) } ?? 0)
+            case .step(let step):
+                guard let index = step.index(first: first, last: last, count: count, columns: columns) else { return }
+
+                switch step {
+                case .extendUp, .extendDown: extend?(index)
+                default: select(index)
+                }
             case .enter: if let first { enter(first) }
             case .menu: if let first { showMenu(at: point?(first)) }
             case .delete: if first != nil { delete?() }
-            case .extendUp: if let first, first > 0 { extend?(first - 1) }
-            case .extendDown: if let last, last < count - 1 { extend?(last + 1) }
-            case .left, .right: break
             }
         }
     }
@@ -680,7 +685,7 @@ struct AlbumView: View {
                                 Text(track.title).foregroundStyle(track == youTube.showing ?? player.current ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
 
                                 if likes.contains(track) {
-                                    Image(systemName: "heart.fill").font(.caption).foregroundStyle(.secondary)
+                                    Image(systemName: "heart.fill").font(.caption).foregroundStyle(.red)
                                 }
 
                                 if album.artist != track.artist {
@@ -835,7 +840,7 @@ struct Cell: View {
                 .foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
 
             if liked {
-                Image(systemName: "heart.fill").font(.caption).foregroundStyle(.secondary)
+                Image(systemName: "heart.fill").font(.caption).foregroundStyle(.red)
             }
         }
         .padding(.vertical, Stripe.padding)
@@ -1082,7 +1087,7 @@ struct Controls: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.plain)
-                .foregroundStyle(liked ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .foregroundStyle(liked ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
             }
 
             HStack(spacing: 14) {
@@ -1136,6 +1141,8 @@ struct ContentView: View {
     @State private var path: [Route] = []
     @State private var saved = Player.saved?.path
     @State private var monitor: Any?
+    @State private var history = History<Place>()
+    @State private var restoring: [Route]?
     @FocusState private var focus: Focus?
     @Environment(\.controlActiveState) private var active
 
@@ -1144,7 +1151,7 @@ struct ContentView: View {
 
         VStack(spacing: 0) {
             NavigationSplitView {
-                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { page = value } } }) {
+                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { visit { page = value } } } }) {
                     ForEach(Section.allCases) { section in
                         row(section.rawValue, section.symbol, .section(section))
                     }
@@ -1209,6 +1216,7 @@ struct ContentView: View {
                             }
                         }
                         .environment(\.active, path.last == route)
+                        .navigationBarBackButtonHidden()
                     }
                 }
             }
@@ -1219,6 +1227,16 @@ struct ContentView: View {
                         LyricsView().frame(width: LyricsView.width)
                     }
                     .background(Color(nsColor: .textBackgroundColor))
+                }
+            }
+            .toolbar {
+                ToolbarItemGroup(placement: .navigation) {
+                    Button("Back", systemImage: "chevron.backward", action: goBack)
+                        .keyboardShortcut("[")
+                        .disabled(history.back.isEmpty)
+                    Button("Forward", systemImage: "chevron.forward", action: goForward)
+                        .keyboardShortcut("]")
+                        .disabled(history.forward.isEmpty)
                 }
             }
             .searchable(text: $library.query, placement: .toolbarPrincipal)
@@ -1252,6 +1270,7 @@ struct ContentView: View {
             Button("Delete", role: .destructive) {
                 if let deleting {
                     if page == .playlist(deleting) { page = .section(.albums) }
+                    history.removeAll { $0.page == .playlist(deleting) }
                     playlists.delete(deleting)
                 }
             }
@@ -1267,9 +1286,11 @@ struct ContentView: View {
             case .artist(let name): value.append(.artist(name))
             case .search(let text):
                 lyrics.confirm {
-                    page = .section(.albums)
+                    visit {
+                        page = .section(.albums)
+                        path = []
+                    }
                     library.query = text
-                    path = []
                 }
                 return
             }
@@ -1284,7 +1305,7 @@ struct ContentView: View {
         }
         .onAppear {
             focus = .search
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { press($0) ? nil : $0 }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .scrollWheel, .swipe, .otherMouseDown], handler: handle)
         }
         .onDisappear {
             if let monitor { NSEvent.removeMonitor(monitor) }
@@ -1304,11 +1325,8 @@ struct ContentView: View {
         .onChange(of: path) { remember() }
         .onChange(of: page) {
             remember()
-            path = []
-            switch page {
-            case .playlist, .liked: library.query = ""
-            case .section: break
-            }
+            path = restoring ?? []
+            restoring = nil
         }
         .onChange(of: library.query) {
             navigate([])
@@ -1322,6 +1340,60 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .tag(value)
+    }
+
+    private func handle(_ event: NSEvent) -> NSEvent? {
+        guard let window = event.window, window.isKeyWindow, window.attachedSheet == nil else { return event }
+
+        switch event.type {
+        case .keyDown: return press(event) ? nil : event
+        case .scrollWheel: return swipe(event) ? nil : event
+        case .swipe where event.deltaX != 0: event.deltaX > 0 ? goBack() : goForward()
+        case .otherMouseDown where event.buttonNumber == 3: goBack()
+        case .otherMouseDown where event.buttonNumber == 4: goForward()
+        default: return event
+        }
+
+        return nil
+    }
+
+    private func swipe(_ event: NSEvent) -> Bool {
+        guard event.phase == .began, NSEvent.isSwipeTrackingFromScrollEventsEnabled, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY),
+              !history.back.isEmpty || !history.forward.isEmpty else { return false }
+
+        event.trackSwipeEvent(options: [.lockDirection, .clampGestureAmount], dampenAmountThresholdMin: history.forward.isEmpty ? 0 : -1, max: history.back.isEmpty ? 0 : 1) { amount, _, complete, _ in
+            guard complete else { return }
+
+            if amount >= 1 { goBack() } else if amount <= -1 { goForward() }
+        }
+        return true
+    }
+
+    private func visit(_ change: () -> Void) {
+        let old = Place(page: page, path: path)
+        change()
+        history.visit(from: old, to: Place(page: page, path: path))
+    }
+
+    private func goBack() {
+        lyrics.confirm {
+            if let place = history.goBack(from: Place(page: page, path: path)) { travel(place) }
+        }
+    }
+
+    private func goForward() {
+        lyrics.confirm {
+            if let place = history.goForward(from: Place(page: page, path: path)) { travel(place) }
+        }
+    }
+
+    private func travel(_ place: Place) {
+        if place.page == page {
+            path = place.path
+        } else {
+            restoring = place.path
+            page = place.page
+        }
     }
 
     private func press(_ event: NSEvent) -> Bool {
@@ -1357,17 +1429,17 @@ struct ContentView: View {
         case (48, .sidebar), (36, .sidebar), (76, .sidebar):
             focus = .search
             return true
-        case (126, .search): key = shift ? .extendUp : .up
-        case (125, .search): key = shift ? .extendDown : .down
-        case (123, .search) where library.query.isEmpty: key = .left
-        case (124, .search) where library.query.isEmpty: key = .right
+        case (126, .search): key = .step(shift ? .extendUp : .up)
+        case (125, .search): key = .step(shift ? .extendDown : .down)
+        case (123, .search) where library.query.isEmpty: key = .step(.left)
+        case (124, .search) where library.query.isEmpty: key = .step(.right)
         case (36, .search), (76, .search): key = .enter
         case (51, .search) where library.query.isEmpty: key = .delete
         case (49, .search) where library.query.isEmpty:
             player.toggle()
             return true
         case (53, .search) where library.query.isEmpty && !path.isEmpty:
-            navigate(path.dropLast())
+            navigate(Array(path.dropLast()))
             return true
         default: return false
         }
@@ -1388,9 +1460,9 @@ struct ContentView: View {
 
     private func navigate(_ value: [Route]) {
         if shown(path, page), !shown(value, page) {
-            lyrics.confirm { path = value }
+            lyrics.confirm { visit { path = value } }
         } else {
-            path = value
+            visit { path = value }
         }
     }
 

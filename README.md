@@ -42,7 +42,8 @@ Drag a music folder to the window, or choose Overdrive > Settings > Folders > Ad
 ### Find and play
 
 - Use the sidebar to see **Albums**, **Artists**, or **Songs**.
-- Type in the search field to find an artist, an album, or a song.
+- Type in the search field to find an artist, an album, or a song. The search stays until you clear it with Escape, Command-K, or the clear button.
+- To go back to the previous screen, click the back arrow at the top, press Command-[, or swipe to the right on the trackpad. To go forward again, click the forward arrow, press Command-], or swipe to the left. The side buttons of a mouse also work.
 - Double-click a song to play it. On an album, click **Play** or **Shuffle**.
 - Use the bar at the bottom to play, pause, go to the previous or next song, shuffle, repeat, go to a different part of the song, and change the volume.
 - Click the cover or the name in the bottom bar to open the album that plays.
@@ -118,6 +119,8 @@ To turn off the same volume for all songs, choose Controls > Normalize Volume.
 | Escape | Close the video. Stop to edit the lyrics. Clear the search. Go back |
 | Delete | Remove the selected songs from the playlist, or delete the selected playlist in the side bar |
 | Tab | Go between the side bar and the main area |
+| Command-[ | Go back to the previous screen |
+| Command-] | Go forward again |
 | Control-Return | Open the menu of the item, as with a right-click |
 | Command-Right Arrow | Next song |
 | Command-Left Arrow | Previous song |
