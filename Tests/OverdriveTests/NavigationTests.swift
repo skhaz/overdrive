@@ -206,8 +206,8 @@ struct NavigationTests {
     }
 
     @Test func keepsThePositionOfEachScreen() {
-        let top = Position(top: "a", selection: ["b"])
-        let next = Position(top: "c")
+        let top = Position(offset: 1, selection: ["b"])
+        let next = Position(offset: 2)
         let last = Position(selection: ["d"])
         var navigation = Navigation(page: albums)
         navigation.open(songs, leaving: top)
@@ -217,35 +217,91 @@ struct NavigationTests {
         #expect(navigation.place.position == next)
         navigation.goBack(leaving: next)
         #expect(navigation.place.position == top)
-        navigation.goForward(leaving: Position(top: "e"))
+        navigation.goForward(leaving: Position(offset: 3))
         #expect(navigation.place.position == next)
         navigation.goForward()
         #expect(navigation.place.position == last)
-        #expect(navigation.back.map(\.position) == [Position(top: "e"), Position()])
+        #expect(navigation.back.map(\.position) == [Position(offset: 3), Position()])
     }
 
     @Test func aNewScreenStartsWithoutPosition() {
         var navigation = Navigation(page: albums)
-        navigation.open(songs, leaving: Position(top: "a"))
+        navigation.open(songs, leaving: Position(offset: 4))
 
         #expect(navigation.place.position == Position())
     }
 
     @Test func positionDoesNotMakeAnotherScreen() {
         var navigation = Navigation(page: albums)
-        navigation.open(albums, leaving: Position(top: "a"))
+        navigation.open(albums, leaving: Position(offset: 4))
 
         #expect(navigation.back.isEmpty)
-        #expect(Place(page: albums, path: [], position: Position(top: "a")) == Place(page: albums, path: []))
+        #expect(Place(page: albums, path: [], position: Position(offset: 4)) == Place(page: albums, path: []))
     }
 
     @Test func refreshKeepsPositions() {
         let one = Self.album("one")
         var navigation = Navigation(page: albums)
-        navigation.show([.album(one)], leaving: Position(top: "x"))
+        navigation.show([.album(one)], leaving: Position(offset: 5))
         navigation.refresh([one])
 
-        #expect(navigation.back.first?.position == Position(top: "x"))
+        #expect(navigation.back.first?.position == Position(offset: 5))
+    }
+
+    @Test func keepsEachVisitedPageWithItsPath() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+        navigation.open(songs)
+        navigation.open(.liked)
+
+        #expect(navigation.pages == [albums, songs, .liked])
+        #expect(navigation.path(of: albums) == [.album(one)])
+        #expect(navigation.path(of: songs).isEmpty)
+        #expect(navigation.path(of: mix).isEmpty)
+
+        navigation.open(albums)
+        #expect(navigation.pages == [albums, songs, .liked])
+        #expect(navigation.path(of: albums).isEmpty)
+        navigation.goBack()
+        #expect(navigation.page == .liked)
+        #expect(navigation.path(of: albums).isEmpty)
+        navigation.goBack()
+        navigation.goBack()
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+    }
+
+    @Test func deletingAPlaylistClosesItsPage() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+        navigation.open(mix)
+        navigation.remove(mix, fallback: albums)
+
+        #expect(navigation.pages == [albums])
+        #expect(navigation.path == [.album(one)])
+        #expect(navigation.path(of: mix).isEmpty)
+    }
+
+    @Test func deletingTheCurrentPlaylistOpensANewFallbackPage() {
+        var navigation = Navigation(page: mix)
+        navigation.remove(mix, fallback: albums)
+
+        #expect(navigation.pages == [albums])
+        #expect(navigation.place == Place(page: albums, path: []))
+    }
+
+    @Test func refreshUpdatesThePathsOfHiddenPages() {
+        let old = Self.album("one", "Old")
+        let new = Self.album("one", "New")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(old)])
+        navigation.open(songs)
+        navigation.refresh([new])
+
+        #expect(navigation.path(of: albums) == [.album(new)])
+        navigation.refresh([])
+        #expect(navigation.path(of: albums).isEmpty)
     }
 
     @Test func pagesRoundTripTheirKeys() {

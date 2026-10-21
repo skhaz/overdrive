@@ -491,7 +491,6 @@ struct AlbumGrid: View {
     @State private var selected: Album.ID?
     @State private var columns = 1
     @State private var frame = Frame()
-    @State private var scroll = ScrollPosition(idType: Album.ID.self)
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -523,20 +522,15 @@ struct AlbumGrid: View {
                         }
                     }
                 }
-                .scrollTargetLayout()
                 .padding(20)
             }
-            .scrollPosition($scroll, anchor: .top)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columns = max(Int(($0 - 20) / 180), 1) }
             .modifier(Keys(count: albums.count, columns: columns, selected: { albums[$0].id == selected }, select: { index in
                 selected = albums[index].id
                 proxy.scrollTo(albums[index].id)
             }, enter: { go(.album(albums[$0])) }, point: { _ in CGPoint(x: frame.rect.midX, y: frame.rect.midY) }))
             .modifier(Selected(tracks: albums.first { $0.id == selected }?.tracks ?? [], album: albums.first { $0.id == selected }))
-            .modifier(Remember(position: Position(top: scroll.viewID(type: Album.ID.self), selection: selected.map { [$0] } ?? [])) { position in
-                selected = position.selection.first
-                if let top = position.top { scroll.scrollTo(id: top, anchor: .top) }
-            })
+            .modifier(Remember(selection: selected.map { [$0] } ?? []) { selected = $0.first })
         }
     }
 }
@@ -590,15 +584,26 @@ final class Tracker {
 }
 
 struct Remember: ViewModifier {
-    let position: Position
-    let apply: (Position) -> Void
+    let selection: [String]
+    let select: ([String]) -> Void
+    @State private var scroll = ScrollPosition()
+    @State private var offset = 0.0
     @Environment(\.active) private var active
     @Environment(\.restore) private var restore
     @Environment(\.tracker) private var tracker
 
     func body(content: Content) -> some View {
+        let position = Position(offset: offset, selection: selection)
+
         content
-            .task { if active, restore != Position() { apply(restore) } }
+            .scrollPosition($scroll)
+            .onScrollGeometryChange(for: Double.self) { $0.contentOffset.y + $0.contentInsets.top } action: { offset = $1 }
+            .onAppear {
+                guard active, restore != Position() else { return }
+
+                select(restore.selection)
+                if let offset = restore.offset { scroll.scrollTo(y: offset) }
+            }
             .onChange(of: position, initial: true) { if active { tracker.position = position } }
             .onChange(of: active) { if active { tracker.position = position } }
     }
@@ -660,7 +665,6 @@ struct AlbumView: View {
     @State private var anchor: Int?
     @State private var list = Frame()
     @State private var revealed = false
-    @State private var scroll = ScrollPosition(idType: Int.self)
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -736,13 +740,11 @@ struct AlbumView: View {
                             }
                         }
                     }
-                    .scrollTargetLayout()
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { list.rect = $0 }
                 }
                 .padding(20)
                 .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
             }
-            .scrollPosition($scroll, anchor: .top)
             .task { reveal(proxy) }
             .modifier(Keys(count: album.tracks.count, selected: { selection.contains(album.tracks[$0].id) }, select: { index in
                 selection = [album.tracks[index].id]
@@ -753,15 +755,13 @@ struct AlbumView: View {
                 proxy.scrollTo(index)
             }))
             .modifier(Selected(tracks: album.tracks.filter { selection.contains($0.id) }))
-            .modifier(Remember(position: Position(top: scroll.viewID(type: Int.self).map(String.init), selection: album.tracks.filter { selection.contains($0.id) }.map(\.url.path))) { position in
+            .modifier(Remember(selection: album.tracks.filter { selection.contains($0.id) }.map(\.url.path)) { paths in
                 revealed = true
-                let picked = album.tracks.indices.filter { position.selection.contains(album.tracks[$0].url.path) }
+                let picked = album.tracks.indices.filter { paths.contains(album.tracks[$0].url.path) }
                 selection = Set(picked.map { album.tracks[$0].id })
                 anchor = picked.first
-                if let top = position.top.flatMap(Int.init) { scroll.scrollTo(id: top, anchor: .top) }
             })
         }
-        .navigationTitle(album.title)
         .onReceive(NotificationCenter.default.publisher(for: .rightClick)) { notification in
             guard let point = notification.object as? CGPoint, list.rect.contains(point) else { return }
 
@@ -825,30 +825,32 @@ struct ArtistList: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(artists, id: \.name, selection: $selected) { artist in
-                Button { go(.artist(artist.name)) } label: {
-                    HStack {
-                        Cover(track: artist.albums[0].tracks[0]).frame(width: 40)
-                        Text(artist.name)
-                        Spacer()
-                        Text(count(artist.albums.count, "album") + " · " + count(artist.albums.reduce(0) { $0 + $1.tracks.count }, "song")).foregroundStyle(.secondary)
-                        Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+            List(selection: $selected) {
+                ForEach(artists.indices, id: \.self) { index in
+                    let artist = artists[index]
+
+                    Button { go(.artist(artist.name)) } label: {
+                        HStack {
+                            Cover(track: artist.albums[0].tracks[0]).frame(width: 40)
+                            Text(artist.name)
+                            Spacer()
+                            Text(count(artist.albums.count, "album") + " · " + count(artist.albums.reduce(0) { $0 + $1.tracks.count }, "song")).foregroundStyle(.secondary)
+                            Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+                        }
+                        .contentShape(.rect)
                     }
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button("Copy Artist") { copy([artist.name]) }
-                }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Copy Artist") { copy([artist.name]) }
+                    }
+                    .tag(artist.name)
+                    }
             }
             .modifier(Keys(count: artists.count, selected: { artists[$0].name == selected }, select: { index in
                 selected = artists[index].name
-                proxy.scrollTo(artists[index].name)
+                proxy.scrollTo(index)
             }, enter: { go(.artist(artists[$0].name)) }))
-            .modifier(Remember(position: Position(selection: selected.map { [$0] } ?? [])) { position in
-                selected = position.selection.first
-                if let selected { proxy.scrollTo(selected) }
-            })
+
         }
     }
 }
@@ -932,11 +934,7 @@ struct SongTable: View {
                 proxy.scrollTo(tracks[index].id)
             }))
             .modifier(Selected(tracks: tracks.filter { selection.contains($0.id) }))
-            .modifier(Remember(position: Position(selection: tracks.filter { selection.contains($0.id) }.map(\.url.path))) { position in
-                let picked = tracks.filter { position.selection.contains($0.url.path) }
-                selection = Set(picked.map(\.id))
-                if let first = picked.first { proxy.scrollTo(first.id) }
-            })
+
         }
     }
 }
@@ -1012,7 +1010,6 @@ struct PlaylistView: View {
                         playlists.remove(Set(removing.map(\.id)), from: name)
                     }
                 }
-                .navigationSubtitle(summary(rows.map(\.track)))
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
@@ -1021,11 +1018,7 @@ struct PlaylistView: View {
                     proxy.scrollTo(rows[index].id)
                 }, delete: { removing = rows.filter { selection.contains($0.id) } }))
                 .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track), playlist: name) { removing = rows.filter { selection.contains($0.id) } })
-                .modifier(Remember(position: Position(selection: rows.filter { selection.contains($0.id) }.map { String($0.id) })) { position in
-                    let picked = rows.filter { position.selection.contains(String($0.id)) }
-                    selection = Set(picked.map(\.id))
-                    if let first = picked.first { proxy.scrollTo(first.id) }
-                })
+
             }
         }
     }
@@ -1093,7 +1086,6 @@ struct LikedView: View {
                         selection = [row.id]
                     }
                 }
-                .navigationSubtitle(summary(rows.map(\.track)))
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
@@ -1102,11 +1094,7 @@ struct LikedView: View {
                     proxy.scrollTo(rows[index].id)
                 }))
                 .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
-                .modifier(Remember(position: Position(selection: rows.filter { selection.contains($0.id) }.map { String($0.id) })) { position in
-                    let picked = rows.filter { position.selection.contains(String($0.id)) }
-                    selection = Set(picked.map(\.id))
-                    if let first = picked.first { proxy.scrollTo(first.id) }
-                })
+
             }
         }
     }
@@ -1243,46 +1231,26 @@ struct ContentView: View {
                     if case .playlist(let name) = page { deleting = name }
                 }
             } detail: {
-                NavigationStack(path: Binding { path } set: { navigate($0) }) {
-                    Group {
-                        if library.folders.isEmpty {
-                            ContentUnavailableView {
-                                Label("No Music", systemImage: "music.note")
-                            } description: {
-                                Text("Add a folder with music or drop it here.")
-                            } actions: {
-                                Button("Add Folder…", action: library.choose)
-                            }
-                        } else if library.albums.isEmpty, library.scanning {
-                            ProgressView()
-                        } else {
-                            Group {
-                                switch page {
-                                case .section(.albums): AlbumGrid(albums: library.filtered).navigationSubtitle(summary(library.filtered))
-                                case .section(.artists): ArtistList(artists: library.artists).navigationSubtitle(summary(library.artists.flatMap(\.albums)))
-                                case .playlist(let name): PlaylistView(name: name)
-                                case .liked: LikedView()
-                                case .section(.songs): SongTable(tracks: library.tracks).navigationSubtitle(summary(library.tracks))
-                                }
-                            }
-                            .environment(\.active, path.isEmpty)
-                            .environment(\.restore, path.isEmpty ? navigation.place.position : Position())
-                            .id(library.query)
+                Group {
+                    if library.folders.isEmpty {
+                        ContentUnavailableView {
+                            Label("No Music", systemImage: "music.note")
+                        } description: {
+                            Text("Add a folder with music or drop it here.")
+                        } actions: {
+                            Button("Add Folder…", action: library.choose)
                         }
-                    }
-                    .navigationTitle(page.title)
-                    .navigationDestination(for: Route.self) { route in
-                        Group {
-                            switch route {
-                            case .album(let album): AlbumView(album: album)
-                            case .artist(let name):
-                                let albums = library.albums.filter { $0.artist == name }
-                                AlbumGrid(albums: albums).navigationTitle(name).navigationSubtitle(summary(albums))
+                    } else if library.albums.isEmpty, library.scanning {
+                        ProgressView()
+                    } else {
+                        ZStack {
+                            ForEach(navigation.pages, id: \.self) { page in
+                                stack(page)
+                                    .opacity(page == self.page ? 1 : 0)
+                                    .allowsHitTesting(page == self.page)
+                                    .accessibilityHidden(page != self.page)
                             }
                         }
-                        .environment(\.active, path.last == route)
-                        .environment(\.restore, path.last == route ? navigation.place.position : Position())
-                        .navigationBarBackButtonHidden()
                     }
                 }
                 .overlay(alignment: swipe > 0 ? .leading : .trailing) {
@@ -1416,6 +1384,61 @@ struct ContentView: View {
 
     private var page: Page { navigation.page }
     private var path: [Route] { navigation.path }
+
+    private var title: String {
+        switch path.last {
+        case .album(let album): album.title
+        case .artist(let name): name
+        case nil: page.title
+        }
+    }
+
+    private var subtitle: String {
+        switch (path.last, page) {
+        case (.album, _): ""
+        case (.artist(let name), _): summary(library.albums.filter { $0.artist == name })
+        case (nil, .section(.albums)): summary(library.filtered)
+        case (nil, .section(.artists)): summary(library.artists.flatMap(\.albums))
+        case (nil, .section(.songs)): summary(library.tracks)
+        case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
+        case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
+        }
+    }
+
+    private func stack(_ page: Page) -> some View {
+        let current = page == self.page
+        let path = navigation.path(of: page)
+
+        return NavigationStack(path: Binding { navigation.path(of: page) } set: { if current { navigate($0) } }) {
+            Group {
+                switch page {
+                case .section(.albums): AlbumGrid(albums: library.filtered)
+                case .section(.artists): ArtistList(artists: library.artists)
+                case .playlist(let name): PlaylistView(name: name)
+                case .liked: LikedView()
+                case .section(.songs): SongTable(tracks: library.tracks)
+                }
+            }
+            .environment(\.active, current && path.isEmpty)
+            .environment(\.restore, current && path.isEmpty ? navigation.place.position : Position())
+            .id(library.query)
+            .navigationTitle(title)
+            .navigationSubtitle(subtitle)
+            .navigationDestination(for: Route.self) { route in
+                Group {
+                    switch route {
+                    case .album(let album): AlbumView(album: album)
+                    case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name })
+                    }
+                }
+                .environment(\.active, current && path.last == route)
+                .environment(\.restore, current && path.last == route ? navigation.place.position : Position())
+                .navigationTitle(title)
+                .navigationSubtitle(subtitle)
+                .navigationBarBackButtonHidden()
+            }
+        }
+    }
 
     private func goBack() {
         lyrics.confirm { navigation.goBack(leaving: tracker.position) }

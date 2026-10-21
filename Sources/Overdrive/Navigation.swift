@@ -69,7 +69,7 @@ nonisolated enum Route: Hashable {
 }
 
 nonisolated struct Position: Equatable {
-    var top: String?
+    var offset: Double?
     var selection: [String] = []
 }
 
@@ -83,17 +83,21 @@ nonisolated struct Place: Equatable {
     }
 
     func resolved(_ albums: [String: Album]) -> Place {
+        Place(page: page, path: Self.resolve(path, albums), position: position)
+    }
+
+    static func resolve(_ path: [Route], _ albums: [String: Album]) -> [Route] {
         var routes: [Route] = []
         for route in path {
             switch route {
             case .album(let album):
-                guard let current = albums[album.id] else { return Place(page: page, path: routes) }
+                guard let current = albums[album.id] else { return routes }
                 routes.append(.album(current))
             case .artist:
                 routes.append(route)
             }
         }
-        return Place(page: page, path: routes, position: position)
+        return routes
     }
 }
 
@@ -101,13 +105,20 @@ nonisolated struct Navigation {
     private(set) var place: Place
     private(set) var back: [Place] = []
     private(set) var forward: [Place] = []
+    private(set) var pages: [Page]
+    private var paths: [Page: [Route]] = [:]
 
     init(page: Page, path: [Route] = []) {
         place = Place(page: page, path: path)
+        pages = [page]
     }
 
     var page: Page { place.page }
     var path: [Route] { place.path }
+
+    func path(of page: Page) -> [Route] {
+        page == place.page ? place.path : paths[page] ?? []
+    }
 
     mutating func open(_ page: Page, leaving position: Position = Position()) {
         visit(Place(page: page, path: []), leaving: position)
@@ -128,7 +139,7 @@ nonisolated struct Navigation {
         guard let previous = back.popLast() else { return false }
 
         forward.append(left(position))
-        place = previous
+        move(to: previous)
         return true
     }
 
@@ -137,14 +148,19 @@ nonisolated struct Navigation {
         guard let next = forward.popLast() else { return false }
 
         back.append(left(position))
-        place = next
+        move(to: next)
         return true
     }
 
     mutating func remove(_ page: Page, fallback: Page) {
         back.removeAll { $0.page == page }
         forward.removeAll { $0.page == page }
-        if place.page == page { place = Place(page: fallback, path: []) }
+        pages.removeAll { $0 == page }
+        paths[page] = nil
+        if place.page == page {
+            place = Place(page: fallback, path: paths[fallback] ?? [])
+            if !pages.contains(fallback) { pages.append(fallback) }
+        }
         collapse()
     }
 
@@ -153,6 +169,7 @@ nonisolated struct Navigation {
         place = place.resolved(index)
         back = back.map { $0.resolved(index) }
         forward = forward.map { $0.resolved(index) }
+        paths = paths.mapValues { Place.resolve($0, index) }
         collapse()
     }
 
@@ -161,6 +178,14 @@ nonisolated struct Navigation {
 
         back.append(left(position))
         forward.removeAll()
+        move(to: new)
+    }
+
+    private mutating func move(to new: Place) {
+        if new.page != place.page {
+            paths[place.page] = place.path
+            if !pages.contains(new.page) { pages.append(new.page) }
+        }
         place = new
     }
 
