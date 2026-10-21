@@ -491,6 +491,7 @@ struct AlbumGrid: View {
     @State private var selected: Album.ID?
     @State private var columns = 1
     @State private var frame = Frame()
+    @State private var scroll = ScrollPosition(idType: Album.ID.self)
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -514,6 +515,7 @@ struct AlbumGrid: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        .simultaneousGesture(TapGesture().onEnded { selected = album.id })
                         .contextMenu {
                             TrackMenu(tracks: album.tracks)
                             CopyMenu(tracks: album.tracks, album: album)
@@ -521,14 +523,20 @@ struct AlbumGrid: View {
                         }
                     }
                 }
+                .scrollTargetLayout()
                 .padding(20)
             }
+            .scrollPosition($scroll, anchor: .top)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columns = max(Int(($0 - 20) / 180), 1) }
             .modifier(Keys(count: albums.count, columns: columns, selected: { albums[$0].id == selected }, select: { index in
                 selected = albums[index].id
                 proxy.scrollTo(albums[index].id)
             }, enter: { go(.album(albums[$0])) }, point: { _ in CGPoint(x: frame.rect.midX, y: frame.rect.midY) }))
             .modifier(Selected(tracks: albums.first { $0.id == selected }?.tracks ?? [], album: albums.first { $0.id == selected }))
+            .modifier(Remember(position: Position(top: scroll.viewID(type: Album.ID.self), selection: selected.map { [$0] } ?? [])) { position in
+                selected = position.selection.first
+                if let top = position.top { scroll.scrollTo(id: top, anchor: .top) }
+            })
         }
     }
 }
@@ -573,6 +581,27 @@ func showMenu(at point: CGPoint? = nil, in table: NSTableView? = nil) {
 
 extension EnvironmentValues {
     @Entry var active = true
+    @Entry var restore = Position()
+    @Entry var tracker = Tracker()
+}
+
+final class Tracker {
+    var position = Position()
+}
+
+struct Remember: ViewModifier {
+    let position: Position
+    let apply: (Position) -> Void
+    @Environment(\.active) private var active
+    @Environment(\.restore) private var restore
+    @Environment(\.tracker) private var tracker
+
+    func body(content: Content) -> some View {
+        content
+            .task { if active, restore != Position() { apply(restore) } }
+            .onChange(of: position, initial: true) { if active { tracker.position = position } }
+            .onChange(of: active) { if active { tracker.position = position } }
+    }
 }
 
 extension Player {
@@ -631,6 +660,7 @@ struct AlbumView: View {
     @State private var anchor: Int?
     @State private var list = Frame()
     @State private var revealed = false
+    @State private var scroll = ScrollPosition(idType: Int.self)
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -706,11 +736,13 @@ struct AlbumView: View {
                             }
                         }
                     }
+                    .scrollTargetLayout()
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { list.rect = $0 }
                 }
                 .padding(20)
                 .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
             }
+            .scrollPosition($scroll, anchor: .top)
             .task { reveal(proxy) }
             .modifier(Keys(count: album.tracks.count, selected: { selection.contains(album.tracks[$0].id) }, select: { index in
                 selection = [album.tracks[index].id]
@@ -721,6 +753,13 @@ struct AlbumView: View {
                 proxy.scrollTo(index)
             }))
             .modifier(Selected(tracks: album.tracks.filter { selection.contains($0.id) }))
+            .modifier(Remember(position: Position(top: scroll.viewID(type: Int.self).map(String.init), selection: album.tracks.filter { selection.contains($0.id) }.map(\.url.path))) { position in
+                revealed = true
+                let picked = album.tracks.indices.filter { position.selection.contains(album.tracks[$0].url.path) }
+                selection = Set(picked.map { album.tracks[$0].id })
+                anchor = picked.first
+                if let top = position.top.flatMap(Int.init) { scroll.scrollTo(id: top, anchor: .top) }
+            })
         }
         .navigationTitle(album.title)
         .onReceive(NotificationCenter.default.publisher(for: .rightClick)) { notification in
@@ -806,6 +845,10 @@ struct ArtistList: View {
                 selected = artists[index].name
                 proxy.scrollTo(artists[index].name)
             }, enter: { go(.artist(artists[$0].name)) }))
+            .modifier(Remember(position: Position(selection: selected.map { [$0] } ?? [])) { position in
+                selected = position.selection.first
+                if let selected { proxy.scrollTo(selected) }
+            })
         }
     }
 }
@@ -889,6 +932,11 @@ struct SongTable: View {
                 proxy.scrollTo(tracks[index].id)
             }))
             .modifier(Selected(tracks: tracks.filter { selection.contains($0.id) }))
+            .modifier(Remember(position: Position(selection: tracks.filter { selection.contains($0.id) }.map(\.url.path))) { position in
+                let picked = tracks.filter { position.selection.contains($0.url.path) }
+                selection = Set(picked.map(\.id))
+                if let first = picked.first { proxy.scrollTo(first.id) }
+            })
         }
     }
 }
@@ -973,6 +1021,11 @@ struct PlaylistView: View {
                     proxy.scrollTo(rows[index].id)
                 }, delete: { removing = rows.filter { selection.contains($0.id) } }))
                 .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track), playlist: name) { removing = rows.filter { selection.contains($0.id) } })
+                .modifier(Remember(position: Position(selection: rows.filter { selection.contains($0.id) }.map { String($0.id) })) { position in
+                    let picked = rows.filter { position.selection.contains(String($0.id)) }
+                    selection = Set(picked.map(\.id))
+                    if let first = picked.first { proxy.scrollTo(first.id) }
+                })
             }
         }
     }
@@ -1049,6 +1102,11 @@ struct LikedView: View {
                     proxy.scrollTo(rows[index].id)
                 }))
                 .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
+                .modifier(Remember(position: Position(selection: rows.filter { selection.contains($0.id) }.map { String($0.id) })) { position in
+                    let picked = rows.filter { position.selection.contains(String($0.id)) }
+                    selection = Set(picked.map(\.id))
+                    if let first = picked.first { proxy.scrollTo(first.id) }
+                })
             }
         }
     }
@@ -1140,6 +1198,7 @@ struct ContentView: View {
     @Environment(YouTube.self) private var youTube
     @State private var lyrics = Lyrics()
     @State private var navigation = Navigation(page: Page(key: Player.saved?.page ?? "") ?? .section(.albums))
+    @State private var tracker = Tracker()
     @State private var name = ""
     @State private var deleting: String?
     @State private var saved = Player.saved?.path
@@ -1153,7 +1212,7 @@ struct ContentView: View {
 
         VStack(spacing: 0) {
             NavigationSplitView {
-                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { navigation.open(value) } } }) {
+                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { navigation.open(value, leaving: tracker.position) } } }) {
                     ForEach(Section.allCases) { section in
                         row(section.rawValue, section.symbol, .section(section))
                     }
@@ -1207,6 +1266,7 @@ struct ContentView: View {
                                 }
                             }
                             .environment(\.active, path.isEmpty)
+                            .environment(\.restore, path.isEmpty ? navigation.place.position : Position())
                             .id(library.query)
                         }
                     }
@@ -1221,6 +1281,7 @@ struct ContentView: View {
                             }
                         }
                         .environment(\.active, path.last == route)
+                        .environment(\.restore, path.last == route ? navigation.place.position : Position())
                         .navigationBarBackButtonHidden()
                     }
                 }
@@ -1276,7 +1337,7 @@ struct ContentView: View {
             TextField("Name", text: $name)
             Button("Create") {
                 let urls = playlists.naming ?? []
-                if let created = playlists.create(name, urls), urls.isEmpty { navigation.open(.playlist(created)) }
+                if let created = playlists.create(name, urls), urls.isEmpty { navigation.open(.playlist(created), leaving: tracker.position) }
                 name = ""
             }
             .disabled(!playlists.valid(name))
@@ -1301,7 +1362,7 @@ struct ContentView: View {
             case .artist(let name): value.append(.artist(name))
             case .search(let text):
                 lyrics.confirm {
-                    navigation.open(.section(.albums))
+                    navigation.open(.section(.albums), leaving: tracker.position)
                     library.query = text
                 }
                 return
@@ -1333,11 +1394,15 @@ struct ContentView: View {
             self.saved = nil
             navigation.restore(saved.compactMap { Route(key: $0, albums: library.albums) })
         }
-        .onChange(of: navigation.place) { remember() }
+        .onChange(of: navigation.place) {
+            tracker.position = navigation.place.position
+            remember()
+        }
         .onChange(of: library.query) {
             navigate([])
             remember()
         }
+        .environment(\.tracker, tracker)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .frame(minWidth: 820, minHeight: 520)
     }
@@ -1353,11 +1418,11 @@ struct ContentView: View {
     private var path: [Route] { navigation.path }
 
     private func goBack() {
-        lyrics.confirm { navigation.goBack() }
+        lyrics.confirm { navigation.goBack(leaving: tracker.position) }
     }
 
     private func goForward() {
-        lyrics.confirm { navigation.goForward() }
+        lyrics.confirm { navigation.goForward(leaving: tracker.position) }
     }
 
     private func press(_ event: NSEvent) -> Bool {
@@ -1430,9 +1495,9 @@ struct ContentView: View {
 
     private func navigate(_ value: [Route]) {
         if shown(path, page), !shown(value, page) {
-            lyrics.confirm { navigation.show(value) }
+            lyrics.confirm { navigation.show(value, leaving: tracker.position) }
         } else {
-            navigation.show(value)
+            navigation.show(value, leaving: tracker.position)
         }
     }
 

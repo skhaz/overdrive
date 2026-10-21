@@ -68,9 +68,19 @@ nonisolated enum Route: Hashable {
     }
 }
 
+nonisolated struct Position: Equatable {
+    var top: String?
+    var selection: [String] = []
+}
+
 nonisolated struct Place: Equatable {
     let page: Page
     let path: [Route]
+    var position = Position()
+
+    static func == (lhs: Place, rhs: Place) -> Bool {
+        lhs.page == rhs.page && lhs.path == rhs.path
+    }
 
     func resolved(_ albums: [String: Album]) -> Place {
         var routes: [Route] = []
@@ -83,7 +93,7 @@ nonisolated struct Place: Equatable {
                 routes.append(route)
             }
         }
-        return Place(page: page, path: routes)
+        return Place(page: page, path: routes, position: position)
     }
 }
 
@@ -99,12 +109,12 @@ nonisolated struct Navigation {
     var page: Page { place.page }
     var path: [Route] { place.path }
 
-    mutating func open(_ page: Page) {
-        visit(Place(page: page, path: []))
+    mutating func open(_ page: Page, leaving position: Position = Position()) {
+        visit(Place(page: page, path: []), leaving: position)
     }
 
-    mutating func show(_ path: [Route]) {
-        visit(Place(page: place.page, path: path))
+    mutating func show(_ path: [Route], leaving position: Position = Position()) {
+        visit(Place(page: place.page, path: path), leaving: position)
     }
 
     mutating func restore(_ path: [Route]) {
@@ -114,19 +124,19 @@ nonisolated struct Navigation {
     }
 
     @discardableResult
-    mutating func goBack() -> Bool {
+    mutating func goBack(leaving position: Position = Position()) -> Bool {
         guard let previous = back.popLast() else { return false }
 
-        forward.append(place)
+        forward.append(left(position))
         place = previous
         return true
     }
 
     @discardableResult
-    mutating func goForward() -> Bool {
+    mutating func goForward(leaving position: Position = Position()) -> Bool {
         guard let next = forward.popLast() else { return false }
 
-        back.append(place)
+        back.append(left(position))
         place = next
         return true
     }
@@ -146,12 +156,18 @@ nonisolated struct Navigation {
         collapse()
     }
 
-    private mutating func visit(_ new: Place) {
+    private mutating func visit(_ new: Place, leaving position: Position) {
         guard new != place else { return }
 
-        back.append(place)
+        back.append(left(position))
         forward.removeAll()
         place = new
+    }
+
+    private func left(_ position: Position) -> Place {
+        var old = place
+        old.position = position
+        return old
     }
 
     private mutating func collapse() {

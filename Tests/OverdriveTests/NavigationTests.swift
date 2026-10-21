@@ -205,6 +205,49 @@ struct NavigationTests {
         #expect(navigation.path == [.album(first)])
     }
 
+    @Test func keepsThePositionOfEachScreen() {
+        let top = Position(top: "a", selection: ["b"])
+        let next = Position(top: "c")
+        let last = Position(selection: ["d"])
+        var navigation = Navigation(page: albums)
+        navigation.open(songs, leaving: top)
+        navigation.show([.artist("Artist")], leaving: next)
+
+        navigation.goBack(leaving: last)
+        #expect(navigation.place.position == next)
+        navigation.goBack(leaving: next)
+        #expect(navigation.place.position == top)
+        navigation.goForward(leaving: Position(top: "e"))
+        #expect(navigation.place.position == next)
+        navigation.goForward()
+        #expect(navigation.place.position == last)
+        #expect(navigation.back.map(\.position) == [Position(top: "e"), Position()])
+    }
+
+    @Test func aNewScreenStartsWithoutPosition() {
+        var navigation = Navigation(page: albums)
+        navigation.open(songs, leaving: Position(top: "a"))
+
+        #expect(navigation.place.position == Position())
+    }
+
+    @Test func positionDoesNotMakeAnotherScreen() {
+        var navigation = Navigation(page: albums)
+        navigation.open(albums, leaving: Position(top: "a"))
+
+        #expect(navigation.back.isEmpty)
+        #expect(Place(page: albums, path: [], position: Position(top: "a")) == Place(page: albums, path: []))
+    }
+
+    @Test func refreshKeepsPositions() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)], leaving: Position(top: "x"))
+        navigation.refresh([one])
+
+        #expect(navigation.back.first?.position == Position(top: "x"))
+    }
+
     @Test func pagesRoundTripTheirKeys() {
         for page in [albums, songs, .section(.artists), .liked, mix, .playlist("")] {
             #expect(Page(key: page.key) == page)
