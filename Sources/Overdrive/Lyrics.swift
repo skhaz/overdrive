@@ -22,6 +22,7 @@ final class Lyrics {
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
     var visible = false
     var floating = false
+    private(set) var remote = false
 
     @ObservationIgnored private var saver: Task<Void, Never>?
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
@@ -88,7 +89,13 @@ final class Lyrics {
 
         saved = value
         original = value
+        remote = false
         loading = false
+    }
+
+    func persist() {
+        guard let track else { return }
+        save(text, for: track)
     }
 
     func settle(_ action: @escaping () -> Void) {
@@ -104,6 +111,7 @@ final class Lyrics {
             saved = lyrics
             original = saved
             text = saved
+            remote = false
             loading = false
             return
         }
@@ -135,6 +143,7 @@ final class Lyrics {
             guard text.isEmpty else { return }
             original = lyrics
             text = lyrics
+            remote = true
         }
     }
 

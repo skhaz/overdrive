@@ -81,7 +81,7 @@ Click **Liked Songs** in the sidebar, below Songs, to see all liked songs. To re
 
 ### Lyrics
 
-The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay in the app until you change them.
+The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay in the app until you change them. When the app finds the lyrics on the internet, a save button shows at the top: click it to keep the lyrics with the song.
 
 Click the undock button at the top of the lyrics to move them to a small window that floats above all other windows. The window shows the album cover, the song, the artist, and the album. It also has the play controls: previous, play or pause, next, and a slider for the position of the song. You can edit the lyrics in the window too. Drag the window to move it. It keeps the lyrics when the next song plays. Click the X in the window to put the lyrics back in the app.
 

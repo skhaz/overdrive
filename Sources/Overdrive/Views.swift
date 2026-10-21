@@ -234,6 +234,11 @@ struct LyricsView: View {
                     Button("Show in a Floating Window", systemImage: "pip.enter") { lyrics.floating = true }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
+                    if !lyrics.text.isEmpty, lyrics.remote {
+                        Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                    }
                     if !lines.isEmpty {
                         Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
                             .labelStyle(.iconOnly)
