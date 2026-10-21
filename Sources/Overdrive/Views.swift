@@ -1464,7 +1464,11 @@ struct ContentView: View {
     }
 
     private func goBack() {
-        lyrics.settle { navigation.goBack(leaving: tracker.position) }
+        lyrics.settle {
+            if !navigation.goBack(leaving: tracker.position) {
+                navigation.show(Array(path.dropLast()), leaving: tracker.position)
+            }
+        }
     }
 
     private func goForward() {
@@ -1526,7 +1530,7 @@ struct ContentView: View {
             player.toggle()
             return true
         case (53, false) where !path.isEmpty:
-            navigate(Array(path.dropLast()))
+            goBack()
             return true
         default: return false
         }
