@@ -152,20 +152,10 @@ final class Fake: URLProtocol {
     }
 }
 
-final class Defaults: UserDefaults, @unchecked Sendable {
-    private var values: [String: Any] = [:]
-
-    override func object(forKey key: String) -> Any? { values[key] }
-    override func array(forKey key: String) -> [Any]? { values[key] as? [Any] }
-    override func set(_ value: Any?, forKey key: String) { values[key] = value }
-    override func removeObject(forKey key: String) { values[key] = nil }
-}
-
 @MainActor
 @Suite(.serialized)
 struct LastFMTests {
     let directory = FileManager.default.temporaryDirectory.appending(path: "OverdriveTests-\(UUID().uuidString)")
-    let defaults = Defaults(suiteName: nil)!
 
     init() {
         Server.current = Server()
@@ -180,7 +170,6 @@ struct LastFMTests {
         configuration.credentials = directory.appending(path: "lastfm.plist")
         configuration.store = directory.appending(path: "Scrobbles.plist")
         configuration.transport = URLSession(configuration: session)
-        configuration.defaults = defaults
         configuration.retry = .seconds(3600)
         configuration.settle = settle
         configuration.monitor = false
@@ -388,19 +377,6 @@ struct LastFMTests {
         server.mode = .ok
         await settle(second) { second.pending.isEmpty }
         #expect(server.received == ["A", "B"])
-    }
-
-    @Test func movesScrobblesFromTheOldStore() async {
-        defaults.set([["artist": "Artist", "track": "A", "timestamp": String(Int(Date.now.timeIntervalSince1970) - 600)]], forKey: "lastfm.pending")
-
-        let lastFM = client()
-        #expect(lastFM.pending.map { $0["track"] } == ["A"])
-        #expect(lastFM.pending.first?["_id"] != nil)
-        #expect(defaults.object(forKey: "lastfm.pending") == nil)
-        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "Scrobbles.plist").path))
-
-        await settle(lastFM) { lastFM.pending.isEmpty }
-        #expect(server.received == ["A"])
     }
 
     @Test func sendsBatchesOfFiftyFromTheOldest() async {

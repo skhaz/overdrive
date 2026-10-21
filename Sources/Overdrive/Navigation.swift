@@ -53,7 +53,7 @@ nonisolated enum Route: Hashable {
     init?(key: String, albums: [Album]) {
         if key.hasPrefix("artist:") {
             self = .artist(String(key.dropFirst(7)))
-        } else if key.hasPrefix("album:"), let album = albums.first(where: { $0.id == StoredPath.normalizeID(String(key.dropFirst(6))) }) {
+        } else if key.hasPrefix("album:"), let album = albums.first(where: { $0.id == String(key.dropFirst(6)) }) {
             self = .album(album)
         } else {
             return nil

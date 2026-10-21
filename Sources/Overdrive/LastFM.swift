@@ -9,7 +9,6 @@ final class LastFM {
         var credentials = URL.applicationSupportDirectory.appending(path: "Overdrive/lastfm.plist")
         var store = URL.applicationSupportDirectory.appending(path: "Overdrive/Scrobbles.plist")
         var transport = URLSession.shared
-        var defaults = UserDefaults.standard
         var retry: Duration = .seconds(60)
         var settle: TimeInterval = 120
         var monitor = true
@@ -75,16 +74,7 @@ final class LastFM {
     private static func load(_ configuration: Configuration) -> Queue {
         if let data = try? Data(contentsOf: configuration.store), let queue = try? PropertyListDecoder().decode(Queue.self, from: data) { return queue }
 
-        let defaults = configuration.defaults
-        var queue = Queue()
-        queue.pending = (defaults.array(forKey: "lastfm.pending") as? [[String: String]] ?? []).map { $0.merging(["_id": UUID().uuidString]) { old, _ in old } }
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        guard !queue.pending.isEmpty, let data = try? encoder.encode(queue) else { return queue }
-
-        Persist.write(data, to: configuration.store)
-        if (try? Data(contentsOf: configuration.store)) == data { defaults.removeObject(forKey: "lastfm.pending") }
-        return queue
+        return Queue()
     }
 
     private func persist() {

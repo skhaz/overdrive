@@ -2,27 +2,33 @@ import Foundation
 
 @Observable
 final class Likes {
-    nonisolated static let file = URL.homeDirectory.appending(path: "Music/Library/Likes.plist", directoryHint: .notDirectory)
+    nonisolated static func file(in folder: URL?) -> URL {
+        (folder ?? URL.homeDirectory.appending(path: "Music/Library", directoryHint: .isDirectory))
+            .appending(path: "Likes.plist", directoryHint: .notDirectory)
+    }
 
     private(set) var paths: [String] = []
 
-    @ObservationIgnored private let file: URL
+    @ObservationIgnored private let file: () -> URL
     private var liked: Set<String> = []
 
-    init(file: URL = Likes.file) {
+    init(file: URL) {
+        self.file = { file }
+        load()
+    }
+
+    init(file: @escaping () -> URL) {
         self.file = file
         load()
     }
 
     func load() {
-        let stored = (try? Data(contentsOf: file)).flatMap { try? PropertyListDecoder().decode([String].self, from: $0) } ?? []
+        let stored = (try? Data(contentsOf: file())).flatMap { try? PropertyListDecoder().decode([String].self, from: $0) } ?? []
         var seen: Set<String> = []
         seen.reserveCapacity(stored.count)
 
         paths = stored.map(StoredPath.decode).filter { seen.insert($0).inserted }
         liked = seen
-
-        if paths.map(StoredPath.encode) != stored { save() }
     }
 
     func contains(_ track: Track) -> Bool {
@@ -62,6 +68,6 @@ final class Likes {
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(paths.map(StoredPath.encode)) else { return }
 
-        Persist.write(data, to: file)
+        Persist.write(data, to: file())
     }
 }

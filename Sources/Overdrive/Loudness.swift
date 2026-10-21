@@ -42,19 +42,14 @@ final class Loudness {
         self.file = file
 
         let stored = (try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: file))) ?? [:]
-        var migrated = false
         var entries: [String: Entry] = [:]
         entries.reserveCapacity(stored.count)
 
         for (key, entry) in stored {
-            let path = StoredPath.decode(key)
-            entries[path] = entry
-            if StoredPath.encode(path) != key { migrated = true }
+            entries[StoredPath.decode(key)] = entry
         }
 
         self.entries = entries
-
-        if migrated { save() }
     }
 
     func gain(_ track: Track, album: Bool) -> Float? {

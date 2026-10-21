@@ -71,7 +71,7 @@ To do this for more than one song, select the songs with Command-click or Shift-
 3. Drag the songs in the playlist to change the order.
 4. To remove a song, right-click it and choose **Remove from Playlist**, or press Delete.
 
-To delete a playlist, right-click it in the sidebar. The app keeps a backup copy in the Playlists folder (Music > Library > Playlists).
+To delete a playlist, right-click it in the sidebar. The playlists live in a Playlists folder inside your music folder, with a backup copy, so they move with your music.
 
 ### Like songs
 
@@ -157,6 +157,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 ## Good to know
 
 - The app never changes your songs. It only saves the lyrics that you save.
+- Your liked songs, playlists, and lyrics live with your music. Back up your music folder and you back up all of them.
 - The app keeps a file named `Cache.sqlite` in each music folder. With it, the app opens faster. You can delete it at any time: the app makes it again.
 - When you play an album in order, the quiet and loud songs of the album stay as the artist made them.
 - No Last.fm play is lost. If there is no internet, the app sends them later.

@@ -18,10 +18,4 @@ nonisolated enum StoredPath {
 
         return URL(filePath: value).standardized.path
     }
-
-    static func normalizeID(_ id: String) -> String {
-        guard let newline = id.firstIndex(of: "\n") else { return encode(decode(id)) }
-
-        return encode(decode(String(id[..<newline]))) + id[newline...]
-    }
 }

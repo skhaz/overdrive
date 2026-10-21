@@ -32,7 +32,7 @@ Commit each change when it is complete. Do not ask before you commit.
 ## Music library
 
 - The music library is read-only. The app never writes, moves, renames, or deletes an audio file. It opens them only to read (AudioToolbox with `readPermission`, the MP4 and ID3 parsers, and `Data` with `.alwaysMapped` for the hash). `LibraryCacheTests.neverWritesTheMusicFiles` checks it.
-- The only files that the app writes in a music folder are its cache (`Cache.sqlite` and its `-wal` and `-shm` files, at the root of each library folder) and the `.lrc` lyrics next to the songs. The FSEvents watcher ignores them, so they do not start a scan.
+- The only files that the app writes in a music folder are its cache (`Cache.sqlite` and its `-wal` and `-shm` files, at the root of each library folder), the `.lrc` lyrics next to the songs, and, at the root of the first library folder, `Likes.plist` and the `Playlists` folder, so the likes and the playlists travel with the music. The FSEvents watcher ignores them, so they do not start a scan.
 
 ## Library cache
 
@@ -40,7 +40,7 @@ Commit each change when it is complete. Do not ask before you commit.
 
 - The cache and the full-text index change only in the same transaction (the triggers), so they can never differ. `LibraryCacheTests` runs the FTS5 `integrity-check` after every scan step.
 - The scan commits each step, then shows it. The UI never shows a state that the cache does not have: after the walk (removals), after each batch (adds and changes), and at the end (covers). Each commit is one atomic transaction that matches the filesystem at that moment. A scan that a newer scan replaces keeps what it committed, and the newer scan does the rest. Only the first snapshot (the cache, before the walk) can show files that changed while the app was closed.
-- Every change in a library folder starts a scan: the FSEvents watcher (`Library.relevant`), the mount and unmount of a volume, a change of the folders, and the launch. Changes to the cache files do not start a scan, except when `Cache.sqlite` is deleted, which starts a scan that builds the cache again. The watcher decides from the event flags (`ItemRemoved` or `ItemRenamed` on the main cache file), so it does not depend on the state of the filesystem when the event arrives.
+- Every change in a library folder starts a scan: the FSEvents watcher (`Library.relevant`), the mount and unmount of a volume, a change of the folders, and the launch. Changes to the cache files, `Likes.plist`, and the `Playlists` folder do not start a scan, except when `Cache.sqlite` is deleted, which starts a scan that builds the cache again. The watcher decides from the event flags (`ItemRemoved` or `ItemRenamed` on the main cache file), so it does not depend on the state of the filesystem when the event arrives.
 - `LibraryHarnessTests` runs a live `Library` with the FSEvents watcher on a temporary folder. After each change it waits until the albums in memory, the cache, and the full-text index agree with the filesystem, then it waits to check that a quiet period writes nothing. The harness library takes its folders from the initializer (`Library(loudness:folders:)`), so it never reads or writes the saved folders in `UserDefaults`, and the `deinit` removes the volume observers and stops and releases the stream.
 - The search opens new connections after every step, so it always reads the current cache file.
 - A failed write leaves the last good state, and the next scan repairs every difference, because each scan compares every file with every row.
@@ -74,7 +74,7 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 | `Rules/` | The compiled ad block rules of the web view. |
 | `Lyrics/` | The lyrics from LRCLIB and lyrics.ovh, only non-empty files. When a song has no lyrics, the app tries again every time it opens the song. |
 
-`Likes.plist` and `Playlists/` live in `~/Music/Library`, next to the music: `Likes.plist` is the paths of the liked songs, and `Playlists/` holds one binary plist for each playlist with its song paths, plus a backup copy when a playlist is deleted.
+`Likes.plist` and `Playlists/` live at the root of the first library folder, computed live from `Library.folders` (fallback `~/Music/Library` when there are no folders), so they travel with the music: `Likes.plist` is the paths of the liked songs, and `Playlists/` holds one binary plist for each playlist with its song paths, plus a backup copy when a playlist is deleted. There is no migration anywhere: a changed folder only changes where the files are read and written.
 
 Every file that the app produces for its data is a binary plist. Do not add plain text, JSON, or other formats for app data. The only exception is the library cache (`Cache.sqlite` at the root of each library folder, see "Library cache").
 

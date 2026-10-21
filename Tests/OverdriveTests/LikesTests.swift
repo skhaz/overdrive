@@ -70,6 +70,30 @@ private final class Counter: @unchecked Sendable {
         #expect(likes.contains(second))
     }
 
+    @Test @MainActor func followsTheLibraryFolder() throws {
+        let first = temporary()
+        let second = temporary()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: first); try? FileManager.default.removeItem(at: second) }
+
+        try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+
+        var folder: URL? = first
+        let likes = Likes(file: { Likes.file(in: folder) })
+        likes.add([track(StoredPath.home + "/Music/a.flac")])
+        Persist.flush()
+        #expect(FileManager.default.fileExists(atPath: Likes.file(in: first).path))
+
+        folder = second
+        likes.add([track(StoredPath.home + "/Music/b.flac")])
+        Persist.flush()
+
+        let firstStored = try PropertyListDecoder().decode([String].self, from: Data(contentsOf: Likes.file(in: first)))
+        let secondStored = try PropertyListDecoder().decode([String].self, from: Data(contentsOf: Likes.file(in: second)))
+        #expect(firstStored == ["~/Music/a.flac"])
+        #expect(secondStored == ["~/Music/a.flac", "~/Music/b.flac"])
+    }
+
     @Test @MainActor func storesHomeRelativePaths() throws {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }

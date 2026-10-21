@@ -106,13 +106,7 @@ final class Library {
     }
 
     private static func savedFolders() -> [URL] {
-        let stored = UserDefaults.standard.stringArray(forKey: key) ?? []
-        let paths = stored.map(StoredPath.decode)
-        let normalized = paths.map(StoredPath.encode)
-
-        if normalized != stored { UserDefaults.standard.set(normalized, forKey: key) }
-
-        return paths.map { URL(filePath: $0) }
+        (UserDefaults.standard.stringArray(forKey: key) ?? []).map { URL(filePath: StoredPath.decode($0)) }
     }
 
     var artists: [(name: String, albums: [Album])] {
@@ -383,12 +377,11 @@ final class Library {
 
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
+            let library = Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue()
             let paths = unsafeBitCast(paths, to: NSArray.self)
-            guard Library.relevant((0..<count).map { (paths[$0] as! String, flags[$0]) }) else { return }
+            guard Library.relevant((0..<count).map { (paths[$0] as! String, flags[$0]) }, folders: library.folders) else { return }
 
-            MainActor.assumeIsolated {
-                Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
-            }
+            MainActor.assumeIsolated { library.scan() }
         }
 
         stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes))
@@ -396,7 +389,7 @@ final class Library {
         FSEventStreamStart(stream!)
     }
 
-    nonisolated static func relevant(_ events: [(path: String, flags: FSEventStreamEventFlags)]) -> Bool {
+    nonisolated static func relevant(_ events: [(path: String, flags: FSEventStreamEventFlags)], folders: [URL] = []) -> Bool {
         events.contains { path, flags in
             if Cache.ignored(path) {
                 let main = (path as NSString).lastPathComponent == Cache.name
@@ -404,7 +397,12 @@ final class Library {
                 return main && gone || !FileManager.default.fileExists(atPath: (path as NSString).deletingLastPathComponent + "/" + Cache.name)
             }
 
-            return !path.contains("/.") && !Lyrics.ignored(path) && !Playlists.ignored(path)
+            for folder in folders {
+                if path == folder.path + "/Likes.plist" { return false }
+                if path == folder.path + "/Playlists" || path.hasPrefix(folder.path + "/Playlists/") { return false }
+            }
+
+            return !path.contains("/.") && !Lyrics.ignored(path)
         }
     }
 
@@ -657,7 +655,7 @@ final class Library {
             albumArtist: tags.albumArtist,
             year: original > 0 ? original : Int(tags.year.prefix(4)) ?? 0,
             duration: tags.duration,
-            albumID: StoredPath.normalizeID("\(directory.path)\n\(album)")
+            albumID: StoredPath.encode(directory.path) + "\n" + album
         )
     }
 }

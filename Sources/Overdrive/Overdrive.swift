@@ -80,8 +80,8 @@ struct Overdrive: App {
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
     @State private var library = Overdrive.shared.library
-    @State private var playlists = Playlists()
-    @State private var likes = Likes()
+    @State private var playlists = Playlists(directory: { Playlists.directory(in: Overdrive.shared.library.folders.first) })
+    @State private var likes = Likes(file: { Likes.file(in: Overdrive.shared.library.folders.first) })
     @State private var lastFM = Overdrive.shared.lastFM
     @State private var player = Overdrive.shared.player
     @State private var youTube = Overdrive.shared.youTube

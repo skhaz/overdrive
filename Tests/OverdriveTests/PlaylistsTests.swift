@@ -7,6 +7,26 @@ import Testing
         FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     }
 
+    @Test @MainActor func followsTheLibraryFolder() throws {
+        let first = temporary()
+        let second = temporary()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: first); try? FileManager.default.removeItem(at: second) }
+        try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+
+        var folder: URL? = first
+        let playlists = Playlists(directory: { Playlists.directory(in: folder) })
+        _ = playlists.create("One", [URL(filePath: StoredPath.home + "/Music/a.flac")])
+        Persist.flush()
+        #expect(FileManager.default.fileExists(atPath: Playlists.directory(in: first).appending(path: "One.plist").path))
+
+        folder = second
+        _ = playlists.create("Two", [URL(filePath: StoredPath.home + "/Music/b.flac")])
+        Persist.flush()
+        #expect(FileManager.default.fileExists(atPath: Playlists.directory(in: second).appending(path: "Two.plist").path))
+        #expect(!FileManager.default.fileExists(atPath: Playlists.directory(in: first).appending(path: "Two.plist").path))
+    }
+
     @Test @MainActor func writesPlists() throws {
         let directory = temporary()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -23,24 +43,6 @@ import Testing
 
         let reloaded = Playlists(directory: directory)
         #expect(reloaded.paths["Metal"] == [home.path, outside.path])
-    }
-
-    @Test @MainActor func migratesTextPlaylists() throws {
-        let directory = temporary()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let legacy = directory.appending(path: "Old.playlist")
-        let text = [StoredPath.home + "/Music/a.flac", "~/Music/b.flac", "/Volumes/Music/c.flac"].joined(separator: "\n") + "\n"
-        try Data(text.utf8).write(to: legacy)
-
-        let playlists = Playlists(directory: directory)
-        #expect(playlists.paths["Old"] == [StoredPath.home + "/Music/a.flac", StoredPath.home + "/Music/b.flac", "/Volumes/Music/c.flac"])
-        #expect(!FileManager.default.fileExists(atPath: legacy.path))
-
-        let file = directory.appending(path: "Old.plist")
-        let stored = try PropertyListDecoder().decode([String].self, from: Data(contentsOf: file))
-        #expect(stored == ["~/Music/a.flac", "~/Music/b.flac", "/Volumes/Music/c.flac"])
     }
 
     @Test @MainActor func skipsBackups() throws {

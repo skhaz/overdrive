@@ -66,7 +66,6 @@ final class Lyrics {
         settle {
             guard let track = self.track else { return }
             Persist.remove(Lyrics.key(track))
-            Persist.remove(Lyrics.oldKey(track))
             self.open(track)
         }
     }
@@ -82,7 +81,6 @@ final class Lyrics {
             if FileManager.default.fileExists(atPath: url.path) { Persist.remove(url) }
 
             Persist.remove(Lyrics.key(track))
-            Persist.remove(Lyrics.oldKey(track))
         }
 
         guard track == self.track else { return }
@@ -158,11 +156,6 @@ final class Lyrics {
         return cache.appending(path: name)
     }
 
-    private nonisolated static func oldKey(_ track: Track) -> URL {
-        let digest = SHA256.hash(data: Data("\(track.artist)\n\(track.title)\n\(track.album)\n\(Int(track.duration.rounded()))".utf8))
-        return cache.appending(path: digest.map { String(format: "%02x", $0) }.joined() + ".txt")
-    }
-
     private nonisolated static func safe(_ text: String, _ limit: Int = 40) -> String {
         var name = text.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
         name = name.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -172,10 +165,7 @@ final class Lyrics {
     }
 
     private nonisolated static func cached(_ track: Track) -> String? {
-        if let lyrics = read(key(track)) { return lyrics }
-        guard let lyrics = read(oldKey(track)) else { return nil }
-        Persist.move(oldKey(track), to: key(track))
-        return lyrics
+        read(key(track))
     }
 
     private nonisolated static func read(_ url: URL) -> String? {
@@ -187,7 +177,6 @@ final class Lyrics {
     private nonisolated static func lookup(_ track: Track) async -> Result<String, Failure> {
         if let lyrics = cached(track), !lyrics.isEmpty { return .success(lyrics) }
         Persist.remove(key(track))
-        Persist.remove(oldKey(track))
 
         let result = await fetch(track)
 
