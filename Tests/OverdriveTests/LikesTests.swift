@@ -70,6 +70,21 @@ private final class Counter: @unchecked Sendable {
         #expect(likes.contains(second))
     }
 
+    @Test @MainActor func storesHomeRelativePaths() throws {
+        let directory = temporary()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
+
+        let file = directory.appending(path: "Likes.plist")
+        let likes = Likes(file: file)
+        likes.add([track(StoredPath.home + "/Music/a.flac"), track("/Volumes/Music/b.flac")])
+        likes.remove([track(StoredPath.home + "/Music/a.flac")])
+        likes.add([track(StoredPath.home + "/Music/c.flac")])
+
+        Persist.flush()
+        let stored = try PropertyListDecoder().decode([String].self, from: Data(contentsOf: file))
+        #expect(stored == ["/Volumes/Music/b.flac", "~/Music/c.flac"])
+    }
+
     @Test @MainActor func deduplicates() throws {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }

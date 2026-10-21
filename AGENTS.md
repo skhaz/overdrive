@@ -69,12 +69,12 @@ The app keeps its data in `~/Library/Application Support/Overdrive`:
 | `Session.plist` | The queue, the order, the song, the position, shuffle, repeat, the scrobble state, and the open screen. One atomic and durable write. |
 | `Loudness.plist` | The EBU R128 loudness of each song. |
 | `Scrobbles.plist` | The pending and rejected scrobbles. One atomic and durable write before each send. |
-| `Likes.plist` | The paths of the liked songs. Loaded at boot and written on each like or unlike. |
-| `Playlists/` | One binary plist for each playlist with its song paths. |
 | `lastfm.plist` | The Last.fm session key and user name. |
 | `Videos.plist` | The YouTube video ID of each song. |
 | `Rules/` | The compiled ad block rules of the web view. |
 | `Lyrics/` | The lyrics from LRCLIB and lyrics.ovh, only non-empty files. When a song has no lyrics, the app tries again every time it opens the song. |
+
+`Likes.plist` and `Playlists/` live in `~/Music/Library`, next to the music: `Likes.plist` is the paths of the liked songs, and `Playlists/` holds one binary plist for each playlist with its song paths, plus a backup copy when a playlist is deleted.
 
 Every file that the app produces for its data is a binary plist. Do not add plain text, JSON, or other formats for app data. The only exception is the library cache (`Cache.sqlite` at the root of each library folder, see "Library cache").
 
