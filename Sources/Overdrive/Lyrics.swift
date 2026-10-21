@@ -47,17 +47,18 @@ final class Lyrics {
 
         text = value
         saver?.cancel()
+        guard let track else { return }
         saver = Task {
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
-            save()
+            save(value, for: track)
         }
     }
 
     func flush() {
         saver?.cancel()
         saver = nil
-        if modified { save() }
+        if let track, modified { save(text, for: track) }
     }
 
     func discard() {
@@ -87,16 +88,15 @@ final class Lyrics {
         }
     }
 
-    func save() {
-        guard let track else { return }
+    func save(_ value: String, for track: Track) {
         generation += 1
 
         let url = Lyrics.file(track)
 
-        if !text.isEmpty {
-            guard Persist.write(Data(text.utf8), to: url) else { return }
+        if !value.isEmpty {
+            guard Persist.write(Data(value.utf8), to: url) else { return }
 
-            Persist.write(Data(text.utf8), to: Lyrics.key(track))
+            Persist.write(Data(value.utf8), to: Lyrics.key(track))
         } else {
             if FileManager.default.fileExists(atPath: url.path) { Persist.remove(url) }
 
@@ -104,8 +104,10 @@ final class Lyrics {
             Persist.remove(Lyrics.oldKey(track))
         }
 
-        saved = text
-        original = text
+        guard track == self.track else { return }
+
+        saved = value
+        original = value
     }
 
     func confirm(_ action: @escaping () -> Void) {
