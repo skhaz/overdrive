@@ -1155,6 +1155,7 @@ struct ContentView: View {
     @State private var monitor: Any?
     @State private var history = History<Place>()
     @State private var restoring: [Route]?
+    @State private var swiping = Swipe()
     @FocusState private var focus: Focus?
 
     var body: some View {
@@ -1354,7 +1355,9 @@ struct ContentView: View {
 
         switch event.type {
         case .keyDown: return press(event) ? nil : event
-        case .scrollWheel: return swipe(event) ? nil : event
+        case .scrollWheel:
+            swipe(event)
+            return event
         case .swipe where event.deltaX != 0: event.deltaX > 0 ? goBack() : goForward()
         case .otherMouseDown where event.buttonNumber == 3: goBack()
         case .otherMouseDown where event.buttonNumber == 4: goForward()
@@ -1364,16 +1367,25 @@ struct ContentView: View {
         return nil
     }
 
-    private func swipe(_ event: NSEvent) -> Bool {
-        guard event.phase == .began, NSEvent.isSwipeTrackingFromScrollEventsEnabled, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY),
-              !history.back.isEmpty || !history.forward.isEmpty else { return false }
+    private func swipe(_ event: NSEvent) {
+        guard NSEvent.isSwipeTrackingFromScrollEventsEnabled, event.momentumPhase == [] else { return }
 
-        event.trackSwipeEvent(options: [.lockDirection, .clampGestureAmount], dampenAmountThresholdMin: history.forward.isEmpty ? 0 : -1, max: history.back.isEmpty ? 0 : 1) { amount, _, complete, _ in
-            guard complete else { return }
-
-            if amount >= 1 { goBack() } else if amount <= -1 { goForward() }
+        let dx = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
+        switch event.phase {
+        case .began:
+            swiping.begin()
+            swiping.move(dx, event.scrollingDeltaY)
+        case .changed:
+            swiping.move(dx, event.scrollingDeltaY)
+        case .ended:
+            switch swiping.end() {
+            case .back: goBack()
+            case .forward: goForward()
+            case nil: break
+            }
+        default:
+            swiping.cancel()
         }
-        return true
     }
 
     private func visit(_ change: () -> Void) {

@@ -71,3 +71,38 @@ struct NavigationTests {
         #expect(Step.extendDown.index(first: nil, last: nil, count: 5, columns: 1) == nil)
     }
 }
+
+struct SwipeTests {
+    @Test func detectsDirection() {
+        var swipe = Swipe()
+        swipe.begin()
+        for _ in 0..<10 { swipe.move(20, 1) }
+        #expect(swipe.end() == .back)
+
+        swipe.begin()
+        for _ in 0..<10 { swipe.move(-20, 1) }
+        #expect(swipe.end() == .forward)
+    }
+
+    @Test func ignoresShortAndVerticalGestures() {
+        var swipe = Swipe()
+        swipe.begin()
+        swipe.move(100, 0)
+        #expect(swipe.end() == nil)
+
+        swipe.begin()
+        for _ in 0..<10 { swipe.move(20, 15) }
+        #expect(swipe.end() == nil)
+    }
+
+    @Test func needsBegin() {
+        var swipe = Swipe()
+        for _ in 0..<10 { swipe.move(20, 0) }
+        #expect(swipe.end() == nil)
+
+        swipe.begin()
+        for _ in 0..<10 { swipe.move(20, 0) }
+        swipe.cancel()
+        #expect(swipe.end() == nil)
+    }
+}
