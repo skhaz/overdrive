@@ -9,6 +9,10 @@
 
 Commit each change when it is complete. Do not ask before you commit.
 
+## Data
+
+- **Never write migration code. Never.** A file that does not match the current format is ignored, or deleted and built again. Write everything as if it were new. Nothing is versioned: no schema numbers, no legacy readers, no moves between formats or between folders.
+
 ## YouTube
 
 - The app has only one YouTube web view. The app makes it when it starts and keeps it until it quits. Do not make a second web view, and do not release or recreate it.
