@@ -406,8 +406,6 @@ final class Library {
 
             if audio.contains((name as NSString).pathExtension.lowercased()) { return true }
 
-            if (try? FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType) == .typeDirectory { return true }
-
             let gone = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0
             return gone
         }

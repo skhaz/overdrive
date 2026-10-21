@@ -513,6 +513,10 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(!Library.relevant([(folder.path + "/.DS_Store", modified)]))
         #expect(!Library.relevant([(folder.path + "/Album/one.lrc.tmp", modified)]))
         #expect(!Library.relevant([(folder.path + "/readme.txt", modified)]))
+        #expect(!Library.relevant([(folder.path + "/Likes.plist", removed)]))
+        #expect(!Library.relevant([(folder.path + "/.DS_Store", removed)]))
+        #expect(!Library.relevant([(folder.path + "/Album/one.lrc", removed)]))
+        #expect(Library.relevant([(folder.path + "/Album/ONE.MP3", modified)]))
     }
 
     @Test func showsTheCacheFirstAndTheFilesystemLast() async throws {

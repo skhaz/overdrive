@@ -13,6 +13,10 @@ struct LibraryHarnessTests {
         var first: Set<String>?
     }
 
+    private final class Counter: @unchecked Sendable {
+        var value = 0
+    }
+
     private func folder() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "OverdriveHarness-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -406,6 +410,48 @@ struct LibraryHarnessTests {
         #expect(created < .seconds(1))
         await settle(library, [folder])
         #expect(box.first == [folder.path + "/Album/cached.mp3", folder.path + "/Album/deleted.mp3"])
+    }
+
+    @Test func anUnlikeInTheLibraryFolderDoesNotScan() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        try put(folder, "Album/stays.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+        try? await Task.sleep(for: .seconds(3))
+
+        let likes = Likes(file: { Likes.file(in: folder) })
+        let track = library.albums.flatMap(\.tracks).first!
+
+        let scans = Counter()
+        library.loaded = { scans.value += 1 }
+
+        likes.add([track])
+        likes.remove([track])
+
+        try? await Task.sleep(for: .seconds(3))
+        #expect(scans.value == 0)
+        #expect(!library.scanning)
+    }
+
+    @Test func lyricWritesInTheLibraryFolderDoNotScan() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        try put(folder, "Album/stays.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+        try? await Task.sleep(for: .seconds(3))
+
+        let scans = Counter()
+        library.loaded = { scans.value += 1 }
+
+        try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lrc"))
+        try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lrc.tmp"))
+        try? FileManager.default.removeItem(at: folder.appending(path: "Album/stays.lrc.tmp"))
+
+        try? await Task.sleep(for: .seconds(3))
+        #expect(scans.value == 0)
+        #expect(!library.scanning)
     }
 
     @Test func theBootFindsOfflineChanges() async throws {

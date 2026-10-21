@@ -9,7 +9,7 @@ final class Lyrics {
         case status(Int)
     }
 
-    private nonisolated static let cache = URL.applicationSupportDirectory.appending(path: "Overdrive/Lyrics")
+    private nonisolated static let defaultCache = URL.applicationSupportDirectory.appending(path: "Overdrive/Lyrics")
     private nonisolated static let agent = "Overdrive/v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0")"
     private nonisolated static let timeout: TimeInterval = 10
     private nonisolated static let attempts = 3
@@ -24,11 +24,16 @@ final class Lyrics {
     var floating = false
     private(set) var remote = false
 
+    @ObservationIgnored private let cache: URL
     @ObservationIgnored private var saver: Task<Void, Never>?
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
 
     var modified: Bool { text != original }
     private(set) var synced: [SyncedLine] = []
+
+    init(cache: URL = Lyrics.defaultCache) {
+        self.cache = cache
+    }
 
     nonisolated static func ignored(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent
@@ -65,22 +70,22 @@ final class Lyrics {
     func refresh() {
         settle {
             guard let track = self.track else { return }
-            Persist.remove(Lyrics.key(track))
+            Persist.remove(self.key(track))
             self.open(track)
         }
     }
 
     func save(_ value: String, for track: Track) {
-        let url = Lyrics.file(track)
+        let url = file(track)
 
         if !value.isEmpty {
             guard Persist.write(Data(value.utf8), to: url) else { return }
 
-            Persist.write(Data(value.utf8), to: Lyrics.key(track))
+            Persist.write(Data(value.utf8), to: key(track))
         } else {
             if FileManager.default.fileExists(atPath: url.path) { Persist.remove(url) }
 
-            Persist.remove(Lyrics.key(track))
+            Persist.remove(key(track))
         }
 
         guard track == self.track else { return }
@@ -105,7 +110,7 @@ final class Lyrics {
         self.track = track
         visible = true
 
-        if let lyrics = Lyrics.read(Lyrics.file(track)), !lyrics.isEmpty {
+        if let lyrics = Self.read(file(track)), !lyrics.isEmpty {
             saved = lyrics
             original = saved
             text = saved
@@ -118,7 +123,7 @@ final class Lyrics {
         original = ""
         text = ""
 
-        if let lyrics = Lyrics.cached(track), !lyrics.isEmpty {
+        if let lyrics = cached(track), !lyrics.isEmpty {
             apply(.success(lyrics))
             loading = false
             return
@@ -128,7 +133,7 @@ final class Lyrics {
 
         lookupTask?.cancel()
         lookupTask = Task {
-            let result = await Lyrics.lookup(track)
+            let result = await Self.lookup(track, cache: cache)
             guard !Task.isCancelled else { return }
 
             apply(result)
@@ -145,11 +150,15 @@ final class Lyrics {
         }
     }
 
-    private nonisolated static func file(_ track: Track) -> URL {
+    private func file(_ track: Track) -> URL {
         track.url.deletingPathExtension().appendingPathExtension("lrc")
     }
 
-    private nonisolated static func key(_ track: Track) -> URL {
+    func key(_ track: Track) -> URL {
+        Self.key(track, cache: cache)
+    }
+
+    private nonisolated static func key(_ track: Track, cache: URL) -> URL {
         let digest = SHA256.hash(data: Data("\(track.artist)\n\(track.title)\n\(track.album)\n\(Int(track.duration.rounded()))".utf8))
         let hash = digest.map { String(format: "%02x", $0) }.joined()
         let name = "\(safe(track.artist)) - \(safe(track.album)) - \(safe(track.title)) - \(Int(track.duration.rounded()))s-\(hash.prefix(8)).txt"
@@ -164,8 +173,8 @@ final class Lyrics {
         return String(name.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private nonisolated static func cached(_ track: Track) -> String? {
-        read(key(track))
+    private func cached(_ track: Track) -> String? {
+        Self.read(key(track))
     }
 
     private nonisolated static func read(_ url: URL) -> String? {
@@ -174,19 +183,19 @@ final class Lyrics {
     }
 
     @concurrent
-    private nonisolated static func lookup(_ track: Track) async -> Result<String, Failure> {
-        if let lyrics = cached(track), !lyrics.isEmpty { return .success(lyrics) }
-        Persist.remove(key(track))
+    private nonisolated static func lookup(_ track: Track, cache: URL) async -> Result<String, Failure> {
+        if let lyrics = read(key(track, cache: cache)), !lyrics.isEmpty { return .success(lyrics) }
+        Persist.remove(key(track, cache: cache))
 
         let result = await fetch(track)
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
-            Persist.write(Data(lyrics.utf8), to: key(track))
+            Persist.write(Data(lyrics.utf8), to: key(track, cache: cache))
             return .success(lyrics)
         }
 
         if let fallback = await ovh(artist: track.artist, title: track.title), !fallback.isEmpty {
-            Persist.write(Data(fallback.utf8), to: key(track))
+            Persist.write(Data(fallback.utf8), to: key(track, cache: cache))
             return .success(fallback)
         }
 
