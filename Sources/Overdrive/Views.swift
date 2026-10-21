@@ -1525,7 +1525,7 @@ struct ContentView: View {
         case (49, false) where !typing:
             player.toggle()
             return true
-        case (53, false) where !typing && !path.isEmpty:
+        case (53, false) where !path.isEmpty:
             navigate(Array(path.dropLast()))
             return true
         default: return false
