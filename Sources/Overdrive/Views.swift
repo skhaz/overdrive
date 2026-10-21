@@ -1191,7 +1191,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             NavigationSplitView {
-                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.confirm { navigation.open(value, leaving: tracker.position) } } }) {
+                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.settle { navigation.open(value, leaving: tracker.position) } } }) {
                     ForEach(Section.allCases) { section in
                         row(section.rawValue, section.symbol, .section(section))
                     }
@@ -1292,11 +1292,6 @@ struct ContentView: View {
             library.add(folders)
             return !folders.isEmpty
         }
-        .confirmationDialog("Save the changes to the lyrics?", isPresented: $lyrics.confirming) {
-            Button("Save", action: lyrics.commit)
-            Button("Discard", role: .destructive, action: lyrics.discard)
-            Button("Cancel", role: .cancel, action: lyrics.cancel)
-        }
         .alert("New Playlist", isPresented: Binding { playlists.naming != nil } set: { if !$0 { playlists.naming = nil } }) {
             TextField("Name", text: $name)
             Button("Create") {
@@ -1325,7 +1320,7 @@ struct ContentView: View {
             case .album(let album): value.append(.album(album))
             case .artist(let name): value.append(.artist(name))
             case .search(let text):
-                lyrics.confirm {
+                lyrics.settle {
                     navigation.open(.section(.albums), leaving: tracker.position)
                     library.query = text
                 }
@@ -1459,16 +1454,16 @@ struct ContentView: View {
     }
 
     private func goBack() {
-        lyrics.confirm { navigation.goBack(leaving: tracker.position) }
+        lyrics.settle { navigation.goBack(leaving: tracker.position) }
     }
 
     private func goForward() {
-        lyrics.confirm { navigation.goForward(leaving: tracker.position) }
+        lyrics.settle { navigation.goForward(leaving: tracker.position) }
     }
 
     private func press(_ event: NSEvent) -> Bool {
         guard let window = event.window, window.isKeyWindow, window.identifier?.rawValue.hasPrefix("main") == true, window.attachedSheet == nil,
-              playlists.naming == nil, deleting == nil, !lyrics.confirming else { return false }
+              playlists.naming == nil, deleting == nil else { return false }
 
         let sidebar = focus == .sidebar
         guard sidebar || focus == .search || !(window.firstResponder is NSText) else {
@@ -1542,7 +1537,7 @@ struct ContentView: View {
 
     private func navigate(_ value: [Route]) {
         if shown(path, page), !shown(value, page) {
-            lyrics.confirm { navigation.show(value, leaving: tracker.position) }
+            lyrics.settle { navigation.show(value, leaving: tracker.position) }
         } else {
             navigation.show(value, leaving: tracker.position)
         }

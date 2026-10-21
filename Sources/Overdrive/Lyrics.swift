@@ -22,9 +22,7 @@ final class Lyrics {
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
     var visible = false
     var floating = false
-    var confirming = false
 
-    @ObservationIgnored private var pending: (() -> Void)?
     @ObservationIgnored private var saver: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
 
@@ -39,7 +37,7 @@ final class Lyrics {
     func show(_ track: Track) {
         guard !visible || track != self.track else { return }
 
-        confirm { self.open(track) }
+        settle { self.open(track) }
     }
 
     func edit(_ value: String) {
@@ -61,26 +59,8 @@ final class Lyrics {
         if let track, modified { save(text, for: track) }
     }
 
-    func discard() {
-        saver?.cancel()
-        saver = nil
-        text = original
-        pending?()
-        pending = nil
-    }
-
-    func commit() {
-        flush()
-        if !modified { pending?() }
-        pending = nil
-    }
-
-    func cancel() {
-        pending = nil
-    }
-
     func refresh() {
-        confirm {
+        settle {
             guard let track = self.track else { return }
             Persist.remove(Lyrics.key(track))
             Persist.remove(Lyrics.oldKey(track))
@@ -110,13 +90,9 @@ final class Lyrics {
         original = value
     }
 
-    func confirm(_ action: @escaping () -> Void) {
-        if modified {
-            pending = action
-            confirming = true
-        } else {
-            action()
-        }
+    func settle(_ action: @escaping () -> Void) {
+        if modified { flush() }
+        action()
     }
 
     private func open(_ track: Track) {
