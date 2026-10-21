@@ -312,6 +312,7 @@ struct SyncedLyrics: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
+        scroll.horizontalScrollElasticity = .none
         scroll.documentView = text
         context.coordinator.text = text
         NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.resize), name: NSView.frameDidChangeNotification, object: scroll)
@@ -1155,7 +1156,8 @@ struct ContentView: View {
     @State private var monitor: Any?
     @State private var history = History<Place>()
     @State private var restoring: [Route]?
-    @State private var swiping = Swipe()
+    @State private var swipe: CGFloat = 0
+    @State private var navigator = Navigator()
     @FocusState private var focus: Focus?
 
     var body: some View {
@@ -1224,14 +1226,26 @@ struct ContentView: View {
                         Group {
                             switch route {
                             case .album(let album): AlbumView(album: album)
-                            case .artist(let name): let albums = library.albums.filter { $0.artist == name }
-                            AlbumGrid(albums: albums).navigationTitle(name).navigationSubtitle(summary(albums))
+                            case .artist(let name):
+                                let albums = library.albums.filter { $0.artist == name }
+                                AlbumGrid(albums: albums).navigationTitle(name).navigationSubtitle(summary(albums))
                             }
                         }
                         .environment(\.active, path.last == route)
                         .navigationBarBackButtonHidden()
                     }
                 }
+                .overlay(alignment: swipe > 0 ? .leading : .trailing) {
+                    if swipe != 0 {
+                        Image(systemName: swipe > 0 ? "chevron.backward" : "chevron.forward")
+                            .font(.title2.bold())
+                            .padding()
+                            .background(.regularMaterial, in: .circle)
+                            .opacity(abs(swipe))
+                            .padding()
+                    }
+                }
+                .background(NavigatorInstaller(navigator: navigator))
             }
             .overlay(alignment: .trailing) {
                 if shown(path, page) {
@@ -1317,8 +1331,11 @@ struct ContentView: View {
             if let current = player.current { lyrics.show(current) }
         }
         .onAppear {
+            navigator.available = { (!history.back.isEmpty, !history.forward.isEmpty) }
+            navigator.progress = { swipe = $0 }
+            navigator.go = { $0 ? goBack() : goForward() }
             focus = .search
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .scrollWheel, .swipe, .otherMouseDown], handler: handle)
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { press($0) ? nil : $0 }
         }
         .onDisappear {
             if let monitor { NSEvent.removeMonitor(monitor) }
@@ -1340,6 +1357,7 @@ struct ContentView: View {
             navigate([])
             remember()
         }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .frame(minWidth: 820, minHeight: 520)
     }
 
@@ -1348,44 +1366,6 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .tag(value)
-    }
-
-    private func handle(_ event: NSEvent) -> NSEvent? {
-        guard let window = event.window, window.isKeyWindow, window.identifier?.rawValue.hasPrefix("main") == true, window.attachedSheet == nil else { return event }
-
-        switch event.type {
-        case .keyDown: return press(event) ? nil : event
-        case .scrollWheel:
-            swipe(event)
-            return event
-        case .swipe where event.deltaX != 0: event.deltaX > 0 ? goBack() : goForward()
-        case .otherMouseDown where event.buttonNumber == 3: goBack()
-        case .otherMouseDown where event.buttonNumber == 4: goForward()
-        default: return event
-        }
-
-        return nil
-    }
-
-    private func swipe(_ event: NSEvent) {
-        guard NSEvent.isSwipeTrackingFromScrollEventsEnabled, event.momentumPhase == [] else { return }
-
-        let dx = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
-        switch event.phase {
-        case .began:
-            swiping.begin()
-            swiping.move(dx, event.scrollingDeltaY)
-        case .changed:
-            swiping.move(dx, event.scrollingDeltaY)
-        case .ended:
-            switch swiping.end() {
-            case .back: goBack()
-            case .forward: goForward()
-            case nil: break
-            }
-        default:
-            swiping.cancel()
-        }
     }
 
     private func visit(_ change: () -> Void) {

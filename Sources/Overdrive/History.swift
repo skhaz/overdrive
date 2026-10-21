@@ -45,38 +45,3 @@ nonisolated enum Step {
         }
     }
 }
-
-nonisolated struct Swipe {
-    enum Direction {
-        case back, forward
-    }
-
-    static let distance = 150.0
-
-    private var x: Double?
-    private var y = 0.0
-
-    mutating func begin() {
-        x = 0
-        y = 0
-    }
-
-    mutating func move(_ dx: Double, _ dy: Double) {
-        guard let x else { return }
-
-        self.x = x + dx
-        y += abs(dy)
-    }
-
-    mutating func end() -> Direction? {
-        defer { x = nil }
-
-        guard let x, abs(x) >= Self.distance, abs(x) > 2 * y else { return nil }
-
-        return x > 0 ? .back : .forward
-    }
-
-    mutating func cancel() {
-        x = nil
-    }
-}
