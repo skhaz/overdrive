@@ -80,7 +80,7 @@ final class Lyrics {
         } else {
             if FileManager.default.fileExists(atPath: url.path) { Persist.remove(url) }
 
-            Persist.write(Data(), to: Lyrics.key(track))
+            Persist.remove(Lyrics.key(track))
             Persist.remove(Lyrics.oldKey(track))
         }
 
@@ -102,7 +102,7 @@ final class Lyrics {
         self.track = track
         visible = true
 
-        if let lyrics = Lyrics.read(Lyrics.file(track)) {
+        if let lyrics = Lyrics.read(Lyrics.file(track)), !lyrics.isEmpty {
             saved = lyrics
             original = saved
             text = saved
@@ -114,8 +114,8 @@ final class Lyrics {
         original = ""
         text = ""
 
-        if let lyrics = Lyrics.cached(track) {
-            if !lyrics.isEmpty { apply(.success(lyrics)) }
+        if let lyrics = Lyrics.cached(track), !lyrics.isEmpty {
+            apply(.success(lyrics))
             loading = false
             return
         }
