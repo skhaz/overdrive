@@ -97,9 +97,9 @@ final class Library {
     var scanning = false
     var query = Player.saved?.query ?? "" { didSet { if query != oldValue { search() } } }
 
-    var folders: [URL] = Library.savedFolders() {
+    var folders: [URL] {
         didSet {
-            UserDefaults.standard.set(folders.map { StoredPath.encode($0.path) }, forKey: Library.key)
+            if persistent { UserDefaults.standard.set(folders.map { StoredPath.encode($0.path) }, forKey: Library.key) }
             watch()
             scan()
         }
@@ -139,20 +139,36 @@ final class Library {
     @ObservationIgnored private var ranked: [(score: Int32, item: Int32)] = []
     @ObservationIgnored private var counts: [Int] = []
     @ObservationIgnored private var stream: FSEventStreamRef?
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let loudness: Loudness
+    @ObservationIgnored private let persistent: Bool
     @ObservationIgnored var loaded: (() -> Void)?
 
-    init(loudness: Loudness) {
+    init(loudness: Loudness, folders: [URL]? = nil) {
         self.loudness = loudness
+        persistent = folders == nil
+        self.folders = folders ?? Library.savedFolders()
         watch()
         scan()
 
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
-            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.scan() }
-            }
+            })
         }
+    }
+
+    isolated deinit {
+        for observer in observers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+
+        guard let stream else { return }
+
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
     }
 
     func choose() {
@@ -366,9 +382,9 @@ final class Library {
         guard !folders.isEmpty else { return }
 
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
             let paths = unsafeBitCast(paths, to: NSArray.self)
-            guard Library.relevant((0..<count).map { paths[$0] as! String }) else { return }
+            guard Library.relevant((0..<count).map { (paths[$0] as! String, flags[$0]) }) else { return }
 
             MainActor.assumeIsolated {
                 Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
@@ -380,10 +396,12 @@ final class Library {
         FSEventStreamStart(stream!)
     }
 
-    nonisolated static func relevant(_ paths: [String]) -> Bool {
-        paths.contains { path in
+    nonisolated static func relevant(_ events: [(path: String, flags: FSEventStreamEventFlags)]) -> Bool {
+        events.contains { path, flags in
             if Cache.ignored(path) {
-                return !FileManager.default.fileExists(atPath: (path as NSString).deletingLastPathComponent + "/" + Cache.name)
+                let main = (path as NSString).lastPathComponent == Cache.name
+                let gone = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0
+                return main && gone || !FileManager.default.fileExists(atPath: (path as NSString).deletingLastPathComponent + "/" + Cache.name)
             }
 
             return !path.contains("/.") && !Lyrics.ignored(path) && !Playlists.ignored(path)

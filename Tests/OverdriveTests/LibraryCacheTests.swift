@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import SQLite3
 import Testing
@@ -485,21 +486,27 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(consistent(folder))
     }
 
-    @Test func rescansOnlyForRelevantPaths() throws {
+    @Test func rescansOnlyForRelevantEvents() throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
+        let modified = FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+        let removed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved)
+        let renamed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed)
+        let cache = folder.path + "/" + Cache.name
 
-        #expect(Library.relevant([folder.path + "/Album/one.mp3"]))
-        #expect(Library.relevant([folder.path + "/Album"]))
-        #expect(!Library.relevant([folder.path + "/.hidden/one.mp3"]))
-        #expect(!Library.relevant([folder.path + "/Album/one.lrc"]))
+        #expect(Library.relevant([(folder.path + "/Album/one.mp3", modified)]))
+        #expect(Library.relevant([(folder.path + "/Album", removed)]))
+        #expect(!Library.relevant([(folder.path + "/.hidden/one.mp3", modified)]))
+        #expect(!Library.relevant([(folder.path + "/Album/one.lrc", modified)]))
         #expect(!Library.relevant([]))
 
-        #expect(Library.relevant([folder.path + "/" + Cache.name]))
+        #expect(Library.relevant([(cache, modified)]))
         _ = Cache(folder)
-        #expect(!Library.relevant([folder.path + "/" + Cache.name]))
-        #expect(!Library.relevant([folder.path + "/" + Cache.name + "-wal", folder.path + "/" + Cache.name + "-shm"]))
-        #expect(Library.relevant([folder.path + "/" + Cache.name + "-wal", folder.path + "/Album/one.mp3"]))
+        #expect(!Library.relevant([(cache, modified)]))
+        #expect(!Library.relevant([(cache + "-wal", modified), (cache + "-shm", removed)]))
+        #expect(Library.relevant([(cache, removed)]))
+        #expect(Library.relevant([(cache, renamed)]))
+        #expect(Library.relevant([(cache + "-wal", modified), (folder.path + "/Album/one.mp3", modified)]))
     }
 
     @Test func showsTheCacheFirstAndTheFilesystemLast() async throws {
