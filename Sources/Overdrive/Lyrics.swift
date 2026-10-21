@@ -17,7 +17,6 @@ final class Lyrics {
 
     private(set) var track: Track?
     private(set) var loading = false
-    private(set) var status = ""
     private(set) var original = ""
     private(set) var saved = ""
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
@@ -26,10 +25,10 @@ final class Lyrics {
     var confirming = false
 
     @ObservationIgnored private var pending: (() -> Void)?
+    @ObservationIgnored private var saver: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
 
     var modified: Bool { text != original }
-    var changed: Bool { text != saved }
     private(set) var synced: [SyncedLine] = []
 
     nonisolated static func ignored(_ path: String) -> Bool {
@@ -43,14 +42,34 @@ final class Lyrics {
         confirm { self.open(track) }
     }
 
+    func edit(_ value: String) {
+        guard value != text else { return }
+
+        text = value
+        saver?.cancel()
+        saver = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            save()
+        }
+    }
+
+    func flush() {
+        saver?.cancel()
+        saver = nil
+        if modified { save() }
+    }
+
     func discard() {
+        saver?.cancel()
+        saver = nil
         text = original
         pending?()
         pending = nil
     }
 
     func commit() {
-        save()
+        flush()
         if !modified { pending?() }
         pending = nil
     }
@@ -75,10 +94,7 @@ final class Lyrics {
         let url = Lyrics.file(track)
 
         if !text.isEmpty {
-            guard Persist.write(Data(text.utf8), to: url) else {
-                status = "Could not save the lyrics."
-                return
-            }
+            guard Persist.write(Data(text.utf8), to: url) else { return }
 
             Persist.write(Data(text.utf8), to: Lyrics.key(track))
         } else {
@@ -90,7 +106,6 @@ final class Lyrics {
 
         saved = text
         original = text
-        status = "Saved"
     }
 
     func confirm(_ action: @escaping () -> Void) {
@@ -108,7 +123,6 @@ final class Lyrics {
 
         self.track = track
         visible = true
-        status = ""
 
         if let lyrics = Lyrics.read(Lyrics.file(track)) {
             saved = lyrics
@@ -123,38 +137,27 @@ final class Lyrics {
         text = ""
 
         if let lyrics = Lyrics.cached(track) {
-            if !lyrics.isEmpty { apply(.success(lyrics), from: "cache") }
+            if !lyrics.isEmpty { apply(.success(lyrics)) }
             loading = false
             return
         }
 
         loading = true
-        status = "Searching..."
 
         Task {
-            let (result, source) = await Lyrics.lookup(track)
+            let result = await Lyrics.lookup(track)
             guard generation == self.generation else { return }
 
-            apply(result, from: source)
+            apply(result)
             loading = false
         }
     }
 
-    private func apply(_ result: Result<String, Failure>, from source: String = "LRCLIB or lyrics.ovh") {
-        switch result {
-        case .success(let lyrics) where !lyrics.isEmpty:
+    private func apply(_ result: Result<String, Failure>) {
+        if case .success(let lyrics) = result, !lyrics.isEmpty {
             guard text.isEmpty else { return }
             original = lyrics
             text = lyrics
-            status = "From \(source). Click Save to keep them."
-        case .success:
-            status = "No lyrics found."
-        case .failure(.offline):
-            status = "Could not reach LRCLIB."
-        case .failure(.busy):
-            status = "LRCLIB is busy. Open the song again later."
-        case .failure(.status(let code)):
-            status = "LRCLIB returned HTTP \(code)."
         }
     }
 
@@ -195,8 +198,8 @@ final class Lyrics {
     }
 
     @concurrent
-    private nonisolated static func lookup(_ track: Track) async -> (Result<String, Failure>, String) {
-        if let lyrics = cached(track), !lyrics.isEmpty { return (.success(lyrics), "cache") }
+    private nonisolated static func lookup(_ track: Track) async -> Result<String, Failure> {
+        if let lyrics = cached(track), !lyrics.isEmpty { return .success(lyrics) }
         Persist.remove(key(track))
         Persist.remove(oldKey(track))
 
@@ -204,15 +207,15 @@ final class Lyrics {
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
             Persist.write(Data(lyrics.utf8), to: key(track))
-            return (result, "LRCLIB")
+            return .success(lyrics)
         }
 
         if let fallback = await ovh(artist: track.artist, title: track.title), !fallback.isEmpty {
             Persist.write(Data(fallback.utf8), to: key(track))
-            return (.success(fallback), "lyrics.ovh")
+            return .success(fallback)
         }
 
-        return (result, "LRCLIB")
+        return result
     }
 
     private nonisolated static func ovh(artist: String, title: String) async -> String? {

@@ -213,8 +213,6 @@ struct LyricsView: View {
     @FocusState private var typing: Bool
 
     var body: some View {
-        @Bindable var lyrics = lyrics
-
         if let track = lyrics.track {
             let lines = lyrics.synced
             let live = player.current == track
@@ -246,7 +244,7 @@ struct LyricsView: View {
                     } else if !editing, !lines.isEmpty {
                         SyncedLyrics(lines: lines, current: current) { player.seek($0) }
                     } else {
-                        TextEditor(text: $lyrics.text)
+                        TextEditor(text: Binding { lyrics.text } set: { lyrics.edit($0) })
                             .focused($typing)
                             .font(.body)
                             .scrollContentBackground(.hidden)
@@ -254,17 +252,6 @@ struct LyricsView: View {
                     }
                 }
                 .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
-
-                HStack {
-                    Text(lyrics.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Spacer()
-                    Button("Save") {
-                        lyrics.save()
-                        editing = false
-                    }
-                    .keyboardShortcut("s")
-                    .disabled(!lyrics.changed || lyrics.loading)
-                }
             }
             .padding()
             .onChange(of: track) { editing = false }
@@ -543,6 +530,7 @@ extension Notification.Name {
     static let key = Notification.Name("key")
     static let reveal = Notification.Name("reveal")
     static let editLyrics = Notification.Name("editLyrics")
+    static let floatLyrics = Notification.Name("floatLyrics")
 }
 
 enum Key {
@@ -1348,6 +1336,15 @@ struct ContentView: View {
         })
         .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
             if let current = player.current { reveal(current) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .floatLyrics)) { _ in
+            if let current = player.current {
+                lyrics.show(current)
+                lyrics.floating = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            lyrics.flush()
         }
         .onChange(of: player.current) {
             if let current = player.current { lyrics.show(current) }

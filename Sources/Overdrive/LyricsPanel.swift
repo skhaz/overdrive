@@ -18,6 +18,7 @@ final class LyricsPanel {
         )
         window.level = .floating
         window.isMovableByWindowBackground = true
+        window.becomesKeyOnlyIfNeeded = true
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -39,6 +40,7 @@ struct FloatingLyrics: View {
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
     @State private var scrub: Double?
+    @State private var editing = false
 
     var body: some View {
         if let track = lyrics.track {
@@ -58,6 +60,12 @@ struct FloatingLyrics: View {
 
                     Spacer()
 
+                    if !lines.isEmpty {
+                        Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                    }
+
                     Button("Put the lyrics back in the window", systemImage: "xmark") { lyrics.floating = false }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
@@ -66,16 +74,13 @@ struct FloatingLyrics: View {
                 Group {
                     if lyrics.loading, lyrics.text.isEmpty, lyrics.synced.isEmpty {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if !lines.isEmpty {
+                    } else if !editing, !lines.isEmpty {
                         SyncedLyrics(lines: lines, current: current) { player.seek($0) }
                     } else {
-                        ScrollView {
-                            Text(lyrics.text.isEmpty ? "No lyrics." : lyrics.text)
-                                .foregroundStyle(lyrics.text.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(6)
-                        }
+                        TextEditor(text: Binding { lyrics.text } set: { lyrics.edit($0) })
+                            .font(.body)
+                            .scrollContentBackground(.hidden)
+                            .padding(6)
                     }
                 }
                 .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
@@ -106,6 +111,10 @@ struct FloatingLyrics: View {
             }
             .padding(10)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .onChange(of: track) { editing = false }
+            .onReceive(NotificationCenter.default.publisher(for: .editLyrics)) { _ in
+                if !lines.isEmpty { editing = true }
+            }
         }
     }
 }
