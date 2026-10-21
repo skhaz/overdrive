@@ -60,6 +60,10 @@ struct FloatingLyrics: View {
 
                     Spacer()
 
+                    if lyrics.loading {
+                        ProgressView().controlSize(.small)
+                    }
+
                     if !lines.isEmpty {
                         Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
                             .labelStyle(.iconOnly)
@@ -72,9 +76,7 @@ struct FloatingLyrics: View {
                 }
 
                 Group {
-                    if lyrics.loading, lyrics.text.isEmpty, lyrics.synced.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if !editing, !lines.isEmpty {
+                    if !editing, !lines.isEmpty {
                         SyncedLyrics(lines: lines, current: current) { player.seek($0) }
                     } else {
                         TextEditor(text: Binding { lyrics.text } set: { lyrics.edit($0) })

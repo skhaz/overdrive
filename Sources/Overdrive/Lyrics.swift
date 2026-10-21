@@ -24,7 +24,7 @@ final class Lyrics {
     var floating = false
 
     @ObservationIgnored private var saver: Task<Void, Never>?
-    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var lookupTask: Task<Void, Never>?
 
     var modified: Bool { text != original }
     private(set) var synced: [SyncedLine] = []
@@ -44,6 +44,8 @@ final class Lyrics {
         guard value != text else { return }
 
         text = value
+        lookupTask?.cancel()
+        loading = false
         saver?.cancel()
         guard let track else { return }
         saver = Task {
@@ -69,8 +71,6 @@ final class Lyrics {
     }
 
     func save(_ value: String, for track: Track) {
-        generation += 1
-
         let url = Lyrics.file(track)
 
         if !value.isEmpty {
@@ -97,9 +97,6 @@ final class Lyrics {
     }
 
     private func open(_ track: Track) {
-        generation += 1
-        let generation = generation
-
         self.track = track
         visible = true
 
@@ -123,9 +120,10 @@ final class Lyrics {
 
         loading = true
 
-        Task {
+        lookupTask?.cancel()
+        lookupTask = Task {
             let result = await Lyrics.lookup(track)
-            guard generation == self.generation else { return }
+            guard !Task.isCancelled else { return }
 
             apply(result)
             loading = false
