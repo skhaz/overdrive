@@ -25,7 +25,7 @@ final class LyricsPanel {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.identifier = NSUserInterfaceItemIdentifier("lyrics")
-        window.contentView = NSHostingView(rootView: FloatingLyrics(window: window).environment(lyrics).environment(player))
+        window.contentView = NSHostingView(rootView: FloatingLyrics().environment(lyrics).environment(player))
     }
 
     func show() {
@@ -37,41 +37,11 @@ final class LyricsPanel {
     }
 }
 
-struct DraggableHeader: NSViewRepresentable {
-    let window: NSPanel
-    let content: () -> AnyView
-
-    func makeNSView(context: Context) -> NSView {
-        let view = _DraggableHeaderView(panel: window)
-        view.addSubview(NSHostingView(rootView: content()))
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if let hostingView = nsView.subviews.first as? NSHostingView<AnyView> {
-            hostingView.rootView = content()
-        }
-    }
-}
-
-final class _DraggableHeaderView: NSView {
-    let panel: NSPanel
-    init(panel: NSPanel) {
-        self.panel = panel
-        super.init(frame: .zero)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    override func mouseDown(with event: NSEvent) {
-        panel.performDrag(with: event)
-    }
-}
-
 struct FloatingLyrics: View {
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
     @State private var scrub: Double?
     @State private var editing = false
-    let window: NSPanel
 
     var body: some View {
         if let track = lyrics.track {
@@ -80,10 +50,40 @@ struct FloatingLyrics: View {
             let current = live ? LRC.index(at: player.position, in: lines) : nil
 
             VStack(alignment: .leading, spacing: 8) {
-                DraggableHeader(window: window) {
-                    AnyView(headerContent(track: track, lines: lines))
+                HStack(alignment: .top, spacing: 10) {
+                    Cover(track: track).frame(width: 56)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track.title).font(.headline).lineLimit(2)
+                        Text(track.artist).lineLimit(1)
+                        Text(track.album).foregroundStyle(.secondary).lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    if lyrics.loading {
+                        ProgressView().controlSize(.small)
+                    }
+
+                    if !lyrics.text.isEmpty, lyrics.remote {
+                        Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                    }
+
+                    if !lines.isEmpty {
+                        Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                    }
+
+                    Button("Put the lyrics back in the window", systemImage: "xmark") { lyrics.floating = false }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
                 }
-                .frame(height: 72)
 
                 Group {
                     if !editing, !lines.isEmpty {
@@ -127,44 +127,6 @@ struct FloatingLyrics: View {
             .onReceive(NotificationCenter.default.publisher(for: .editLyrics)) { _ in
                 if !lines.isEmpty { editing = true }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func headerContent(track: Track, lines: [SyncedLine]) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Cover(track: track).frame(width: 56)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track.title).font(.headline).lineLimit(2)
-                Text(track.artist).lineLimit(1)
-                Text(track.album).foregroundStyle(.secondary).lineLimit(1)
-            }
-
-            Spacer()
-
-            if lyrics.loading {
-                ProgressView().controlSize(.small)
-            }
-
-            if !lyrics.text.isEmpty, lyrics.remote {
-                Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-            }
-
-            if !lines.isEmpty {
-                Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-            }
-
-            Button("Put the lyrics back in the window", systemImage: "xmark") { lyrics.floating = false }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .controlSize(.small)
         }
     }
 }
