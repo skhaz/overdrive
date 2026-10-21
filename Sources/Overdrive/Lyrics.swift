@@ -22,6 +22,7 @@ final class Lyrics {
     private(set) var saved = ""
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
     var visible = false
+    var floating = false
     var confirming = false
 
     @ObservationIgnored private var pending: (() -> Void)?

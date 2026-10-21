@@ -13,7 +13,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Uses your music folders.** Add a folder and your albums show at once. New songs that you put in the folder show automatically.
 - **Plays all common formats:** AAC, ALAC, MP3, FLAC, Opus, Vorbis, WAV, and AIFF.
 - **Album covers** from your music files or from the image in the album folder.
-- **Lyrics** that move with the song. If a song has no lyrics, the app finds them on the internet. You can also type and save your own.
+- **Lyrics** that move with the song. If a song has no lyrics, the app finds them on the internet. You can also type and save your own, and show them in a small window that stays on top.
 - **Same volume for all songs**, so you do not have to change the volume between songs.
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.
@@ -82,6 +82,8 @@ Click **Liked Songs** in the sidebar, below Songs, to see all liked songs. To re
 ### Lyrics
 
 The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, edit the text and click **Save** (Command-S). The app saves the lyrics next to the song. To remove the lyrics, delete all the text and click **Save**.
+
+Click the undock button at the top of the lyrics to move them to a small window that floats above all other windows. The window shows the album cover, the song, the artist, and the album. Drag the window to move it. It keeps the lyrics when the next song plays. Click the X in the window to put the lyrics back in the app.
 
 ### Watch the music video
 

@@ -230,6 +230,9 @@ struct LyricsView: View {
                     Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
+                    Button("Show in a Floating Window", systemImage: "pip.enter") { lyrics.floating = true }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
                     if !lines.isEmpty {
                         Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
                             .labelStyle(.iconOnly)
@@ -743,7 +746,7 @@ struct AlbumView: View {
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { list.rect = $0 }
                 }
                 .padding(20)
-                .padding(.trailing, lyrics.visible && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
+                .padding(.trailing, lyrics.visible && !lyrics.floating && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
             }
             .task { reveal(proxy) }
             .modifier(Keys(count: album.tracks.count, selected: { selection.contains(album.tracks[$0].id) }, select: { index in
@@ -1194,6 +1197,7 @@ struct ContentView: View {
     @State private var swipe: CGFloat = 0
     @State private var navigator = Navigator()
     @State private var search = ""
+    @State private var panel: LyricsPanel?
     @FocusState private var focus: Focus?
 
     var body: some View {
@@ -1265,7 +1269,7 @@ struct ContentView: View {
                 .background(NavigatorInstaller(navigator: navigator))
             }
             .overlay(alignment: .trailing) {
-                if shown(path, page) {
+                if shown(path, page), !lyrics.floating {
                     HStack(spacing: 0) {
                         Divider()
                         LyricsView().frame(width: LyricsView.width)
@@ -1366,6 +1370,15 @@ struct ContentView: View {
 
             self.saved = nil
             navigation.restore(saved.compactMap { Route(key: $0, albums: library.albums) })
+        }
+        .onChange(of: lyrics.floating) {
+            if lyrics.floating {
+                let panel = self.panel ?? LyricsPanel(lyrics: lyrics, player: player)
+                self.panel = panel
+                panel.show()
+            } else {
+                panel?.hide()
+            }
         }
         .onChange(of: navigation.place) {
             tracker.position = navigation.place.position
