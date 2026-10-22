@@ -44,6 +44,7 @@ struct FloatingLyrics: View {
     @State private var editing = false
 
     var body: some View {
+        let _ = player.position
         if let track = lyrics.track {
             let lines = lyrics.synced
             let live = player.current == track
