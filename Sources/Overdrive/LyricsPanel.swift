@@ -105,6 +105,15 @@ struct FloatingLyrics: View {
                     }
                 }
                 .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
+                .alert("Replace local lyrics?", isPresented: Binding(
+                    get: { lyrics.pendingReplace },
+                    set: { if !$0 { lyrics.cancelReplace() } }
+                )) {
+                    Button("Replace", role: .destructive) { lyrics.confirmReplace() }
+                    Button("Cancel", role: .cancel) { lyrics.cancelReplace() }
+                } message: {
+                    Text("New lyrics found online. Replace your local version?")
+                }
 
                 HStack(spacing: 8) {
                     Text((scrub ?? player.position).time).monospacedDigit().foregroundStyle(.secondary).font(.caption)

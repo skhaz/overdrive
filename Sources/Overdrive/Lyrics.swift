@@ -32,6 +32,8 @@ final class Lyrics {
         guard let track else { return false }
         return (Self.read(file(track)) ?? "").isEmpty == false
     }
+    var pendingReplace: Bool = false
+    var pendingLyrics: String = ""
 
     @ObservationIgnored private let cache: URL
     @ObservationIgnored private var saver: Task<Void, Never>?
@@ -90,6 +92,9 @@ final class Lyrics {
                     original = lyrics
                     text = lyrics
                     remote = true
+                } else {
+                    pendingReplace = true
+                    pendingLyrics = lyrics
                 }
             }
             loading = false
@@ -109,6 +114,22 @@ final class Lyrics {
         }
 
         return .failure(Failure.offline)
+    }
+
+    func confirmReplace() {
+        guard pendingReplace, !pendingLyrics.isEmpty, let track else { return }
+        let lyrics = pendingLyrics
+        original = lyrics
+        text = lyrics
+        remote = true
+        pendingReplace = false
+        pendingLyrics = ""
+        save(lyrics, for: track)
+    }
+
+    func cancelReplace() {
+        pendingReplace = false
+        pendingLyrics = ""
     }
 
     func save(_ value: String, for track: Track) {
