@@ -841,7 +841,6 @@ struct AlbumView: View {
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { list.rect = $0 }
                 }
                 .padding(20)
-                .padding(.trailing, lyrics.visible && !lyrics.floating && lyrics.track.map(album.tracks.contains) == true ? LyricsView.width : 0)
             }
             .task { reveal(proxy) }
             .modifier(Keys(count: album.tracks.count, selected: { selection.contains(album.tracks[$0].id) }, select: { index in
@@ -995,6 +994,8 @@ struct SongTable: View {
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
+    @Environment(\.go) private var go
+    @Environment(Library.self) private var library
     @State private var selection: Set<Track.ID> = []
 
     var body: some View {
@@ -1019,7 +1020,11 @@ struct SongTable: View {
             } primaryAction: { ids in
                 guard let id = ids.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
 
+                let track = tracks[index]
                 player.play(tracks, at: index)
+                if let album = library.albums.first(where: { $0.id == track.albumID }) {
+                    go(.album(album))
+                }
             }
             .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                 if let track, tracks.contains(track) { selection = [track.id] }
@@ -1044,6 +1049,7 @@ struct PlaylistView: View {
     @Environment(YouTube.self) private var youTube
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
+    @Environment(\.go) private var go
     @State private var selection: Set<Row.ID> = []
     @State private var removing: [Row] = []
 
@@ -1092,7 +1098,11 @@ struct PlaylistView: View {
                 } primaryAction: { ids in
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
+                    let track = rows[index].track
                     player.play(rows.map(\.track), at: index)
+                    if let album = library.albums.first(where: { $0.id == track.albumID }) {
+                        go(.album(album))
+                    }
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1143,6 +1153,7 @@ struct LikedView: View {
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
+    @Environment(\.go) private var go
     @State private var selection: Set<Row.ID> = []
 
     var body: some View {
@@ -1177,7 +1188,11 @@ struct LikedView: View {
                 } primaryAction: { ids in
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
+                    let track = rows[index].track
                     player.play(rows.map(\.track), at: index)
+                    if let album = library.albums.first(where: { $0.id == track.albumID }) {
+                        go(.album(album))
+                    }
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1309,99 +1324,98 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavigationSplitView {
-                List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.settle { navigation.open(value, leaving: tracker.position) } } }) {
-                    ForEach(Section.allCases) { section in
-                        row(section.rawValue, section.symbol, .section(section))
-                    }
+            HStack(spacing: 0) {
+                NavigationSplitView {
+                    List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.settle { navigation.open(value, leaving: tracker.position) } } }) {
+                        ForEach(Section.allCases) { section in
+                            row(section.rawValue, section.symbol, .section(section))
+                        }
 
-                    row("Liked Songs", "heart", .liked)
+                        row("Liked Songs", "heart", .liked)
 
-                    SwiftUI.Section {
-                        ForEach(playlists.names, id: \.self) { name in
-                            row(name, "music.note.list", .playlist(name))
-                                .contextMenu {
-                                    Button("Delete Playlist", role: .destructive) { deleting = name }
-                                        .keyboardShortcut(.delete, modifiers: [])
-                                        .buttonStyle(PressableButtonStyle(isDestructive: true))
-                                }
-                        }
-                    } header: {
-                        HStack {
-                            Text("Playlists")
-                            Spacer()
-                            Button("New Playlist", systemImage: "plus") { playlists.naming = [] }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(ToolbarButtonStyle())
-                        }
-                    }
-                }
-                .navigationSplitViewColumnWidth(180)
-                .focused($focus, equals: .sidebar)
-                .onDeleteCommand {
-                    if case .playlist(let name) = page { deleting = name }
-                }
-            } detail: {
-                Group {
-                    if library.folders.isEmpty {
-                        ContentUnavailableView {
-                            Label("No Music", systemImage: "music.note")
-                        } description: {
-                            Text("Add a folder with music or drop it here.")
-                        } actions: {
-                            Button("Add Folder…", action: library.choose)
-                                .buttonStyle(PressableButtonStyle(isProminent: true))
-                        }
-                    } else if library.albums.isEmpty, library.scanning {
-                        ProgressView()
-                    } else {
-                        ZStack {
-                            ForEach(navigation.pages, id: \.self) { page in
-                                stack(page)
-                                    .opacity(page == self.page ? 1 : 0)
-                                    .allowsHitTesting(page == self.page)
-                                    .accessibilityHidden(page != self.page)
+                        SwiftUI.Section {
+                            ForEach(playlists.names, id: \.self) { name in
+                                row(name, "music.note.list", .playlist(name))
+                                    .contextMenu {
+                                        Button("Delete Playlist", role: .destructive) { deleting = name }
+                                            .keyboardShortcut(.delete, modifiers: [])
+                                            .buttonStyle(PressableButtonStyle(isDestructive: true))
+                                    }
+                            }
+                        } header: {
+                            HStack {
+                                Text("Playlists")
+                                Spacer()
+                                Button("New Playlist", systemImage: "plus") { playlists.naming = [] }
+                                    .labelStyle(.iconOnly)
+                                    .buttonStyle(ToolbarButtonStyle())
                             }
                         }
                     }
+                    .navigationSplitViewColumnWidth(180)
+                    .focused($focus, equals: .sidebar)
+                    .onDeleteCommand {
+                        if case .playlist(let name) = page { deleting = name }
+                    }
+                } detail: {
+                    Group {
+                        if library.folders.isEmpty {
+                            ContentUnavailableView {
+                                Label("No Music", systemImage: "music.note")
+                            } description: {
+                                Text("Add a folder with music or drop it here.")
+                            } actions: {
+                                Button("Add Folder…", action: library.choose)
+                                    .buttonStyle(PressableButtonStyle(isProminent: true))
+                            }
+                        } else if library.albums.isEmpty, library.scanning {
+                            ProgressView()
+                        } else {
+                            ZStack {
+                                ForEach(navigation.pages, id: \.self) { page in
+                                    stack(page)
+                                        .opacity(page == self.page ? 1 : 0)
+                                        .allowsHitTesting(page == self.page)
+                                        .accessibilityHidden(page != self.page)
+                                }
+                            }
+                        }
+                    }
+                    .overlay(alignment: swipe > 0 ? .leading : .trailing) {
+                        if swipe != 0 {
+                            Image(systemName: swipe > 0 ? "chevron.backward" : "chevron.forward")
+                                .font(.title2.bold())
+                                .padding()
+                                .background(.regularMaterial, in: .circle)
+                                .opacity(abs(swipe))
+                                .padding()
+                        }
+                    }
+                    .background(NavigatorInstaller(navigator: navigator))
                 }
-                .overlay(alignment: swipe > 0 ? .leading : .trailing) {
-                    if swipe != 0 {
-                        Image(systemName: swipe > 0 ? "chevron.backward" : "chevron.forward")
-                            .font(.title2.bold())
-                            .padding()
-                            .background(.regularMaterial, in: .circle)
-                            .opacity(abs(swipe))
-                            .padding()
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button("Back", systemImage: "chevron.backward", action: goBack)
+                            .keyboardShortcut("[")
+                            .disabled(navigation.back.isEmpty)
+                        Button("Forward", systemImage: "chevron.forward", action: goForward)
+                            .keyboardShortcut("]")
+                            .disabled(navigation.forward.isEmpty)
                     }
                 }
-                .background(NavigatorInstaller(navigator: navigator))
-            }
-            .overlay(alignment: .trailing) {
+                .searchable(text: $search, placement: .toolbarPrincipal)
+                .searchFocused($focus, equals: .search)
+                .task(id: search) {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run { library.query = search }
+                }
+
                 if shown(path, page), !lyrics.floating {
-                    HStack(spacing: 0) {
-                        Divider()
-                        LyricsView().frame(width: LyricsView.width)
-                    }
-                    .background(Color(nsColor: .textBackgroundColor))
+                    Divider()
+                    LyricsView().frame(width: LyricsView.width)
+                        .background(Color(nsColor: .textBackgroundColor))
                 }
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .navigation) {
-                    Button("Back", systemImage: "chevron.backward", action: goBack)
-                        .keyboardShortcut("[")
-                        .disabled(navigation.back.isEmpty)
-                    Button("Forward", systemImage: "chevron.forward", action: goForward)
-                        .keyboardShortcut("]")
-                        .disabled(navigation.forward.isEmpty)
-                }
-            }
-            .searchable(text: $search, placement: .toolbarPrincipal)
-            .searchFocused($focus, equals: .search)
-            .task(id: search) {
-                try? await Task.sleep(for: .milliseconds(150))
-                guard !Task.isCancelled else { return }
-                await MainActor.run { library.query = search }
             }
 
             Divider()
@@ -1462,7 +1476,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             lyrics.flush()
         }
-        .onChange(of: player.current) {
+        .onChange(of: player.current, initial: true) {
             if let current = player.current { lyrics.show(current) }
         }
         .onAppear {
@@ -1673,16 +1687,7 @@ struct ContentView: View {
     }
 
     private func shown(_ path: [Route], _ page: Page) -> Bool {
-        guard lyrics.visible, let track = lyrics.track else { return false }
-
-        switch (path.last, page) {
-        case (.album(let album), _): return album.tracks.contains(track)
-        case (.artist, _): return false
-        case (nil, .section(.songs)): return library.tracks.contains(track)
-        case (nil, .playlist(let name)): return playlists.paths[name]?.contains(track.url.path) ?? false
-        case (nil, .liked): return likes.contains(track)
-        case (nil, .section): return false
-        }
+        lyrics.visible && lyrics.track != nil
     }
 }
 

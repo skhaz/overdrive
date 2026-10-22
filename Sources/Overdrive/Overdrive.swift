@@ -156,11 +156,13 @@ struct Overdrive: App {
                 Button("Go to Current Song") { NotificationCenter.default.post(name: .reveal, object: nil) }
                     .keyboardShortcut("l")
                     .disabled(player.current == nil)
-                Button(player.current.map(likes.contains) == true ? "Unlike Song" : "Like Song", systemImage: "heart") {
+                Button(player.current.map(likes.contains) == true ? "Unlike Song" : "Like Song", systemImage: player.current.map(likes.contains) == true ? "heart.fill" : "heart") {
                     if let current = player.current { likes.toggle([current]) }
                 }
                 .keyboardShortcut("l", modifiers: [.command, .option])
                 .disabled(player.current == nil)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: player.current.map(likes.contains) ?? false)
                 Button("Edit Lyrics", systemImage: "pencil") { NotificationCenter.default.post(name: .editLyrics, object: nil) }
                     .keyboardShortcut("e")
                 Button("Show Lyrics in a Floating Window", systemImage: "macwindow") { NotificationCenter.default.post(name: .floatLyrics, object: nil) }
