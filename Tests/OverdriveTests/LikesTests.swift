@@ -22,9 +22,11 @@ private final class Counter: @unchecked Sendable {
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let file = directory.appending(path: "Likes.plist")
-        let first = track("/Music/a.flac")
-        let second = track("/Music/b.flac")
-        let likes = Likes(file: file)
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let first = track(folder.appending(path: "a.flac").path)
+        let second = track(folder.appending(path: "b.flac").path)
+        let likes = Likes(file: file, folderPath: folder.path)
         #expect(likes.paths.isEmpty)
 
         likes.add([first, first, second])
@@ -33,7 +35,7 @@ private final class Counter: @unchecked Sendable {
         #expect(likes.contains(second))
 
         Persist.flush()
-        let reloaded = Likes(file: file)
+        let reloaded = Likes(file: file, folderPath: folder.path)
         #expect(reloaded.paths == [first.url.path, second.url.path])
 
         reloaded.remove([first])
@@ -41,7 +43,7 @@ private final class Counter: @unchecked Sendable {
         #expect(!reloaded.contains(first))
 
         Persist.flush()
-        let again = Likes(file: file)
+        let again = Likes(file: file, folderPath: folder.path)
         #expect(again.paths == [second.url.path])
         #expect(again.contains(second))
     }
@@ -50,9 +52,11 @@ private final class Counter: @unchecked Sendable {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
-        let likes = Likes(file: directory.appending(path: "Likes.plist"))
-        let first = track("/Music/a.flac")
-        let second = track("/Music/b.flac")
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let likes = Likes(file: directory.appending(path: "Likes.plist"), folderPath: folder.path)
+        let first = track(folder.appending(path: "a.flac").path)
+        let second = track(folder.appending(path: "b.flac").path)
 
         likes.toggle([first])
         #expect(likes.contains(first))
@@ -79,7 +83,7 @@ private final class Counter: @unchecked Sendable {
         try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
 
         var folder: URL? = first
-        let likes = Likes(file: { Likes.file(in: folder) })
+        let likes = Likes(file: { Likes.file(in: folder) }, folder: { folder })
         likes.add([track(StoredPath.home + "/Music/a.flac")])
         Persist.flush()
         #expect(FileManager.default.fileExists(atPath: Likes.file(in: first).path))
@@ -99,7 +103,9 @@ private final class Counter: @unchecked Sendable {
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let file = directory.appending(path: "Likes.plist")
-        let likes = Likes(file: file)
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let likes = Likes(file: file, folderPath: folder.path)
         likes.add([track(StoredPath.home + "/Music/a.flac"), track("/Volumes/Music/b.flac")])
         likes.remove([track(StoredPath.home + "/Music/a.flac")])
         likes.add([track(StoredPath.home + "/Music/c.flac")])
@@ -114,13 +120,15 @@ private final class Counter: @unchecked Sendable {
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
         let file = directory.appending(path: "Likes.plist")
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let first = track("/Music/a.flac")
+        let first = track(folder.appending(path: "a.flac").path)
         let encoder = PropertyListEncoder()
         let data = try encoder.encode([first.url.path, first.url.path])
         try data.write(to: file)
 
-        let likes = Likes(file: file)
+        let likes = Likes(file: file, folderPath: folder.path)
         #expect(likes.paths == [first.url.path])
     }
 
@@ -128,21 +136,24 @@ private final class Counter: @unchecked Sendable {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
-        let likes = Likes(file: directory.appending(path: "Likes.plist"))
+        let folder = directory.appending(path: "Music/Library")
+        let likes = Likes(file: directory.appending(path: "Likes.plist"), folderPath: folder.path)
         #expect(likes.paths.isEmpty)
-        #expect(!likes.contains(track("/Music/a.flac")))
+        #expect(!likes.contains(track(folder.appending(path: "a.flac").path)))
     }
 
     @Test @MainActor func removesOnlySelected() {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
-        let first = track("/Music/a.flac")
-        let second = track("/Music/b.flac")
-        let third = track("/Music/c.flac")
-        let likes = Likes(file: directory.appending(path: "Likes.plist"))
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let first = track(folder.appending(path: "a.flac").path)
+        let second = track(folder.appending(path: "b.flac").path)
+        let third = track(folder.appending(path: "c.flac").path)
+        let likes = Likes(file: directory.appending(path: "Likes.plist"), folderPath: folder.path)
         likes.add([first, second, third])
-        likes.remove([second, track("/Music/missing.flac")])
+        likes.remove([second, track(folder.appending(path: "missing.flac").path)])
 
         #expect(likes.paths == [first.url.path, third.url.path])
         #expect(!likes.contains(second))
@@ -152,11 +163,12 @@ private final class Counter: @unchecked Sendable {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = directory.appending(path: "Likes.plist")
-        let first = track("/Music/a.flac")
-        let second = track("/Music/b.flac")
-        let likes = Likes(file: file)
+        let first = track(folder.appending(path: "a.flac").path)
+        let second = track(folder.appending(path: "b.flac").path)
+        let likes = Likes(file: file, folderPath: folder.path)
         likes.add([first])
 
         Persist.flush()
@@ -172,9 +184,11 @@ private final class Counter: @unchecked Sendable {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
-        let first = track("/Music/a.flac")
-        let second = track("/Music/b.flac")
-        let likes = Likes(file: directory.appending(path: "Likes.plist"))
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let first = track(folder.appending(path: "a.flac").path)
+        let second = track(folder.appending(path: "b.flac").path)
+        let likes = Likes(file: directory.appending(path: "Likes.plist"), folderPath: folder.path)
         likes.add([first])
         likes.toggle([first, second])
 
@@ -185,25 +199,28 @@ private final class Counter: @unchecked Sendable {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = directory.appending(path: "Likes.plist")
         try Data("not a plist".utf8).write(to: file)
 
-        let first = track("/Music/a.flac")
-        let likes = Likes(file: file)
+        let first = track(folder.appending(path: "a.flac").path)
+        let likes = Likes(file: file, folderPath: folder.path)
         #expect(likes.paths.isEmpty)
 
         likes.add([first])
         Persist.flush()
-        #expect(Likes(file: file).paths == [first.url.path])
+        #expect(Likes(file: file, folderPath: folder.path).paths == [first.url.path])
     }
 
     @Test @MainActor func notifiesObserversWhenLikedChanges() {
         let directory = temporary()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
 
-        let likes = Likes(file: directory.appending(path: "Likes.plist"))
-        let first = track("/Music/a.flac")
+        let folder = directory.appending(path: "Music/Library")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let likes = Likes(file: directory.appending(path: "Likes.plist"), folder: folder)
+        let first = track(folder.appending(path: "a.flac").path)
         let counter = Counter()
 
         withObservationTracking {

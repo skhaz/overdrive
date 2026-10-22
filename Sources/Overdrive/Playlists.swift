@@ -8,35 +8,58 @@ final class Playlists {
     }
 
     private(set) var names: [String] = []
-    private(set) var paths: [String: [String]] = [:]
+    private var storedPaths: [String: [String]] = [:]
+
+    var paths: [String: [String]] {
+        var result: [String: [String]] = [:]
+        for (name, list) in storedPaths {
+            result[name] = list.map { StoredPath.decode($0, relativeTo: folderPath) }
+        }
+        return result
+    }
+
     var naming: [URL]?
 
     @ObservationIgnored private let directory: () -> URL
+    @ObservationIgnored private let folder: () -> URL?
+    private let folderPath: String
 
-    init(directory: URL) {
+    init(directory: URL, folder: URL) {
+        let folderPath = folder.path
         self.directory = { directory }
+        self.folder = { folder }
+        self.folderPath = folderPath
         load()
     }
 
-    init(directory: @escaping () -> URL) {
+    init(directory: URL, folderPath: String) {
+        self.directory = { directory }
+        self.folder = { URL(fileURLWithPath: folderPath) }
+        self.folderPath = folderPath
+        load()
+    }
+
+    init(directory: @escaping () -> URL, folder: @escaping () -> URL?) {
         self.directory = directory
+        self.folder = folder
+        self.folderPath = folder()?.resolvingSymlinksInPath().path ?? ""
         load()
     }
 
     func load() {
         let files = (try? FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
 
-        paths = [:]
+        storedPaths = [:]
 
         for file in files where file.pathExtension == "plist" {
             let name = file.deletingPathExtension().lastPathComponent
             guard !name.hasSuffix(".backup") else { continue }
             guard let data = try? Data(contentsOf: file), let list = try? PropertyListDecoder().decode([String].self, from: data) else { continue }
 
-            paths[name] = list.map(StoredPath.decode)
+            storedPaths[name] = list.map { StoredPath.decode($0, relativeTo: folderPath) }
         }
 
-        names = paths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        names = storedPaths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     func valid(_ name: String) -> Bool {
@@ -59,18 +82,18 @@ final class Playlists {
     }
 
     func add(_ urls: [URL], to name: String) {
-        var list = paths[name] ?? []
-        var seen = Set(list)
+        var list = storedPaths[name] ?? []
+        var seen = Set(list.map { StoredPath.decode($0, relativeTo: folderPath) })
 
         for url in urls where seen.insert(url.path).inserted {
-            list.append(url.path)
+            list.append(StoredPath.encode(url.path, relativeTo: folderPath))
         }
 
         save(name, list)
     }
 
     func remove(_ positions: Set<Int>, from name: String) {
-        var list = paths[name] ?? []
+        var list = storedPaths[name] ?? []
         guard positions.contains(where: list.indices.contains) else { return }
 
         list.removeSubranges(RangeSet(positions.filter(list.indices.contains).map { $0..<$0 + 1 }))
@@ -78,7 +101,7 @@ final class Playlists {
     }
 
     func duplicate(_ positions: Set<Int>, in name: String) {
-        let list = paths[name] ?? []
+        let list = storedPaths[name] ?? []
         guard positions.contains(where: list.indices.contains) else { return }
 
         var result: [String] = []
@@ -93,7 +116,7 @@ final class Playlists {
     }
 
     func reorder(_ order: [Int], in name: String) {
-        let list = paths[name] ?? []
+        let list = storedPaths[name] ?? []
         var result = list
 
         for (slot, position) in zip(order.sorted(), order) {
@@ -108,16 +131,16 @@ final class Playlists {
 
         guard Persist.move(file(name), to: backup) else { return }
 
-        paths[name] = nil
+        storedPaths[name] = nil
         names.removeAll { $0 == name }
     }
 
     private func save(_ name: String, _ list: [String]) {
-        paths[name] = list
+        storedPaths[name] = list
 
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(list.map { StoredPath.encode($0) }) else { return }
+        guard let data = try? encoder.encode(list.map { StoredPath.encode($0, relativeTo: folderPath) }) else { return }
 
         Persist.write(data, to: file(name))
     }

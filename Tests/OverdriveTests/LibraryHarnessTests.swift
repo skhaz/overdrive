@@ -420,7 +420,7 @@ struct LibraryHarnessTests {
         await settle(library, [folder])
         try? await Task.sleep(for: .seconds(3))
 
-        let likes = Likes(file: { Likes.file(in: folder) })
+        let likes = Likes(file: { Likes.file(in: folder) }, folder: { folder })
         let track = library.albums.flatMap(\.tracks).first!
 
         let scans = Counter()

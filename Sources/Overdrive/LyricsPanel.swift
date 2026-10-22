@@ -51,7 +51,7 @@ struct FloatingLyrics: View {
             let current = live ? LRC.index(at: player.position, in: lines) : nil
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
                     Cover(track: track).frame(width: 56)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -62,28 +62,30 @@ struct FloatingLyrics: View {
 
                     Spacer()
 
-                    if lyrics.loading {
-                        ProgressView().controlSize(.small)
-                    }
+                    HStack(spacing: 8) {
+                        if lyrics.loading {
+                            ProgressView().controlSize(.small)
+                        }
 
-                    if !lyrics.text.isEmpty, lyrics.remote {
-                        Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
+                        if !lyrics.text.isEmpty, lyrics.remote {
+                            Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                        }
+
+                        if !lines.isEmpty {
+                            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                        }
+
+                        Button("Put the lyrics back in the window", systemImage: "xmark") { lyrics.floating = false }
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
                             .controlSize(.small)
                     }
-
-                    if !lines.isEmpty {
-                        Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
-                            .controlSize(.small)
-                    }
-
-                    Button("Put the lyrics back in the window", systemImage: "xmark") { lyrics.floating = false }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
                 }
 
                 Group {

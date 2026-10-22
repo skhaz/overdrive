@@ -219,34 +219,36 @@ struct LyricsView: View {
             let current = live ? LRC.index(at: player.position, in: lines) : nil
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
+                HStack(alignment: .center, spacing: 8) {
                     VStack(alignment: .leading) {
                         Text(track.title).font(.headline).lineLimit(2)
                         Text(track.artist).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
-                    if lyrics.loading {
-                        ProgressView().controlSize(.small)
-                    }
-                    Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                    Button("Show in a Floating Window", systemImage: "macwindow") { lyrics.floating = true }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                    if !lyrics.text.isEmpty, lyrics.remote {
-                        Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
+                    HStack(spacing: 8) {
+                        if lyrics.loading {
+                            ProgressView().controlSize(.small)
+                        }
+                        Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
                             .controlSize(.small)
-                    }
-                    if !lines.isEmpty {
-                        Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
+                        Button("Show in a Floating Window", systemImage: "macwindow") { lyrics.floating = true }
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
                             .controlSize(.small)
+                        if !lyrics.text.isEmpty, lyrics.remote {
+                            Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                        }
+                        if !lines.isEmpty {
+                            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                        }
                     }
                 }
 

@@ -13,6 +13,7 @@ final class Lyrics {
     private nonisolated static let timeout: TimeInterval = 10
     private nonisolated static let attempts = 3
     private nonisolated static let retryDelay: ClosedRange<Double> = 1...3
+    private nonisolated static let maxCacheAge: TimeInterval = 30 * 24 * 60 * 60
 
     nonisolated static func directory(in folder: URL?) -> URL {
         (folder ?? URL.homeDirectory.appending(path: "Music/Library", directoryHint: .isDirectory))
@@ -179,7 +180,18 @@ final class Lyrics {
     }
 
     private func cached(_ track: Track) -> String? {
-        Self.read(key(track))
+        let keyURL = key(track)
+        guard let lyrics = Self.read(keyURL), !lyrics.isEmpty else { return nil }
+        if Self.isCacheStale(keyURL) {
+            return nil
+        }
+        return lyrics
+    }
+
+    private nonisolated static func isCacheStale(_ url: URL) -> Bool {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let modDate = attrs[.modificationDate] as? Date else { return true }
+        return Date().timeIntervalSince(modDate) > maxCacheAge
     }
 
     private nonisolated static func read(_ url: URL) -> String? {
@@ -189,19 +201,27 @@ final class Lyrics {
 
     @concurrent
     private nonisolated static func lookup(_ track: Track, cache: URL) async -> Result<String, Failure> {
-        if let lyrics = read(key(track, cache: cache)), !lyrics.isEmpty { return .success(lyrics) }
-        Persist.remove(key(track, cache: cache))
+        let keyURL = key(track, cache: cache)
+        let staleLyrics = read(keyURL)
+
+        if let lyrics = staleLyrics, !lyrics.isEmpty, !isCacheStale(keyURL) {
+            return .success(lyrics)
+        }
 
         let result = await fetch(track)
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
-            Persist.write(Data(lyrics.utf8), to: key(track, cache: cache))
+            Persist.write(Data(lyrics.utf8), to: keyURL)
             return .success(lyrics)
         }
 
         if let fallback = await ovh(artist: track.artist, title: track.title), !fallback.isEmpty {
-            Persist.write(Data(fallback.utf8), to: key(track, cache: cache))
+            Persist.write(Data(fallback.utf8), to: keyURL)
             return .success(fallback)
+        }
+
+        if let lyrics = staleLyrics, !lyrics.isEmpty {
+            return .success(lyrics)
         }
 
         return result

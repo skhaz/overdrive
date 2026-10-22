@@ -7,18 +7,36 @@ final class Likes {
             .appending(path: "Likes.plist", directoryHint: .notDirectory)
     }
 
-    private(set) var paths: [String] = []
+    private var storedPaths: [String] = []
+
+    var paths: [String] {
+        storedPaths.map { StoredPath.decode($0, relativeTo: folderPath) }
+    }
 
     @ObservationIgnored private let file: () -> URL
+    @ObservationIgnored private let folder: () -> URL?
+    private let folderPath: String
     private var liked: Set<String> = []
 
-    init(file: URL) {
+    init(file: URL, folder: URL) {
+        let folderPath = folder.path
         self.file = { file }
+        self.folder = { folder }
+        self.folderPath = folderPath
         load()
     }
 
-    init(file: @escaping () -> URL) {
+    init(file: URL, folderPath: String) {
+        self.file = { file }
+        self.folder = { URL(fileURLWithPath: folderPath) }
+        self.folderPath = folderPath
+        load()
+    }
+
+    init(file: @escaping () -> URL, folder: @escaping () -> URL?) {
         self.file = file
+        self.folder = folder
+        self.folderPath = folder()?.resolvingSymlinksInPath().path ?? ""
         load()
     }
 
@@ -27,8 +45,8 @@ final class Likes {
         var seen: Set<String> = []
         seen.reserveCapacity(stored.count)
 
-        paths = stored.map(StoredPath.decode).filter { seen.insert($0).inserted }
-        liked = seen
+        storedPaths = stored.map { StoredPath.decode($0, relativeTo: folderPath) }.filter { seen.insert($0).inserted }
+        liked = Set(storedPaths.map { StoredPath.decode($0, relativeTo: folderPath) })
     }
 
     func contains(_ track: Track) -> Bool {
@@ -47,7 +65,7 @@ final class Likes {
         var changed = false
 
         for track in tracks where liked.insert(track.url.path).inserted {
-            paths.append(track.url.path)
+            storedPaths.append(StoredPath.encode(track.url.path, relativeTo: folderPath))
             changed = true
         }
 
@@ -58,7 +76,7 @@ final class Likes {
         let removed = Set(tracks.map(\.url.path))
         guard !removed.isEmpty, !liked.isDisjoint(with: removed) else { return }
 
-        paths.removeAll { removed.contains($0) }
+        storedPaths.removeAll { removed.contains(StoredPath.decode($0, relativeTo: folderPath)) }
         liked.subtract(removed)
         save()
     }
@@ -66,7 +84,7 @@ final class Likes {
     private func save() {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(paths.map(StoredPath.encode)) else { return }
+        guard let data = try? encoder.encode(storedPaths.map { StoredPath.encode($0, relativeTo: folderPath) }) else { return }
 
         Persist.write(data, to: file())
     }
