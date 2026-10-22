@@ -330,7 +330,7 @@ struct SyncedLyrics: NSViewRepresentable {
 
             let paragraph = NSMutableParagraphStyle()
             paragraph.paragraphSpacing = 4
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph]
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph]
             var location = 0
 
             ranges = lines.map {
@@ -349,11 +349,11 @@ struct SyncedLyrics: NSViewRepresentable {
             guard let storage = text?.textStorage else { return }
 
             if let old = current, ranges.indices.contains(old) {
-                storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: ranges[old])
+                storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: ranges[old])
             }
 
             if let index, ranges.indices.contains(index) {
-                storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: ranges[index])
+                storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: ranges[index])
             }
 
             current = index
