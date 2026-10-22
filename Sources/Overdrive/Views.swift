@@ -1188,6 +1188,7 @@ struct Controls: View {
                     .foregroundStyle(.secondary)
                     .onTapGesture { player.toggleMute() }
                     .padding(.leading, 16)
+                    .frame(width: 20, alignment: .center)
                 Slider(value: Binding(
                     get: { player.isMuted ? 0 : player.volume },
                     set: { player.isMuted = false; player.volume = $0 }
