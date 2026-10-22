@@ -74,11 +74,37 @@ final class Lyrics {
     }
 
     func refresh() {
-        settle {
-            guard let track = self.track else { return }
-            Persist.remove(self.key(track))
-            self.open(track)
+        guard let track = self.track else { return }
+        loading = true
+        lookupTask?.cancel()
+        lookupTask = Task {
+            let result = await Self.forceLookup(track, cache: cache)
+            guard !Task.isCancelled else { return }
+            if case .success(let lyrics) = result, !lyrics.isEmpty {
+                Persist.write(Data(lyrics.utf8), to: key(track))
+                if (Self.read(file(track)) ?? "").isEmpty {
+                    original = lyrics
+                    text = lyrics
+                    remote = true
+                }
+            }
+            loading = false
         }
+    }
+
+    @concurrent
+    private nonisolated static func forceLookup(_ track: Track, cache: URL) async -> Result<String, Failure> {
+        let result = await fetch(track)
+
+        if case .success(let lyrics) = result, !lyrics.isEmpty {
+            return .success(lyrics)
+        }
+
+        if let fallback = await ovh(artist: track.artist, title: track.title), !fallback.isEmpty {
+            return .success(fallback)
+        }
+
+        return .failure(Failure.offline)
     }
 
     func save(_ value: String, for track: Track) {
