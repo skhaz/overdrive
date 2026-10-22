@@ -9,6 +9,7 @@ enum Destination {
     case album(Album)
     case artist(String)
     case search(String)
+    case playing
 }
 
 struct GoAction: Equatable {
@@ -995,7 +996,6 @@ struct SongTable: View {
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
     @Environment(\.go) private var go
-    @Environment(Library.self) private var library
     @State private var selection: Set<Track.ID> = []
 
     var body: some View {
@@ -1020,11 +1020,8 @@ struct SongTable: View {
             } primaryAction: { ids in
                 guard let id = ids.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
 
-                let track = tracks[index]
                 player.play(tracks, at: index)
-                if let album = library.albums.first(where: { $0.id == track.albumID }) {
-                    go(.album(album))
-                }
+                go(.playing)
             }
             .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                 if let track, tracks.contains(track) { selection = [track.id] }
@@ -1098,11 +1095,8 @@ struct PlaylistView: View {
                 } primaryAction: { ids in
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
-                    let track = rows[index].track
                     player.play(rows.map(\.track), at: index)
-                    if let album = library.albums.first(where: { $0.id == track.albumID }) {
-                        go(.album(album))
-                    }
+                    go(.playing)
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1188,11 +1182,8 @@ struct LikedView: View {
                 } primaryAction: { ids in
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
-                    let track = rows[index].track
                     player.play(rows.map(\.track), at: index)
-                    if let album = library.albums.first(where: { $0.id == track.albumID }) {
-                        go(.album(album))
-                    }
+                    go(.playing)
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1418,7 +1409,7 @@ struct ContentView: View {
                     await MainActor.run { library.query = search }
                 }
 
-                if shown(path, page), !lyrics.floating {
+                if shown, !lyrics.floating {
                     Divider()
                     LyricsView().frame(width: LyricsView.width)
                         .background(Color(nsColor: .textBackgroundColor))
@@ -1461,6 +1452,9 @@ struct ContentView: View {
             switch destination {
             case .album(let album): value.append(.album(album))
             case .artist(let name): value.append(.artist(name))
+            case .playing:
+                if let track = player.current { reveal(track) }
+                return
             case .search(let text):
                 lyrics.settle {
                     navigation.open(.section(.albums), leaving: tracker.position)
@@ -1686,14 +1680,10 @@ struct ContentView: View {
     }
 
     private func navigate(_ value: [Route]) {
-        if shown(path, page), !shown(value, page) {
-            lyrics.settle { navigation.show(value, leaving: tracker.position) }
-        } else {
-            navigation.show(value, leaving: tracker.position)
-        }
+        lyrics.settle { navigation.show(value, leaving: tracker.position) }
     }
 
-    private func shown(_ path: [Route], _ page: Page) -> Bool {
+    private var shown: Bool {
         lyrics.visible && lyrics.track != nil
     }
 }
