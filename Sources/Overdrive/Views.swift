@@ -1185,10 +1185,13 @@ struct Controls: View {
             .disabled(player.current == nil)
 
             Image(systemName: player.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(.easeInOut(duration: 0.15), value: player.isMuted)
                     .onTapGesture { player.toggleMute() }
                     .padding(.leading, 16)
-                    .frame(width: 20, alignment: .center)
+                    .frame(width: 28, alignment: .center)
                 Slider(value: Binding(
                     get: { player.isMuted ? 0 : player.volume },
                     set: { player.isMuted = false; player.volume = $0 }
