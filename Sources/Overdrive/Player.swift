@@ -52,6 +52,26 @@ final class Player {
             UserDefaults.standard.set(volume, forKey: "volume")
         }
     }
+    var isMuted = UserDefaults.standard.object(forKey: "isMuted") as? Bool ?? false {
+        didSet {
+            UserDefaults.standard.set(isMuted, forKey: "isMuted")
+            if isMuted {
+                player.volume = 0
+            } else {
+                player.volume = volume
+            }
+        }
+    }
+
+    func toggleMute() {
+        if isMuted {
+            isMuted = false
+            player.volume = volume
+        } else {
+            isMuted = true
+            player.volume = 0
+        }
+    }
 
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
     var duration: Double { current?.duration ?? 0 }

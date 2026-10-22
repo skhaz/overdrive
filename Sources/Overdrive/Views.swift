@@ -1184,8 +1184,14 @@ struct Controls: View {
             .frame(minWidth: 200, maxWidth: .infinity)
             .disabled(player.current == nil)
 
-            Image(systemName: "speaker.wave.2.fill").foregroundStyle(.secondary).padding(.leading, 16)
-            Slider(value: $player.volume, in: 0...1).frame(width: 90)
+            Image(systemName: player.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .foregroundStyle(.secondary)
+                    .onTapGesture { player.toggleMute() }
+                    .padding(.leading, 16)
+                Slider(value: Binding(
+                    get: { player.isMuted ? 0 : player.volume },
+                    set: { player.isMuted = false; player.volume = $0 }
+                ), in: 0...1).frame(width: 90)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

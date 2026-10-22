@@ -143,6 +143,8 @@ struct Overdrive: App {
                     .keyboardShortcut(.upArrow)
                 Button("Decrease Volume", systemImage: "speaker.wave.1.fill") { player.volume = max(player.volume - 0.1, 0) }
                     .keyboardShortcut(.downArrow)
+                Button(player.isMuted ? "Unmute" : "Mute", systemImage: player.isMuted ? "speaker.slash.fill" : "speaker.fill") { player.toggleMute() }
+                    .keyboardShortcut("m")
                 Divider()
                 Button("Seek Forward", systemImage: "goforward.10") { player.seek(min(player.position + 10, player.duration)) }
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
