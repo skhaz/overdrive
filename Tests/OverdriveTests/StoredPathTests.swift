@@ -43,16 +43,18 @@ import Testing
 
         let file = directory.appending(path: "Likes.plist")
         let folder = directory.appending(path: "Music/Library")
+        let folderPath = folder.resolvingSymlinksInPath().path
         let path = folder.appending(path: "Artist/Album/Song.flac").path
-        let track = Track(url: URL(filePath: path), title: "Song", artist: "Artist", album: "Album", number: 1, disc: 1,
+        let resolvedPath = URL(filePath: path).resolvingSymlinksInPath().path
+        let track = Track(url: URL(filePath: path).resolvingSymlinksInPath(), title: "Song", artist: "Artist", album: "Album", number: 1, disc: 1,
                           albumArtist: "Artist", year: 2020, duration: 100, albumID: "Album")
-        let likes = Likes(file: file, folderPath: folder.path)
+        let likes = Likes(file: file, folderPath: folderPath)
         likes.add([track])
         Persist.flush()
 
         let stored = try PropertyListDecoder().decode([String].self, from: Data(contentsOf: file))
         #expect(stored == ["Artist/Album/Song.flac"])
-        #expect(Likes(file: file, folderPath: folder.path).paths == [path])
+        #expect(Likes(file: file, folderPath: folderPath).paths == [resolvedPath])
     }
 
     @Test @MainActor func likesSurviveFolderMove() throws {
@@ -66,19 +68,22 @@ import Testing
         try FileManager.default.createDirectory(at: folder1, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: folder2, withIntermediateDirectories: true)
 
+        let folderPath1 = folder1.resolvingSymlinksInPath().path
+        let folderPath2 = folder2.resolvingSymlinksInPath().path
         let path1 = folder1.appending(path: "Artist/Album/Song.flac").path
-        let track1 = Track(url: URL(filePath: path1), title: "Song", artist: "Artist", album: "Album", number: 1, disc: 1,
+        let track1 = Track(url: URL(filePath: path1).resolvingSymlinksInPath(), title: "Song", artist: "Artist", album: "Album", number: 1, disc: 1,
                            albumArtist: "Artist", year: 2020, duration: 100, albumID: "Album")
 
-        let likes = Likes(file: file, folder: folder1)
+        let likes = Likes(file: file, folderPath: folderPath1)
         likes.add([track1])
         Persist.flush()
 
         let path2 = folder2.appending(path: "Artist/Album/Song.flac").path
-        let track2 = Track(url: URL(filePath: path2), title: "Song", artist: "Artist", album: "Album", number: 1, disc: 1,
+        let resolvedPath2 = URL(filePath: path2).resolvingSymlinksInPath().path
+        let track2 = Track(url: URL(filePath: path2).resolvingSymlinksInPath(), title: "Song", artist: "Artist", album: "Album", number: 1, disc: 1,
                            albumArtist: "Artist", year: 2020, duration: 100, albumID: "Album")
 
-        let likes2 = Likes(file: file, folderPath: folder2.path)
+        let likes2 = Likes(file: file, folderPath: folderPath2)
         #expect(likes2.contains(track2))
     }
 }

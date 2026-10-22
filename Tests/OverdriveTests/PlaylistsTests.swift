@@ -7,6 +7,10 @@ import Testing
         FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     }
 
+    private func resolvedFolderPath(_ url: URL) -> String {
+        url.resolvingSymlinksInPath().path
+    }
+
     @Test @MainActor func followsTheLibraryFolder() throws {
         let first = temporary()
         let second = temporary()
@@ -33,8 +37,9 @@ import Testing
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let folder = directory.appending(path: "Music/Library")
+        let folderPath = resolvedFolderPath(folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let playlists = Playlists(directory: directory, folderPath: folder.path)
+        let playlists = Playlists(directory: directory, folderPath: folderPath)
         let home = URL(filePath: StoredPath.home + "/Music/a.flac")
         let outside = URL(filePath: "/Volumes/Music/b.flac")
         #expect(playlists.create("Metal", [home, outside]) == "Metal")
@@ -43,7 +48,7 @@ import Testing
         let stored = try PropertyListDecoder().decode([String].self, from: Data(contentsOf: file))
         #expect(stored == ["~/Music/a.flac", "/Volumes/Music/b.flac"])
 
-        let reloaded = Playlists(directory: directory, folderPath: folder.path)
+        let reloaded = Playlists(directory: directory, folderPath: folderPath)
         #expect(reloaded.paths["Metal"] == [home.path, outside.path])
     }
 
@@ -53,13 +58,14 @@ import Testing
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let folder = directory.appending(path: "Music/Library")
+        let folderPath = resolvedFolderPath(folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let playlists = Playlists(directory: directory, folderPath: folder.path)
+        let playlists = Playlists(directory: directory, folderPath: folderPath)
         _ = playlists.create("Mix", [URL(filePath: StoredPath.home + "/Music/a.flac")])
         playlists.delete("Mix")
 
         #expect(FileManager.default.fileExists(atPath: directory.appending(path: "Mix.backup.plist").path))
-        #expect(Playlists(directory: directory, folderPath: folder.path).names.isEmpty)
+        #expect(Playlists(directory: directory, folderPath: folderPath).names.isEmpty)
     }
 
     @Test @MainActor func rejectsBackupNames() throws {
@@ -68,8 +74,9 @@ import Testing
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let folder = directory.appending(path: "Music/Library")
+        let folderPath = resolvedFolderPath(folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let playlists = Playlists(directory: directory, folderPath: folder.path)
+        let playlists = Playlists(directory: directory, folderPath: folderPath)
         #expect(playlists.create("Mix.backup", [URL(filePath: StoredPath.home + "/Music/a.flac")]) == nil)
         #expect(playlists.names.isEmpty)
     }
@@ -80,16 +87,18 @@ import Testing
 
         let folder1 = directory.appending(path: "Music/Library")
         let folder2 = directory.appending(path: "Documents/Music")
+        let folderPath1 = resolvedFolderPath(folder1)
+        let folderPath2 = resolvedFolderPath(folder2)
         try FileManager.default.createDirectory(at: folder1, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: folder2, withIntermediateDirectories: true)
 
-        let playlists1 = Playlists(directory: directory, folderPath: folder1.path)
-        let url1 = folder1.appending(path: "Artist/Album/Song.flac")
+        let playlists1 = Playlists(directory: directory, folderPath: folderPath1)
+        let url1 = folder1.appending(path: "Artist/Album/Song.flac").resolvingSymlinksInPath()
         _ = playlists1.create("MyPlaylist", [url1])
         Persist.flush()
 
-        let playlists2 = Playlists(directory: directory, folderPath: folder2.path)
-        let url2 = folder2.appending(path: "Artist/Album/Song.flac")
+        let playlists2 = Playlists(directory: directory, folderPath: folderPath2)
+        let url2 = folder2.appending(path: "Artist/Album/Song.flac").resolvingSymlinksInPath()
         #expect(playlists2.paths["MyPlaylist"] == [url2.path])
     }
 }

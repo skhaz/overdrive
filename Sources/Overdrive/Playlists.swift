@@ -25,10 +25,9 @@ final class Playlists {
     private let folderPath: String
 
     init(directory: URL, folder: URL) {
-        let folderPath = folder.path
         self.directory = { directory }
         self.folder = { folder }
-        self.folderPath = folderPath
+        self.folderPath = folder.path
         load()
     }
 
@@ -42,7 +41,7 @@ final class Playlists {
     init(directory: @escaping () -> URL, folder: @escaping () -> URL?) {
         self.directory = directory
         self.folder = folder
-        self.folderPath = folder()?.resolvingSymlinksInPath().path ?? ""
+        self.folderPath = folder()?.path ?? ""
         load()
     }
 

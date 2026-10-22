@@ -19,10 +19,9 @@ final class Likes {
     private var liked: Set<String> = []
 
     init(file: URL, folder: URL) {
-        let folderPath = folder.path
         self.file = { file }
         self.folder = { folder }
-        self.folderPath = folderPath
+        self.folderPath = folder.path
         load()
     }
 
@@ -36,7 +35,7 @@ final class Likes {
     init(file: @escaping () -> URL, folder: @escaping () -> URL?) {
         self.file = file
         self.folder = folder
-        self.folderPath = folder()?.resolvingSymlinksInPath().path ?? ""
+        self.folderPath = folder()?.path ?? ""
         load()
     }
 
