@@ -144,8 +144,13 @@ struct FloatingLyrics: View {
                 HStack {
                     Spacer()
                     Button("Previous", systemImage: "backward.fill", action: player.previous)
-                    Button(player.playing ? "Pause" : "Play", systemImage: player.playing ? "pause.fill" : "play.fill", action: player.toggle)
-                        .font(.title3)
+                    Button(action: player.toggle) {
+                        Image(systemName: player.playing ? "pause.fill" : "play.fill")
+                            .font(.title3)
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(.easeInOut(duration: 0.15), value: player.playing)
+                            .frame(width: 26, height: 26)
+                    }
                     Button("Next", systemImage: "forward.fill", action: player.next)
                     Spacer()
                 }

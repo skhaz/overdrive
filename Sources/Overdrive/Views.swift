@@ -1258,14 +1258,21 @@ struct Controls: View {
             HStack(spacing: 14) {
                 Button("Shuffle", systemImage: "shuffle") { player.shuffle.toggle() }
                     .foregroundStyle(player.shuffle ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .contentTransition(.symbolEffect(.replace))
                 Button("Previous", systemImage: "backward.fill", action: player.previous)
-                Button(player.playing ? "Pause" : "Play", systemImage: player.playing ? "pause.fill" : "play.fill", action: player.toggle)
-                    .font(.title)
+                Button(action: player.toggle) {
+                    Image(systemName: player.playing ? "pause.fill" : "play.fill")
+                        .font(.title)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(.easeInOut(duration: 0.15), value: player.playing)
+                        .frame(width: 30, height: 30)
+                }
                 Button("Next", systemImage: "forward.fill", action: player.next)
                 Button("Repeat", systemImage: player.repeatMode == .one ? "repeat.1" : "repeat") {
                     player.repeatMode = Player.Repeat(rawValue: (player.repeatMode.rawValue + 1) % 3)!
                 }
                 .foregroundStyle(player.repeatMode == .off ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+                .contentTransition(.symbolEffect(.replace))
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.plain)
