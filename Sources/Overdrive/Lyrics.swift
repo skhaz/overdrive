@@ -9,11 +9,15 @@ final class Lyrics {
         case status(Int)
     }
 
-    private nonisolated static let defaultCache = URL.applicationSupportDirectory.appending(path: "Overdrive/Lyrics")
     private nonisolated static let agent = "Overdrive/v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0")"
     private nonisolated static let timeout: TimeInterval = 10
     private nonisolated static let attempts = 3
     private nonisolated static let retryDelay: ClosedRange<Double> = 1...3
+
+    nonisolated static func directory(in folder: URL?) -> URL {
+        (folder ?? URL.homeDirectory.appending(path: "Music/Library", directoryHint: .isDirectory))
+            .appending(path: "Lyrics", directoryHint: .isDirectory)
+    }
 
     private(set) var track: Track?
     private(set) var loading = false
@@ -31,8 +35,9 @@ final class Lyrics {
     var modified: Bool { text != original }
     private(set) var synced: [SyncedLine] = []
 
-    init(cache: URL = Lyrics.defaultCache) {
+    init(cache: URL) {
         self.cache = cache
+        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
     }
 
     nonisolated static func ignored(_ path: String) -> Bool {

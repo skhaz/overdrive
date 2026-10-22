@@ -1185,7 +1185,7 @@ struct ContentView: View {
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
     @Environment(YouTube.self) private var youTube
-    @State private var lyrics = Lyrics()
+    @State private var lyrics = Lyrics(cache: Lyrics.directory(in: nil))
     @State private var navigation = Navigation(page: Page(key: Player.saved?.page ?? "") ?? .section(.albums))
     @State private var tracker = Tracker()
     @State private var name = ""
@@ -1372,6 +1372,9 @@ struct ContentView: View {
 
             self.saved = nil
             navigation.restore(saved.compactMap { Route(key: $0, albums: library.albums) })
+        }
+        .onChange(of: library.folders) {
+            lyrics = Lyrics(cache: Lyrics.directory(in: library.folders.first))
         }
         .onChange(of: lyrics.floating) {
             if lyrics.floating {
