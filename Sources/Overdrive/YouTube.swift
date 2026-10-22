@@ -274,7 +274,18 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func close() {
-        if panel.isVisible { panel.close() }
+        if panel.isVisible {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().alphaValue = 0.0
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                self.panel.close()
+                self.panel.alphaValue = 1.0
+            }
+        }
     }
 
     func signOut() async {
@@ -289,8 +300,19 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     private func show(_ mode: Mode) {
         self.mode = mode
         handle.isHidden = mode != .video
-        panel.standardWindowButton(.closeButton)?.alphaValue = mode == .video ? 0 : 1
-
+        
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.standardWindowButton(.closeButton)?.animator().alphaValue = mode == .video ? 0 : 1
+        }
+        
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().alphaValue = 1.0
+        }
+        
         place()
         panel.makeKeyAndOrderFront(nil)
     }
@@ -306,7 +328,12 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         let x = corner == .topLeft || corner == .bottomLeft ? area.minX : area.maxX - size.width
         let y = corner == .bottomLeft || corner == .bottomRight ? area.minY : area.maxY - size.height
-        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
+        
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
+        }
     }
 
     private func snap() {
@@ -315,6 +342,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         let left = panel.frame.midX < screen.visibleFrame.midX
         let bottom = panel.frame.midY < screen.visibleFrame.midY
         corner = bottom ? (left ? .bottomLeft : .bottomRight) : (left ? .topLeft : .topRight)
+        place()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

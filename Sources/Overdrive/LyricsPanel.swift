@@ -29,11 +29,25 @@ final class LyricsPanel {
     }
 
     func show() {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().alphaValue = 1.0
+        }
         window.orderFrontRegardless()
     }
 
     func hide() {
-        window.orderOut(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().alphaValue = 0.0
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            self.window.orderOut(nil)
+            self.window.alphaValue = 1.0
+        }
     }
 }
 
