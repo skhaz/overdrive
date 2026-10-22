@@ -1301,9 +1301,9 @@ struct ContentView: View {
             .searchable(text: $search, placement: .toolbarPrincipal)
             .searchFocused($focus, equals: .search)
             .task(id: search) {
-                try? await Task.sleep(for: .milliseconds(200))
+                try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled else { return }
-                library.query = search
+                await MainActor.run { library.query = search }
             }
 
             Divider()
