@@ -52,6 +52,90 @@ struct Selected: ViewModifier {
     }
 }
 
+// MARK: - Button Styles
+
+struct PressableButtonStyle: ButtonStyle {
+    var isProminent = false
+    var isDestructive = false
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(isDestructive ? AnyShapeStyle(.red) : (isProminent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary)))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Group {
+                    if isProminent {
+                        Color.accentColor
+                    } else if isDestructive {
+                        Color.red.opacity(configuration.isPressed ? 0.3 : 0.15)
+                    } else {
+                        Color(nsColor: .controlBackgroundColor)
+                    }
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .brightness(configuration.isPressed ? -0.05 : 0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .shadow(color: .black.opacity(configuration.isPressed ? 0.05 : 0.1), radius: configuration.isPressed ? 1 : 2, x: 0, y: configuration.isPressed ? 1 : 2)
+    }
+}
+
+struct IconButtonStyle: ButtonStyle {
+    var isActive = false
+    var isDestructive = false
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(isDestructive ? AnyShapeStyle(.red) : (isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary)))
+            .frame(width: 28, height: 28)
+            .background(
+                Circle()
+                    .fill(configuration.isPressed ? Color.primary.opacity(0.15) : (isActive ? Color.accentColor.opacity(0.12) : Color.clear))
+            )
+            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.15, dampingFraction: 0.7), value: configuration.isPressed)
+            .contentTransition(.symbolEffect(.replace))
+    }
+}
+
+struct ToolbarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(configuration.isPressed ? Color.primary.opacity(0.1) : Color.clear)
+            )
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.15, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+struct SidebarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13))
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(configuration.isPressed ? Color.primary.opacity(0.12) : Color.clear)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.spring(response: 0.15, dampingFraction: 0.8), value: configuration.isPressed)
+    }
+}
+
+
 struct SongMenu: View {
     @FocusedValue(\.selection) private var selection
 
@@ -988,12 +1072,14 @@ struct PlaylistView: View {
 
                     if !picked.isEmpty {
                         TrackMenu(tracks: picked.map(\.track), exclude: name)
-                        Button("Remove from Playlist") { removing = picked }
-                        .keyboardShortcut(.delete)
+                        Button("Remove from Playlist", role: .destructive) { removing = picked }
+                            .keyboardShortcut(.delete)
+                            .buttonStyle(PressableButtonStyle(isDestructive: true))
                         Button("Duplicate") {
                             selection = []
                             playlists.duplicate(Set(ids), in: name)
                         }
+                        .buttonStyle(PressableButtonStyle())
                         Divider()
 
                         if picked.count == 1 {
@@ -1235,8 +1321,9 @@ struct ContentView: View {
                         ForEach(playlists.names, id: \.self) { name in
                             row(name, "music.note.list", .playlist(name))
                                 .contextMenu {
-                                    Button("Delete Playlist") { deleting = name }
+                                    Button("Delete Playlist", role: .destructive) { deleting = name }
                                         .keyboardShortcut(.delete, modifiers: [])
+                                        .buttonStyle(PressableButtonStyle(isDestructive: true))
                                 }
                         }
                     } header: {
@@ -1245,7 +1332,7 @@ struct ContentView: View {
                             Spacer()
                             Button("New Playlist", systemImage: "plus") { playlists.naming = [] }
                                 .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
+                                .buttonStyle(ToolbarButtonStyle())
                         }
                     }
                 }
@@ -1263,6 +1350,7 @@ struct ContentView: View {
                             Text("Add a folder with music or drop it here.")
                         } actions: {
                             Button("Add Folder…", action: library.choose)
+                                .buttonStyle(PressableButtonStyle(isProminent: true))
                         }
                     } else if library.albums.isEmpty, library.scanning {
                         ProgressView()
@@ -1429,6 +1517,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .tag(value)
+            .buttonStyle(SidebarButtonStyle())
     }
 
     private var page: Page { navigation.page }
@@ -1615,11 +1704,12 @@ struct SettingsView: View {
                         Spacer()
                         Button("Remove", systemImage: "minus.circle") { library.folders.removeAll { $0 == folder } }
                             .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
+                            .buttonStyle(IconButtonStyle(isDestructive: true))
                     }
                 }
 
                 Button("Add Folder…", action: library.choose)
+                    .buttonStyle(PressableButtonStyle(isProminent: true))
             }
 
             SwiftUI.Section {
@@ -1634,12 +1724,14 @@ struct SettingsView: View {
                             password = ""
                         }
                     }
+                    .buttonStyle(PressableButtonStyle(isProminent: true))
                     .disabled(username.isEmpty || password.isEmpty || lastFM.connecting)
                 } else {
                     LabeledContent("Account", value: lastFM.user)
                     LabeledContent("Pending Scrobbles", value: String(lastFM.pending.count))
                     if !lastFM.rejected.isEmpty { LabeledContent("Rejected by Last.fm", value: String(lastFM.rejected.count)) }
                     Button("Disconnect", action: lastFM.disconnect)
+                    .buttonStyle(PressableButtonStyle(isDestructive: true))
                 }
 
                 if !lastFM.status.isEmpty {
@@ -1651,6 +1743,7 @@ struct SettingsView: View {
 
             SwiftUI.Section {
                 Button("Sign Out") { Task { await youTube.signOut() } }
+                    .buttonStyle(PressableButtonStyle(isDestructive: true))
                 Picker("Open Videos In", selection: $youTube.browser) {
                     Text("Floating Window").tag(false)
                     Text("Default Browser").tag(true)
