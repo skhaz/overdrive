@@ -229,10 +229,12 @@ struct LyricsView: View {
                         if lyrics.loading {
                             ProgressView().controlSize(.small)
                         }
-                        Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
-                            .controlSize(.small)
+                        if !lyrics.hasLocalLyrics {
+                            Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                        }
                         Button("Show in a Floating Window", systemImage: "macwindow") { lyrics.floating = true }
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)

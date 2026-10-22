@@ -28,6 +28,10 @@ final class Lyrics {
     var visible = false
     var floating = false
     private(set) var remote = false
+    var hasLocalLyrics: Bool {
+        guard let track else { return false }
+        return (Self.read(file(track)) ?? "").isEmpty == false
+    }
 
     @ObservationIgnored private let cache: URL
     @ObservationIgnored private var saver: Task<Void, Never>?

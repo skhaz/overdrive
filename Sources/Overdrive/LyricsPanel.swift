@@ -66,6 +66,12 @@ struct FloatingLyrics: View {
                         if lyrics.loading {
                             ProgressView().controlSize(.small)
                         }
+                        if !lyrics.hasLocalLyrics {
+                            Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                        }
 
                         if !lyrics.text.isEmpty, lyrics.remote {
                             Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
