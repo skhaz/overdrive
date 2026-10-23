@@ -31,7 +31,6 @@ private final class Handle: NSView {
 final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     nonisolated struct Configuration {
         var store = URL.applicationSupportDirectory.appending(path: "Overdrive/Videos.plist")
-        var rules = URL.applicationSupportDirectory.appending(path: "Overdrive/Rules")
         var transport = URLSession.shared
         var defaults = UserDefaults.standard
     }
@@ -56,29 +55,9 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     private static let account = URL(string: "https://www.youtube.com/account")!
     private static let resident = URL(string: "https://www.youtube.com/embed/?controls=0&rel=0&playsinline=1&iv_load_policy=3&cc_load_policy=0")!
 
-    private static let blocked = ["doubleclick.net", "googlesyndication.com", "googleadservices.com", "imasdk.googleapis.com", "youtube.com/api/stats/ads",
-                                  "youtube.com/pagead/", "youtube.com/ptracking", "youtube.com/get_midroll_", "youtube-nocookie.com/api/stats/ads"]
-
-    private static let prune = """
+    private static let layout = """
     (() => {
         if (!location.pathname.startsWith('/embed/')) return;
-        const keys = ['adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams'];
-        const prune = o => { for (const k of keys) delete o[k]; };
-        const clean = o => {
-            if (o && typeof o === 'object') {
-                prune(o);
-                if (o.playerResponse && typeof o.playerResponse === 'object') prune(o.playerResponse);
-            }
-            return o;
-        };
-        const parse = JSON.parse;
-        JSON.parse = function () { return clean(parse.apply(this, arguments)); };
-        const json = Response.prototype.json;
-        Response.prototype.json = function () { return json.apply(this, arguments).then(clean); };
-        for (const name of ['ytInitialPlayerResponse', 'playerResponse']) {
-            let value;
-            Object.defineProperty(window, name, { configurable: true, get: () => value, set: v => { value = clean(v); } });
-        }
         const style = document.createElement('style');
         style.textContent = 'body :not(:has(video)):not(video) { display: none !important; } body { background: #000 !important; } video { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; object-fit: contain !important; }';
         document.documentElement.append(style);
@@ -118,7 +97,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         let settings = WKWebViewConfiguration()
         settings.mediaTypesRequiringUserActionForPlayback = []
         settings.preferences.isElementFullscreenEnabled = true
-        settings.userContentController.addUserScript(WKUserScript(source: YouTube.prune, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        settings.userContentController.addUserScript(WKUserScript(source: YouTube.layout, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let safari = Bundle(url: URL(filePath: "/Applications/Safari.app"))?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "26.0"
         settings.applicationNameForUserAgent = "Version/\(safari) Safari/605.1.15"
         web = WKWebView(frame: .zero, configuration: settings)
@@ -157,17 +136,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             }
         }
 
-        let rules = YouTube.blocked.map { ["trigger": ["url-filter": NSRegularExpression.escapedPattern(for: $0)], "action": ["type": "block"]] }
-
-        if let data = try? JSONSerialization.data(withJSONObject: rules), let store = WKContentRuleListStore(url: configuration.rules) {
-            try? FileManager.default.createDirectory(at: configuration.rules, withIntermediateDirectories: true)
-            store.compileContentRuleList(forIdentifier: "Ads", encodedContentRuleList: String(decoding: data, as: UTF8.self)) { [weak self] list, _ in
-                if let list { self?.web.configuration.userContentController.add(list) }
-                self?.load()
-            }
-        } else {
-            load()
-        }
+        load()
 
         Task { [weak self] in
             while true {

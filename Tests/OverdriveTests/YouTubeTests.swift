@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Overdrive
 
@@ -42,5 +43,14 @@ struct YouTubeTests {
     @Test func ignoresCaseAccentsAndSuffixes() {
         #expect(YouTube.match([("a", "Beyoncé - Don't Hurt Yourself", "Beyonce")], "BEYONCE", "Don't Hurt Yourself (feat. Jack White)") == ["a"])
         #expect(YouTube.match([("a", "The Beatles - Something", "The Beatles")], "The Beatles", "Something - Remastered 2009") == ["a"])
+    }
+
+    @Test func blocksNoAds() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(contentsOf: root.appending(path: "Sources/Overdrive/YouTube.swift"), encoding: .utf8)
+
+        #expect(!source.contains("WKContentRuleList"), "the app blocks no request; the user has YouTube Premium")
+        #expect(!source.contains("adPlacements"), "the app changes no player response")
+        #expect(!source.contains("Overdrive/Rules"), "the app keeps no ad block rules")
     }
 }

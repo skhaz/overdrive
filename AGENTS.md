@@ -68,7 +68,6 @@ In `~/Library/Application Support/Overdrive`:
 | `Scrobbles.plist` | Pending and rejected scrobbles. |
 | `lastfm.plist` | Last.fm session key and user name. |
 | `Videos.plist` | YouTube video ID per song. |
-| `Rules/` | Compiled ad block rules. |
 
 `Likes.plist`, `Playlists/`, and `Lyrics/` (lyrics from LRCLIB and lyrics.ovh, non-empty only) live at the root of the first library folder, so they travel with the music.
 
@@ -82,7 +81,7 @@ In `~/Library/Application Support/Overdrive`:
 - Search: the app never clears the query by itself (only Escape, Command-K, and the clear button). A new search typed on Liked Songs or a playlist opens Songs, so it covers all songs, artists, and albums (`Navigation.searched`). A query that already exists still filters the playlists and Liked Songs. Typing a search never closes an open album or artist; going back shows the results.
 - Volume: each song is measured once (EBU R128, -14 LUFS, maximum +12 dB). Shuffle off: album gain. Shuffle on: track gain.
 - Last.fm: each batch is marked on the disk before it is sent. A scrobble leaves only when Last.fm accepts it. Code 5 keeps it; 6, 7, and 13 isolate it; 1 to 4 reject it.
-- YouTube: the app searches with the YouTube page itself, so it needs no API key. The ad block removes `adPlacements`, `adSlots`, and `playerAds`.
+- YouTube: the app searches with the YouTube page itself, so it needs no API key.
 - Lyrics: no status label, no confirmation dialog. A save button shows when `Lyrics.remote` is true and the text is not empty. Editing auto-saves one second after the last change; deleting all the text removes the `.lrc`. `Lyrics.settle` flushes the pending edit before every navigation, and `Lyrics.flush` on quit. A lyric is valid only when not nil and not empty. The `.lrc` next to the song is read first; when it exists, the app never consults the internet. An edit cancels the in-flight lookup; what the user types always wins. The lyrics show the one selected song of the top screen (`Selected`), else the current song. They load at once, also when no lyrics view shows. The docked view shows while there is a current song (paused too) or one selected song, on an album, Songs, the search results, Liked Songs, and playlists; it hides on the Albums grid, the Artists list, and an artist's albums (`Navigation.lyrics`). It shares one `HStack` with the split view, so it never covers content. Only the user opens and closes the floating window.
 - Floating lyrics: `Lyrics.floating` moves the lyrics to a borderless, nonactivating `NSPanel` at level `.floating` (`LyricsPanel`), created once on the first undock, with the same `Lyrics` and `Player`. The close button only docks the lyrics back. While `floating` is true, the docked view leaves.
 
