@@ -50,9 +50,22 @@ struct Selected: ViewModifier {
     var remove: (() -> Void)?
     @Environment(\.active) private var active
     @Environment(\.go) private var go
+    @Environment(Lyrics.self) private var lyrics
+    @Environment(Player.self) private var player
 
     func body(content: Content) -> some View {
+        let picked = album == nil && tracks.count == 1 ? tracks[0] : nil
+
         content.focusedSceneValue(\.selection, active && !tracks.isEmpty ? Selection(tracks: tracks, album: album, playlist: playlist, remove: remove, go: go) : nil)
+            .onChange(of: picked) { follow(picked) }
+            .onChange(of: active, initial: true) { follow(picked) }
+    }
+
+    private func follow(_ picked: Track?) {
+        guard active else { return }
+
+        lyrics.selected = picked != nil
+        if let track = picked ?? player.current { lyrics.show(track) }
     }
 }
 
@@ -1726,7 +1739,7 @@ struct ContentView: View {
     }
 
     private var shown: Bool {
-        player.current != nil && lyrics.track != nil && navigation.lyrics
+        (player.current != nil || lyrics.selected) && lyrics.track != nil && navigation.lyrics
     }
 }
 

@@ -26,6 +26,7 @@ final class Lyrics {
     private(set) var saved = ""
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
     var floating = false
+    var selected = false
     private(set) var remote = false
     var hasLocalLyrics: Bool {
         guard let track else { return false }
