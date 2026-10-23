@@ -17,7 +17,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Same volume for all songs**, so you do not have to change the volume between songs.
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.
-- **Playlists** and a queue (Play Next and Add to Queue).
+- **Playlists** and a queue (Play Next and Add to Queue). The Queue in the sidebar shows the song that plays and the songs that come next. Drag them to change the order, or press Delete to remove them.
 - **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar.
 - **Continues where you stopped.** When you open the app again, it shows the same song, at the same time.
 - **Keyboard media keys** and Control Center play, pause, and change songs.
@@ -83,6 +83,8 @@ Click **Liked Songs** in the sidebar, below Songs, to see all liked songs. To re
 
 The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay in the app until you change them. When the app finds the lyrics on the internet, a save button shows at the top: click it to keep the lyrics with the song.
 
+To hide the lyrics, click the lyrics button in the toolbar (Option-Command-Y). Click it again to show them. While the lyrics are hidden, the app does not look for them. The app remembers your choice.
+
 Click the undock button at the top of the lyrics to move them to a small window that floats above all other windows. The window shows the album cover, the song, the artist, and the album. It also has the play controls: previous, play or pause, next, and a slider for the position of the song. You can edit the lyrics in the window too. Drag the window to move it. It keeps the lyrics when the next song plays. Click the X in the window to put the lyrics back in the app.
 
 To float the lyrics of the song that plays at any time, choose Controls > Show Lyrics in a Floating Window (Command-U). It works for every song, even when the song has no lyrics.
@@ -147,6 +149,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 | Option-Command-R | Repeat: off, all songs, or one song |
 | Command-E | Edit the lyrics |
 | Command-U | Show the lyrics in a floating window |
+| Option-Command-Y | Show or hide the lyrics |
 | Command-N | New playlist |
 | Command-R | Look for new music in your folders |
 | Command-F | Go to the search field |

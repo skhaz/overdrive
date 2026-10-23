@@ -38,6 +38,44 @@ import Testing
         #expect(lyrics.synced.count == 1)
     }
 
+    @Test func hiddenLyricsDoNothing() throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lrc"))
+
+        let lyrics = Lyrics(cache: folder.appending(path: "cache"), enabled: false)
+        lyrics.show(track)
+
+        #expect(lyrics.track == nil, "hidden lyrics must not read the disk or the internet")
+        #expect(lyrics.text.isEmpty)
+        #expect(lyrics.loading == false)
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "cache").path), "hidden lyrics must not create the cache folder")
+    }
+
+    @Test func hidingSavesThePendingEditAndStops() throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lrc"))
+
+        let lyrics = lyrics(folder)
+        lyrics.show(track)
+        lyrics.floating = true
+        lyrics.edit("[00:02.00]Changed")
+        lyrics.enabled = false
+        Persist.flush()
+
+        #expect(read(folder.appending(path: "Song.lrc")) == "[00:02.00]Changed")
+        #expect(lyrics.track == nil)
+        #expect(lyrics.text.isEmpty)
+        #expect(lyrics.floating == false)
+
+        lyrics.enabled = true
+        lyrics.show(track)
+        #expect(lyrics.text == "[00:02.00]Changed")
+    }
+
     @Test func editAutoSavesNextToTheSong() async throws {
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }

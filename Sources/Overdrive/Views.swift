@@ -1502,7 +1502,7 @@ struct ContentView: View {
     @Environment(Likes.self) private var likes
     @Environment(YouTube.self) private var youTube
     @Environment(\.openWindow) private var openWindow
-    @State private var lyrics = Lyrics(cache: Lyrics.directory(in: nil))
+    @State private var lyrics = Lyrics(cache: Lyrics.directory(in: nil), enabled: Player.saved?.lyrics ?? true)
     @State private var navigation = Navigation(page: Page(key: Player.saved?.page ?? "") ?? .section(.albums))
     @State private var tracker = Tracker()
     @State private var name = ""
@@ -1595,6 +1595,10 @@ struct ContentView: View {
                             .keyboardShortcut("]")
                             .disabled(navigation.forward.isEmpty)
                     }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(player.lyrics ? "Hide Lyrics" : "Show Lyrics", systemImage: player.lyrics ? "quote.bubble.fill" : "quote.bubble") { player.lyrics.toggle() }
+                            .help(player.lyrics ? "Hide Lyrics" : "Show Lyrics")
+                    }
                 }
                 .searchable(text: $search, placement: .toolbarPrincipal)
                 .searchFocused($focus, equals: .search)
@@ -1667,6 +1671,7 @@ struct ContentView: View {
             if let current = player.current { reveal(current) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatLyrics)) { _ in
+            player.lyrics = true
             if let current = player.current {
                 lyrics.show(current)
                 lyrics.floating = true
@@ -1676,6 +1681,10 @@ struct ContentView: View {
             lyrics.flush()
         }
         .onChange(of: player.current, initial: true) {
+            if let current = player.current { lyrics.show(current) }
+        }
+        .onChange(of: player.lyrics) {
+            lyrics.enabled = player.lyrics
             if let current = player.current { lyrics.show(current) }
         }
         .onAppear {
@@ -1705,7 +1714,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: library.folders) {
-            lyrics = Lyrics(cache: Lyrics.directory(in: library.folders.first))
+            lyrics = Lyrics(cache: Lyrics.directory(in: library.folders.first), enabled: player.lyrics)
         }
         .onChange(of: lyrics.floating) {
             if lyrics.floating {
@@ -1939,7 +1948,7 @@ struct ContentView: View {
     }
 
     private var shown: Bool {
-        (player.current != nil || lyrics.selected) && lyrics.track != nil && navigation.lyrics
+        player.lyrics && (player.current != nil || lyrics.selected) && lyrics.track != nil && navigation.lyrics
     }
 }
 

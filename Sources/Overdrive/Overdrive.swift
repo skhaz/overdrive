@@ -163,8 +163,11 @@ struct Overdrive: App {
                 .disabled(player.current == nil)
                 .contentTransition(.symbolEffect(.replace))
                 .animation(.spring(response: 0.3, dampingFraction: 0.6), value: player.current.map(likes.contains) ?? false)
+                Button(player.lyrics ? "Hide Lyrics" : "Show Lyrics", systemImage: "quote.bubble") { player.lyrics.toggle() }
+                    .keyboardShortcut("y", modifiers: [.command, .option])
                 Button("Edit Lyrics", systemImage: "pencil") { NotificationCenter.default.post(name: .editLyrics, object: nil) }
                     .keyboardShortcut("e")
+                    .disabled(!player.lyrics)
                 Button("Show Lyrics in a Floating Window", systemImage: "macwindow") { NotificationCenter.default.post(name: .floatLyrics, object: nil) }
                     .keyboardShortcut("u")
                     .disabled(player.current == nil)

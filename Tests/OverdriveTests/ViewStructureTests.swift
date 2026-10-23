@@ -71,6 +71,14 @@ struct ViewStructureTests {
         #expect(queue.contains("delete: { remove(selection) }"), "Delete must remove the selected songs")
     }
 
+    @Test func theLyricsButtonHidesTheLyrics() throws {
+        let source = try source()
+
+        #expect(source.contains("{ player.lyrics.toggle() }"), "the toolbar must show and hide the lyrics")
+        #expect(source.contains("player.lyrics && (player.current != nil || lyrics.selected)"), "hidden lyrics never show")
+        #expect(source.contains("lyrics.enabled = player.lyrics"), "hidden lyrics stop all work")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }

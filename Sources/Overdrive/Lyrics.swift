@@ -27,6 +27,7 @@ final class Lyrics {
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
     var floating = false
     var selected = false
+    var enabled: Bool { didSet { if !enabled, oldValue { stop() } } }
     private(set) var remote = false
     var hasLocalLyrics: Bool {
         guard let track else { return false }
@@ -42,9 +43,9 @@ final class Lyrics {
     var modified: Bool { text != original }
     private(set) var synced: [SyncedLine] = []
 
-    init(cache: URL) {
+    init(cache: URL, enabled: Bool = true) {
         self.cache = cache
-        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        self.enabled = enabled
     }
 
     nonisolated static func ignored(_ path: String) -> Bool {
@@ -54,9 +55,24 @@ final class Lyrics {
     }
 
     func show(_ track: Track) {
-        guard track != self.track else { return }
+        guard enabled, track != self.track else { return }
 
         settle { self.open(track) }
+    }
+
+    private func stop() {
+        flush()
+        lookupTask?.cancel()
+        lookupTask = nil
+        track = nil
+        loading = false
+        original = ""
+        saved = ""
+        text = ""
+        remote = false
+        floating = false
+        pendingReplace = false
+        pendingLyrics = ""
     }
 
     func edit(_ value: String) {

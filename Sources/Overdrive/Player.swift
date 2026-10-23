@@ -27,6 +27,7 @@ final class Player {
         let path: [String]?
         let query: String?
         let added: [Int]?
+        let lyrics: Bool?
     }
 
     private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
@@ -35,6 +36,7 @@ final class Player {
     private(set) var queue: [Track] = []
     private(set) var index = 0
     private(set) var added: [Bool] = []
+    var lyrics = Player.saved?.lyrics ?? true { didSet { if lyrics != oldValue { save() } } }
     private(set) var playing = false
     private(set) var position = 0.0
     private(set) var artwork: NSImage?
@@ -481,7 +483,7 @@ final class Player {
         let session = Session(queue: queue.map { StoredPath.encode($0.url.path) }, order: order.map { StoredPath.encode($0.url.path) }, index: index, position: position,
                               shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
                               started: started.timeIntervalSince1970, scrobbled: scrobbled,
-                              page: view.page, path: view.path, query: view.query, added: added.indices.filter { added[$0] })
+                              page: view.page, path: view.path, query: view.query, added: added.indices.filter { added[$0] }, lyrics: lyrics)
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(session) else { return }
