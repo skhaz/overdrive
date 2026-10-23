@@ -49,6 +49,14 @@ struct ViewStructureTests {
         #expect(try source().contains("navigation.open(searching: .section(.albums), leaving: tracker.position)"), "a click on an artist name must keep its search")
     }
 
+    @Test func typedKeysGoToTheSearchWhileItHasText() throws {
+        let source = try source()
+
+        #expect(source.contains("Focus.types(character, into: search)"), "a space after a letter must go to the search, not pause the song")
+        #expect(source.contains("let typing = !search.isEmpty"), "Space, Delete, and the arrows act only when the search field has no text")
+        #expect(source.contains("window.makeFirstResponder(field)"), "the search field must take the focus for real")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }

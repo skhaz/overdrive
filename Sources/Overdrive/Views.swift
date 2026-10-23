@@ -10,6 +10,21 @@ enum Focus {
     static func typing(_ responder: NSResponder?) -> Bool {
         (responder as? NSText)?.isEditable == true
     }
+
+    static func types(_ character: Character, into query: String) -> Bool {
+        character.isLetter || character.isNumber || (!query.isEmpty && (character == " " || character.isPunctuation || character.isSymbol))
+    }
+
+    static func field(in window: NSWindow) -> NSSearchField? {
+        if let field = window.toolbar?.items.lazy.compactMap({ ($0 as? NSSearchToolbarItem)?.searchField }).first { return field }
+
+        var views = [window.contentView?.superview].compactMap(\.self)
+        while let view = views.popLast() {
+            if let field = view as? NSSearchField { return field }
+            views += view.subviews
+        }
+        return nil
+    }
 }
 
 enum Destination {
@@ -1747,7 +1762,7 @@ struct ContentView: View {
 
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if flags == .command, event.keyCode == 3 {
-            focus = .search
+            focusSearch(window)
             return true
         }
 
@@ -1768,14 +1783,20 @@ struct ContentView: View {
             return true
         }
 
-        if !Focus.typing(window.firstResponder), let characters = event.characters, characters.count == 1, let character = characters.first, character.isLetter || character.isNumber {
-            focus = .search
+        let editing = Focus.typing(window.firstResponder)
+        if !editing, let characters = event.characters, characters.count == 1, let character = characters.first, Focus.types(character, into: search) {
             search.append(character)
-            DispatchQueue.main.async { (window.firstResponder as? NSTextView)?.moveToEndOfDocument(nil) }
+            focusSearch(window)
             return true
         }
 
-        let typing = focus == .search && !search.isEmpty
+        if !editing, event.keyCode == 51, !search.isEmpty {
+            search.removeLast()
+            focusSearch(window)
+            return true
+        }
+
+        let typing = !search.isEmpty
         let key: Key
         switch (event.keyCode, sidebar) {
         case (48, false):
@@ -1803,6 +1824,14 @@ struct ContentView: View {
 
         NotificationCenter.default.post(name: .key, object: key)
         return true
+    }
+
+    private func focusSearch(_ window: NSWindow) {
+        focus = .search
+        DispatchQueue.main.async {
+            if !Focus.typing(window.firstResponder), let field = Focus.field(in: window) { window.makeFirstResponder(field) }
+            (window.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
+        }
     }
 
     private func reveal(_ track: Track) {
