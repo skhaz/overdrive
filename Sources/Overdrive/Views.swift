@@ -1592,7 +1592,6 @@ struct ContentView: View {
             }
             .environment(\.active, current && path.isEmpty)
             .environment(\.restore, current && path.isEmpty ? navigation.place.position : Position())
-            .id(library.query)
             .navigationTitle(title)
             .navigationSubtitle(subtitle)
             .navigationDestination(for: Route.self) { route in

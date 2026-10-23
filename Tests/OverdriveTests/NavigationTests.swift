@@ -62,6 +62,17 @@ struct NavigationTests {
         #expect(navigation.back == [Place(page: songs, path: [])])
     }
 
+    @Test func showingTheAlbumThatIsOpenKeepsTheHistory() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: songs)
+        navigation.show([.album(one)])
+        navigation.show([.album(one)])
+
+        #expect(navigation.path == [.album(one)])
+        #expect(navigation.back == [Place(page: songs, path: [])])
+        #expect(navigation.forward.isEmpty)
+    }
+
     @Test func newVisitClearsForward() {
         var navigation = Navigation(page: albums)
         navigation.open(songs)

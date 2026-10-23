@@ -53,6 +53,22 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         result.albums.flatMap(\.tracks).first { $0.url.path == path }?.title
     }
 
+    @Test func everyTrackMapsToItsOwnAlbum() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "A/one.mp3")
+        try add("vbr.mp3", to: folder, as: "A/two.mp3")
+        try add("abr.mp3", to: folder, as: "B/three.mp3")
+
+        let result = await Library.load([folder], [:])
+
+        for track in result.albums.flatMap(\.tracks) {
+            let album = result.albums.first { $0.id == track.albumID }
+            #expect(album != nil, "every track has an album")
+            #expect(album?.tracks.contains(track) == true, "the album of a track contains the track")
+        }
+    }
+
     @Test func firstLoadStoresEveryFile() async throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
