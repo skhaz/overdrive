@@ -33,6 +33,38 @@ struct QueueTests {
         #expect(removed.index == 0)
     }
 
+    @Test func addToQueuePlaysTheSongsBeforeTheRestOfTheAlbum() {
+        let album = ["01", "02", "03", "04", "05", "06"]
+        let added = Player.inserting(album, Array(repeating: false, count: 6), at: 0, ["02", "03", "05", "04"], next: false)
+
+        #expect(added.items == ["01", "02", "03", "05", "04", "06"], "the picked songs went to the end, after the rest of the album")
+        #expect(added.marks == [false, true, true, true, true, false])
+        #expect(added.index == 0)
+    }
+
+    @Test func addToQueueGoesAfterTheSongsAddedBefore() {
+        let first = Player.inserting(["a", "b", "c"], [false, false, false], at: 0, ["x"], next: false)
+        let second = Player.inserting(first.items, first.marks, at: first.index, ["y"], next: false)
+
+        #expect(second.items == ["a", "x", "y", "b", "c"])
+        #expect(second.marks == [false, true, true, false, false])
+    }
+
+    @Test func playNextGoesRightAfterTheCurrentSong() {
+        let first = Player.inserting(["a", "b", "c"], [false, false, false], at: 0, ["x"], next: false)
+        let next = Player.inserting(first.items, first.marks, at: first.index, ["y"], next: true)
+
+        #expect(next.items == ["a", "y", "x", "b", "c"])
+    }
+
+    @Test func aSongAddedTwiceMovesAndKeepsTheCurrentSong() {
+        let added = Player.inserting(["a", "b", "c", "d"], [false, false, false, false], at: 2, ["a", "c", "d"], next: false)
+
+        #expect(added.items == ["b", "c", "a", "d"])
+        #expect(added.index == 1)
+        #expect(added.marks == [false, false, true, true])
+    }
+
     @Test func theQueuePageKeepsItsKey() {
         #expect(Page(key: Page.queue.key) == .queue)
         #expect(Page.queue.title == "Queue")

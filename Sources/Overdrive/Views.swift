@@ -1089,12 +1089,17 @@ struct Cell: View {
     let text: String
     let playing: Bool
     var liked = false
+    var added = false
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         HStack(spacing: 4) {
             Text(text)
                 .foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+
+            if added {
+                Image(systemName: "text.badge.plus").font(.caption).foregroundStyle(.secondary).help("Added to the queue")
+            }
 
             if liked {
                 Image(systemName: "heart").font(.caption).foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
@@ -1163,7 +1168,7 @@ struct QueueView: View {
     @State private var selection: Set<Row.ID> = []
 
     var body: some View {
-        let rows = player.queue.indices.map { Row(id: $0, track: player.queue[$0]) }
+        let rows = player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) }
         let now = youTube.showing == nil ? player.index : nil
 
         if rows.isEmpty {
@@ -1171,7 +1176,7 @@ struct QueueView: View {
         } else {
             ScrollViewReader { proxy in
                 Table(of: Row.self, selection: $selection) {
-                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track)) }
+                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track), added: added($0)) }
                     TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.id == now) }
                     TableColumn("Album") { Cell(text: $0.track.album, playing: $0.id == now) }
                     TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
@@ -1179,7 +1184,7 @@ struct QueueView: View {
                     ForEach(rows) { TableRow($0).draggable(String($0.id)) }
                         .dropDestination(for: String.self) { index, ids in
                             selection = []
-                            player.move(Set(ids.compactMap { Int($0) }), to: index)
+                            player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))
                         }
                 }
                 .onDeleteCommand { remove(selection) }
@@ -1204,18 +1209,22 @@ struct QueueView: View {
                     if let id = ids.first { start(id) }
                 }
                 .onChange(of: player.index, initial: true) {
-                    if rows.indices.contains(player.index) { selection = [player.index] }
+                    if player.queue.indices.contains(player.index) { selection = [player.index] }
                 }
-                .modifier(Keys(count: rows.count, selected: { selection.contains($0) }, select: { index in
-                    selection = [index]
-                    proxy.scrollTo(index)
-                }, enter: start, extend: { index in
-                    selection.insert(index)
-                    proxy.scrollTo(index)
+                .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
+                    selection = [rows[index].id]
+                    proxy.scrollTo(rows[index].id)
+                }, enter: { start(rows[$0].id) }, extend: { index in
+                    selection.insert(rows[index].id)
+                    proxy.scrollTo(rows[index].id)
                 }, delete: { remove(selection) }, selectAll: { selection = Set(rows.map(\.id)) }))
                 .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
             }
         }
+    }
+
+    private func added(_ row: Row) -> Bool {
+        player.added.indices.contains(row.id) && player.added[row.id]
     }
 
     private func start(_ position: Int) {
@@ -1758,7 +1767,7 @@ struct ContentView: View {
         case (nil, .section(.songs)): summary(library.tracks)
         case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
         case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
-        case (nil, .queue): summary(player.queue)
+        case (nil, .queue): summary(player.queue.dropFirst(player.index))
         }
     }
 

@@ -66,7 +66,8 @@ struct ViewStructureTests {
         let queue = region(source, from: "struct QueueView: View {")
 
         #expect(source.contains("row(\"Queue\", \"list.bullet\", .queue)"))
-        #expect(queue.contains("player.move(Set(ids.compactMap { Int($0) }), to: index)"), "a drag must reorder the queue")
+        #expect(queue.contains("player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))"), "a drag must reorder only the songs after the one that plays")
+        #expect(queue.contains("player.queue.indices.dropFirst(player.index)"), "the queue shows the song that plays and the songs that follow, not the played ones")
         #expect(queue.contains("delete: { remove(selection) }"), "Delete must remove the selected songs")
     }
 

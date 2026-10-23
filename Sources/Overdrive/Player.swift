@@ -26,6 +26,7 @@ final class Player {
         let page: String?
         let path: [String]?
         let query: String?
+        let added: [Int]?
     }
 
     private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
@@ -33,6 +34,7 @@ final class Player {
 
     private(set) var queue: [Track] = []
     private(set) var index = 0
+    private(set) var added: [Bool] = []
     private(set) var playing = false
     private(set) var position = 0.0
     private(set) var artwork: NSImage?
@@ -146,6 +148,7 @@ final class Player {
     func play(_ tracks: [Track], at start: Int = 0) {
         order = tracks
         queue = tracks
+        added = Array(repeating: false, count: tracks.count)
         index = start
 
         if shuffle {
@@ -162,21 +165,39 @@ final class Player {
         guard let track = current, item != nil else { return play(tracks) }
 
         let tracks = tracks.filter { $0 != track }
-        let added = Set(tracks)
+        let inserted = Player.inserting(queue, added, at: index, tracks, next: next)
+        queue = inserted.items
+        added = inserted.marks
+        index = inserted.index
 
-        index -= queue[..<index].count { added.contains($0) }
-        queue.removeAll { added.contains($0) }
-        order.removeAll { added.contains($0) }
-
-        if next {
-            queue.insert(contentsOf: tracks, at: index + 1)
-            order.insert(contentsOf: tracks, at: order.firstIndex(of: track)! + 1)
+        let set = Set(tracks)
+        order.removeAll { set.contains($0) }
+        if !shuffle {
+            order = queue
+        } else if next {
+            order.insert(contentsOf: tracks, at: (order.firstIndex(of: track) ?? -1) + 1)
         } else {
-            queue.append(contentsOf: tracks)
             order.append(contentsOf: tracks)
         }
 
         requeue()
+        save()
+    }
+
+    nonisolated static func inserting<T: Hashable>(_ items: [T], _ marks: [Bool], at index: Int, _ new: [T], next: Bool) -> (items: [T], marks: [Bool], index: Int) {
+        let new = items.indices.contains(index) ? new.filter { $0 != items[index] } : new
+        let set = Set(new)
+        let kept = items.indices.filter { $0 == index || !set.contains(items[$0]) }
+        var items = kept.map { items[$0] }
+        var marks = kept.map { marks.indices.contains($0) && marks[$0] }
+        let index = kept.firstIndex(of: index) ?? 0
+
+        var position = index + 1
+        while !next, position < marks.count, marks[position] { position += 1 }
+
+        items.insert(contentsOf: new, at: position)
+        marks.insert(contentsOf: repeatElement(true, count: new.count), at: position)
+        return (items, marks, index)
     }
 
     func jump(to position: Int) {
@@ -191,6 +212,7 @@ final class Player {
         guard moved != Array(queue.indices) else { return }
 
         queue = moved.map { queue[$0] }
+        added = moved.map { added.indices.contains($0) && added[$0] }
         index = moved.firstIndex(of: index) ?? 0
         if !shuffle { order = queue }
 
@@ -204,6 +226,7 @@ final class Player {
 
         let gone = Set(positions).subtracting(kept).filter(queue.indices.contains).map { queue[$0] }
         queue = kept.map { queue[$0] }
+        added = kept.map { added.indices.contains($0) && added[$0] }
         index = current
 
         if shuffle {
@@ -252,6 +275,8 @@ final class Player {
         shuffle = session.shuffle
         repeatMode = Repeat(rawValue: session.repeatMode) ?? .off
         queue = tracks
+        let marks = Set(session.added ?? [])
+        added = tracks.count == session.queue.count ? tracks.indices.map(marks.contains) : Array(repeating: false, count: tracks.count)
         order = session.order.compactMap { lookup(StoredPath.decode($0)) }
         if order.count != queue.count { order = queue }
         index = found ?? 0
@@ -456,7 +481,7 @@ final class Player {
         let session = Session(queue: queue.map { StoredPath.encode($0.url.path) }, order: order.map { StoredPath.encode($0.url.path) }, index: index, position: position,
                               shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
                               started: started.timeIntervalSince1970, scrobbled: scrobbled,
-                              page: view.page, path: view.path, query: view.query)
+                              page: view.page, path: view.path, query: view.query, added: added.indices.filter { added[$0] })
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(session) else { return }
@@ -493,6 +518,7 @@ final class Player {
             queue = order
             index = order.firstIndex(of: track) ?? 0
         }
+        added = Array(repeating: false, count: queue.count)
 
         requeue()
     }
