@@ -586,11 +586,13 @@ struct Cover: View {
 struct AlbumGrid: View {
     let albums: [Album]
     @Environment(\.go) private var go
-    @State private var selected: Album.ID?
+    @State private var selected: Set<Album.ID> = []
     @State private var columns = 1
     @State private var frame = Frame()
 
     var body: some View {
+        let picked = albums.filter { selected.contains($0.id) }
+
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 20)], spacing: 24) {
@@ -600,11 +602,11 @@ struct AlbumGrid: View {
                                 Cover(track: album.tracks[0])
                                     .shadow(radius: 2, y: 1)
                                     .overlay {
-                                        if album.id == selected {
+                                        if selected.contains(album.id) {
                                             RoundedRectangle(cornerRadius: 6).stroke(.tint, lineWidth: 3)
                                         }
                                     }
-                                    .onGeometryChange(for: CGRect?.self) { album.id == selected ? $0.frame(in: .global) : nil } action: { if let rect = $0 { frame.rect = rect } }
+                                    .onGeometryChange(for: CGRect?.self) { selected.contains(album.id) ? $0.frame(in: .global) : nil } action: { if let rect = $0 { frame.rect = rect } }
                                 Text(album.title).lineLimit(1).padding(.top, 4)
                                 Text(album.artist).lineLimit(1).foregroundStyle(.secondary)
                                 Text(count(album.tracks.count, "song")).font(.caption).foregroundStyle(.tertiary)
@@ -612,7 +614,7 @@ struct AlbumGrid: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .simultaneousGesture(TapGesture().onEnded { selected = album.id })
+                        .simultaneousGesture(TapGesture().onEnded { selected = [album.id] })
                         .contextMenu {
                             TrackMenu(tracks: album.tracks)
                             CopyMenu(tracks: album.tracks, album: album)
@@ -623,12 +625,15 @@ struct AlbumGrid: View {
                 .padding(20)
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columns = max(Int(($0 - 20) / 180), 1) }
-            .modifier(Keys(count: albums.count, columns: columns, selected: { albums[$0].id == selected }, select: { index in
-                selected = albums[index].id
+            .modifier(Keys(count: albums.count, columns: columns, selected: { selected.contains(albums[$0].id) }, select: { index in
+                selected = [albums[index].id]
                 proxy.scrollTo(albums[index].id)
-            }, enter: { go(.album(albums[$0])) }, point: { _ in CGPoint(x: frame.rect.midX, y: frame.rect.midY) }))
-            .modifier(Selected(tracks: albums.first { $0.id == selected }?.tracks ?? [], album: albums.first { $0.id == selected }))
-            .modifier(Remember(selection: selected.map { [$0] } ?? []) { selected = $0.first })
+            }, enter: { go(.album(albums[$0])) }, point: { _ in CGPoint(x: frame.rect.midX, y: frame.rect.midY) }, extend: { index in
+                selected.insert(albums[index].id)
+                proxy.scrollTo(albums[index].id)
+            }, selectAll: { selected = Set(albums.map(\.id)) }))
+            .modifier(Selected(tracks: picked.flatMap(\.tracks), album: picked.count == 1 ? picked[0] : nil))
+            .modifier(Remember(selection: picked.map(\.id)) { selected = Set($0) })
         }
     }
 }
@@ -1628,7 +1633,7 @@ struct ContentView: View {
             return true
         }
 
-        if flags == .command, event.keyCode == 0, !sidebar, !(window.firstResponder is NSText) {
+        if flags == .command, event.keyCode == 0, !sidebar {
             NotificationCenter.default.post(name: .key, object: Key.all)
             return true
         }
