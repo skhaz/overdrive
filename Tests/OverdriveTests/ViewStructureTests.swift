@@ -88,6 +88,14 @@ struct ViewStructureTests {
         #expect(!queue.contains("player.clear"), "the Queue page never clears without the confirmation")
     }
 
+    @Test func theFindShortcutFocusesTheSearchWithItsTextSelected() throws {
+        let source = try source()
+
+        #expect(source.contains(".modifier(Find { window in focusSearch(window, selecting: true) })"), "the global shortcut must put the cursor in the search")
+        #expect(source.contains("if selecting { (window.firstResponder as? NSTextView)?.selectAll(nil) }"), "the old query must be selected so typing replaces it")
+        #expect(!source.contains("event.keyCode == 3 {"), "the global shortcut is the only shortcut to the search")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }

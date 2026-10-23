@@ -11,6 +11,21 @@ enum Main {
 
 final class Delegate: NSObject, NSApplicationDelegate {
     var open: OpenWindowAction?
+    private var hotKey: HotKey?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        hotKey = HotKey { [weak self] in self?.find() }
+    }
+
+    func find() {
+        NSApp.activate()
+        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.isVisible }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            open?(id: "main")
+        }
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .find, object: nil) }
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
@@ -118,6 +133,8 @@ struct Overdrive: App {
             }
 
             CommandGroup(after: .textEditing) {
+                Button("Find Song") { delegate.find() }
+                    .keyboardShortcut("f", modifiers: [.control, .option, .command])
                 Button("Clear Search") { library.query = "" }
                     .keyboardShortcut("k")
                     .disabled(library.query.isEmpty)

@@ -744,6 +744,7 @@ extension Notification.Name {
     static let editLyrics = Notification.Name("editLyrics")
     static let floatLyrics = Notification.Name("floatLyrics")
     static let clearQueue = Notification.Name("clearQueue")
+    static let find = Notification.Name("find")
 }
 
 enum Key {
@@ -1158,6 +1159,16 @@ struct SongTable: View {
             }, selectAll: { selection = Set(tracks.map(\.id)) }))
             .modifier(Selected(tracks: tracks.filter { selection.contains($0.id) }))
 
+        }
+    }
+}
+
+struct Find: ViewModifier {
+    let action: (NSWindow) -> Void
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .find)) { _ in
+            if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true }) { action(window) }
         }
     }
 }
@@ -1700,6 +1711,7 @@ struct ContentView: View {
             navigate(value)
         })
         .modifier(ClearQueue(clearing: $clearing))
+        .modifier(Find { window in focusSearch(window, selecting: true) })
         .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
             if let current = player.current { reveal(current) }
         }
@@ -1887,10 +1899,6 @@ struct ContentView: View {
         }
 
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        if flags == .command, event.keyCode == 3 {
-            focusSearch(window)
-            return true
-        }
 
         if flags == .command, event.keyCode == 0, !sidebar, !Focus.typing(window.firstResponder) {
             NotificationCenter.default.post(name: .key, object: Key.all)
@@ -1952,11 +1960,11 @@ struct ContentView: View {
         return true
     }
 
-    private func focusSearch(_ window: NSWindow) {
+    private func focusSearch(_ window: NSWindow, selecting: Bool = false) {
         focus = .search
         DispatchQueue.main.async {
             if !Focus.typing(window.firstResponder), let field = Focus.field(in: window) { window.makeFirstResponder(field) }
-            (window.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
+            if selecting { (window.firstResponder as? NSTextView)?.selectAll(nil) } else { (window.firstResponder as? NSTextView)?.moveToEndOfDocument(nil) }
         }
     }
 
