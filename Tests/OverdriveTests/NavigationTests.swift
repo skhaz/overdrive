@@ -366,6 +366,31 @@ struct NavigationTests {
         }
     }
 
+    @Test func onlyTheSearchOpensAPageThatKeepsTheQuery() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: .liked)
+        navigation.searched(from: "", to: "a")
+        #expect(navigation.page == songs)
+        #expect(navigation.searching)
+
+        navigation.show([.album(one)])
+        #expect(!navigation.searching)
+
+        navigation.searched(from: "", to: "a")
+        navigation.open(.liked)
+        #expect(!navigation.searching)
+
+        navigation.goBack()
+        #expect(!navigation.searching)
+
+        navigation.searched(from: "", to: "a")
+        navigation.remove(.liked, fallback: albums)
+        #expect(!navigation.searching)
+        navigation.open(searching: albums)
+        #expect(navigation.place == Place(page: albums, path: []))
+        #expect(navigation.searching)
+    }
+
     @Test func searchingKeepsTheOpenScreen() {
         let one = Self.album("one")
         var navigation = Navigation(page: songs)

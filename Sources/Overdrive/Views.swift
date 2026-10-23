@@ -1558,7 +1558,7 @@ struct ContentView: View {
                 return
             case .search(let text):
                 lyrics.settle {
-                    navigation.open(.section(.albums), leaving: tracker.position)
+                    navigation.open(searching: .section(.albums), leaving: tracker.position)
                     library.query = text
                 }
                 return
@@ -1622,6 +1622,12 @@ struct ContentView: View {
         .onChange(of: navigation.place) {
             tracker.position = navigation.place.position
             remember()
+        }
+        .onChange(of: navigation.page) {
+            guard !navigation.searching else { return }
+
+            search = ""
+            library.query = ""
         }
         .onChange(of: library.query, initial: true) {
             if search != library.query { search = library.query }

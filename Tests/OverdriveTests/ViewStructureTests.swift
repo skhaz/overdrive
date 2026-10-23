@@ -37,6 +37,18 @@ struct ViewStructureTests {
         #expect(strip.contains(".fixedSize(horizontal: false, vertical: true)"), "the albums row must take only its own height, not half of the page")
     }
 
+    @Test func anotherPageClearsTheSearch() throws {
+        #expect(try source().contains("""
+                .onChange(of: navigation.page) {
+                    guard !navigation.searching else { return }
+
+                    search = ""
+                    library.query = ""
+                }
+        """), "a page change must clear the search, except the page the search opens")
+        #expect(try source().contains("navigation.open(searching: .section(.albums), leaving: tracker.position)"), "a click on an artist name must keep its search")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }
