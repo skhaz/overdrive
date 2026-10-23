@@ -386,28 +386,52 @@ struct NavigationTests {
         navigation.searched(from: "", to: "a")
         navigation.remove(.liked, fallback: albums)
         #expect(!navigation.searching)
-        navigation.open(searching: albums)
+        navigation.filter(albums)
         #expect(navigation.place == Place(page: albums, path: []))
         #expect(navigation.searching)
     }
 
-    @Test func searchingKeepsTheOpenScreen() {
+    @Test func everySearchGoesToTheResults() {
         let one = Self.album("one")
         var navigation = Navigation(page: songs)
-        navigation.searched(from: "", to: "a")
+        navigation.searched(from: "", to: "black")
         navigation.show([.album(one)])
 
-        navigation.searched(from: "a", to: "ab")
+        navigation.searched(from: "black", to: "wintermoon")
+        #expect(navigation.place == Place(page: songs, path: []), "a new query typed over the old one on an open album must show the results")
+        navigation.goBack()
         #expect(navigation.place == Place(page: songs, path: [.album(one)]))
 
-        var grid = Navigation(page: albums)
-        grid.searched(from: "", to: "a")
-        #expect(grid.place == Place(page: albums, path: []))
+        for page in [albums, .section(.artists), .liked, mix] {
+            var other = Navigation(page: page)
+            other.searched(from: "a", to: "ab")
+            #expect(other.place == Place(page: songs, path: []))
+        }
 
-        var liked = Navigation(page: .liked)
-        liked.searched(from: "a", to: "ab")
-        liked.searched(from: "a", to: "")
-        #expect(liked.place == Place(page: .liked, path: []))
+        var results = Navigation(page: songs)
+        results.searched(from: "a", to: "ab")
+        #expect(results.place == Place(page: songs, path: []))
+        #expect(results.back.isEmpty)
+    }
+
+    @Test func clearingTheSearchStaysOnThePage() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums, path: [.album(one)])
+        navigation.searched(from: "a", to: "")
+        navigation.searched(from: "a", to: "a")
+
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+    }
+
+    @Test func anArtistLinkKeepsItsFilteredAlbums() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: songs, path: [.album(one)])
+        navigation.filter(albums)
+        navigation.searched(from: "", to: "Artist")
+        #expect(navigation.place == Place(page: albums, path: []))
+
+        navigation.searched(from: "Artist", to: "Artist x")
+        #expect(navigation.place == Place(page: songs, path: []), "a query typed after the link goes to the results")
     }
 
     @Test func showsTheLyricsOnlyOnSongLists() {

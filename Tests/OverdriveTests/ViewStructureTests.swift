@@ -46,7 +46,7 @@ struct ViewStructureTests {
                     library.query = ""
                 }
         """), "a page change must clear the search, except the page the search opens")
-        #expect(try source().contains("navigation.open(searching: .section(.albums), leaving: tracker.position)"), "a click on an artist name must keep its search")
+        #expect(try source().contains("navigation.filter(.section(.albums), leaving: tracker.position)"), "a click on an artist name must keep its search")
     }
 
     @Test func typedKeysGoToTheSearchWhileItHasText() throws {

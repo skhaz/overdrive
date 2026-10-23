@@ -1573,7 +1573,7 @@ struct ContentView: View {
                 return
             case .search(let text):
                 lyrics.settle {
-                    navigation.open(searching: .section(.albums), leaving: tracker.position)
+                    navigation.filter(.section(.albums), leaving: tracker.position)
                     library.query = text
                 }
                 return

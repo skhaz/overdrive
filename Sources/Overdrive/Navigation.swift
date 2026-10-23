@@ -107,6 +107,7 @@ nonisolated struct Navigation {
     private(set) var forward: [Place] = []
     private(set) var pages: [Page]
     private(set) var searching = false
+    private var filtering = false
     private var paths: [Page: [Route]] = [:]
 
     init(page: Page, path: [Route] = []) {
@@ -133,9 +134,10 @@ nonisolated struct Navigation {
         visit(Place(page: page, path: []), leaving: position)
     }
 
-    mutating func open(searching page: Page, leaving position: Position = Position()) {
+    mutating func filter(_ page: Page, leaving position: Position = Position()) {
         open(page, leaving: position)
         searching = true
+        filtering = true
     }
 
     mutating func show(_ path: [Route], leaving position: Position = Position()) {
@@ -149,11 +151,15 @@ nonisolated struct Navigation {
     }
 
     mutating func searched(from old: String, to new: String, leaving position: Position = Position()) {
-        guard old.isEmpty, !new.isEmpty else { return }
+        guard !new.isEmpty, new != old else { return }
 
-        if case .section = place.page, place.path.isEmpty { return }
+        if filtering {
+            filtering = false
+            return
+        }
 
-        open(searching: .section(.songs), leaving: position)
+        open(.section(.songs), leaving: position)
+        searching = true
     }
 
     mutating func restore(_ path: [Route]) {
@@ -182,6 +188,7 @@ nonisolated struct Navigation {
 
     mutating func remove(_ page: Page, fallback: Page) {
         searching = false
+        filtering = false
         back.removeAll { $0.page == page }
         forward.removeAll { $0.page == page }
         pages.removeAll { $0 == page }
@@ -212,6 +219,7 @@ nonisolated struct Navigation {
 
     private mutating func move(to new: Place) {
         searching = false
+        filtering = false
         if new.page != place.page {
             paths[place.page] = place.path
             if !pages.contains(new.page) { pages.append(new.page) }
