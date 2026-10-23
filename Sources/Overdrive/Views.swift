@@ -1059,7 +1059,6 @@ struct PlaylistView: View {
     @Environment(YouTube.self) private var youTube
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
-    @Environment(\.go) private var go
     @State private var selection: Set<Row.ID> = []
     @State private var removing: [Row] = []
 
@@ -1109,7 +1108,6 @@ struct PlaylistView: View {
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
                     player.play(rows.map(\.track), at: index)
-                    go(.playing(rows[index].track))
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1130,10 +1128,7 @@ struct PlaylistView: View {
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
-                }, enter: { index in
-                    player.start(rows.map(\.track), at: index)
-                    go(.playing(rows[index].track))
-                }, extend: { index in
+                }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
                 }, delete: { removing = rows.filter { selection.contains($0.id) } }, selectAll: { selection = Set(rows.map(\.id)) }))
@@ -1163,7 +1158,6 @@ struct LikedView: View {
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
-    @Environment(\.go) private var go
     @State private var selection: Set<Row.ID> = []
 
     var body: some View {
@@ -1199,7 +1193,6 @@ struct LikedView: View {
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
                     player.play(rows.map(\.track), at: index)
-                    go(.playing(rows[index].track))
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1211,10 +1204,7 @@ struct LikedView: View {
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
-                }, enter: { index in
-                    player.start(rows.map(\.track), at: index)
-                    go(.playing(rows[index].track))
-                }, extend: { index in
+                }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
                 }, selectAll: { selection = Set(rows.map(\.id)) }))
