@@ -86,6 +86,7 @@ struct ViewStructureTests {
 
         #expect(panel.contains("Button(\"Show Overdrive\", systemImage: \"macwindow\", action: open)"), "the panel has a button that shows the main window")
         #expect(panel.contains(".onTapGesture(count: 2, perform: open)"), "a double-click on the song shows the main window")
+        #expect(panel.contains("lyrics.floating = false\n            NSApp.activate()"), "going back to the app docks the lyrics in the main window")
         #expect(panel.contains("NSApp.activate()"), "the panel does not activate the app by itself")
         #expect(panel.contains(".nonactivatingPanel"), "a click on the panel must not take the focus")
         #expect(try source().contains("LyricsPanel(lyrics: lyrics, player: player) { openWindow(id: \"main\") }"), "the main window opens again when it was closed")

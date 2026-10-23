@@ -26,6 +26,7 @@ final class LyricsPanel {
         window.hasShadow = true
         window.identifier = NSUserInterfaceItemIdentifier("lyrics")
         window.contentView = NSHostingView(rootView: FloatingLyrics(open: {
+            lyrics.floating = false
             NSApp.activate()
             open()
         }).environment(lyrics).environment(player))
