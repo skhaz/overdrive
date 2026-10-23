@@ -27,7 +27,6 @@ Commit each change when it is complete. Do not ask before you commit.
 - Fuzzing: `docker run --rm -v "$PWD":/src:ro -v /tmp/fuzz:/out -e OUT=/out --shm-size=256m swift:latest sh /src/Fuzz/fuzz.sh 300`. Targets in `Fuzz/Targets`, seeds in `Fuzz/Seeds`, crashes in `/tmp/fuzz/crashes`. Do not edit sources while it builds.
 - The fuzzed parsers must use only Foundation, so they compile on Linux.
 - Every fuzzer crash becomes a regression test with a file in `Tests/OverdriveTests/Fixtures`.
-- Harness: `Harness/run.sh` (`CYCLES`, `IDLE`, `SPIKE`, `OUT`). It builds, stops the installed app, and runs the local build in the background with `MallocStackLogging`. It drives the app only through the accessibility API (`Harness/ax.swift`): no keys, no mouse, no focus. It reports failed navigation checks, hangs of 5 s or more, crashes, `leaks`, the footprint per cycle (without the logging data), CPU spikes (with a `sample`), and CPU at rest. At the end it sets the volume back and opens the installed app again. Run it before a deploy that touches the UI, the player, the library, or the background work. The scripts never name a song, an artist, or a path of the user.
 - Uninstall: `brew uninstall --zap --cask overdrive`. The `.lrc` files in the music folders stay.
 
 ## Music library
