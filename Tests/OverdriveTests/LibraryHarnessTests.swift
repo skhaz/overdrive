@@ -28,7 +28,7 @@ struct LibraryHarnessTests {
     }
 
     private func library(_ folders: [URL]) -> Library {
-        let loudness = Loudness(file: FileManager.default.temporaryDirectory.appending(path: "OverdriveHarness-\(UUID().uuidString).plist"))
+        let loudness = Loudness()
         let library = Library(loudness: loudness, folders: folders)
         library.query = ""
         return library

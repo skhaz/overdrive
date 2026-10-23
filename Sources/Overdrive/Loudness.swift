@@ -28,28 +28,37 @@ final class Loudness {
         }
     }
 
-    private nonisolated static let file = URL.applicationSupportDirectory.appending(path: "Overdrive/Loudness.plist")
+    nonisolated static let name = "Loudness.plist"
     private nonisolated static let target = -14.0
     private nonisolated static let ceiling: Float = 4
     private nonisolated static let workers = 2
 
-    private var entries: [String: Entry]
+    private var entries: [String: Entry] = [:]
+    private var roots: [(folder: URL, real: String)] = []
     var albums: [String: [String]] = [:]
     private var worker: Task<Void, Never>?
-    private let file: URL
 
-    init(file: URL = Loudness.file) {
-        self.file = file
+    var folders: [URL] = [] {
+        didSet { if folders != oldValue { load() } }
+    }
 
-        let stored = (try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: file))) ?? [:]
-        var entries: [String: Entry] = [:]
-        entries.reserveCapacity(stored.count)
+    init(folders: [URL] = []) {
+        self.folders = folders
+        load()
+    }
 
-        for (key, entry) in stored {
-            entries[StoredPath.decode(key)] = entry
+    private func load() {
+        roots = folders.map { folder in (folder, folder.path.withCString { path in realpath(path, nil).map { defer { free($0) }; return String(cString: $0) } } ?? folder.path) }
+        entries = [:]
+
+        for root in roots {
+            guard let stored = try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: root.folder.appending(path: Self.name))) else { continue }
+
+            entries.reserveCapacity(entries.count + stored.count)
+            for (key, entry) in stored {
+                entries[root.real + "/" + key] = entry
+            }
         }
-
-        self.entries = entries
     }
 
     func gain(_ track: Track, album: Bool) -> Float? {
@@ -133,16 +142,23 @@ final class Loudness {
     private func save() {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        var stored: [String: Entry] = [:]
-        stored.reserveCapacity(entries.count)
+        var stored = Array(repeating: [String: Entry](), count: roots.count)
 
         for (path, entry) in entries {
-            stored[StoredPath.encode(path)] = entry
+            var best: Int?
+            for index in roots.indices where path.hasPrefix(roots[index].real + "/") && roots[index].real.count > best.map({ roots[$0].real.count }) ?? -1 {
+                best = index
+            }
+            guard let best else { continue }
+
+            stored[best][String(path.dropFirst(roots[best].real.count + 1))] = entry
         }
 
-        guard let data = try? encoder.encode(stored) else { return }
+        for index in roots.indices where !stored[index].isEmpty {
+            guard let data = try? encoder.encode(stored[index]) else { continue }
 
-        Persist.write(data, to: file)
+            Persist.write(data, to: roots[index].folder.appending(path: Self.name))
+        }
     }
 
     private nonisolated static func idle() async {
@@ -235,7 +251,7 @@ final class Loudness {
             do {
                 try audio.read(into: buffer)
             } catch {
-                if (error as NSError).code == eofErr { break }
+                if frames > 0 || (error as NSError).code == eofErr { break }
                 return nil
             }
 

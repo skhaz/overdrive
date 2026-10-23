@@ -48,7 +48,7 @@ struct Overdrive: App {
         Task { await lastFM.flush() }
         AppleMusic.block()
 
-        NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
+        let rightClick = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
             guard let window = event.window, let content = window.contentView else { return event }
 
             let location = event.locationInWindow
@@ -75,7 +75,7 @@ struct Overdrive: App {
             return event
         }
 
-        return (termination: termination, lastFM: lastFM, library: library, player: player, youTube: youTube)
+        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate

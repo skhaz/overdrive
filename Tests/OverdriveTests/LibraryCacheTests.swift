@@ -532,6 +532,12 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(!Library.relevant([(folder.path + "/Likes.plist", removed)]))
         #expect(!Library.relevant([(folder.path + "/.DS_Store", removed)]))
         #expect(!Library.relevant([(folder.path + "/Album/one.lrc", removed)]))
+        #expect(!Library.relevant([(folder.path + "/Lyrics/Artist - Album - Title - 200s-0123abcd.txt.tmp", modified)]))
+        #expect(!Library.relevant([(folder.path + "/Lyrics/Artist - Album - Title - 200s-0123abcd.txt.tmp", renamed)]))
+        #expect(!Library.relevant([(folder.path + "/Lyrics/Artist - Album - Title - 200s-0123abcd.txt", renamed)]))
+        #expect(!Library.relevant([(folder.path + "/Lyrics/Artist - Album - Title - 200s-0123abcd.txt", removed)]))
+        #expect(Library.relevant([(folder.path + "/Lyrics/song.mp3", modified)]))
+        #expect(Library.relevant([(folder.path + "/Album/notes.txt", removed)]))
         #expect(Library.relevant([(folder.path + "/Album/ONE.MP3", modified)]))
     }
 

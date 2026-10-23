@@ -27,12 +27,13 @@ Commit each change when it is complete. Do not ask before you commit.
 - Fuzzing: `docker run --rm -v "$PWD":/src:ro -v /tmp/fuzz:/out -e OUT=/out --shm-size=256m swift:latest sh /src/Fuzz/fuzz.sh 300`. Targets in `Fuzz/Targets`, seeds in `Fuzz/Seeds`, crashes in `/tmp/fuzz/crashes`. Do not edit sources while it builds.
 - The fuzzed parsers must use only Foundation, so they compile on Linux.
 - Every fuzzer crash becomes a regression test with a file in `Tests/OverdriveTests/Fixtures`.
+- Harness: `Harness/run.sh` (`CYCLES`, `IDLE`, `SPIKE`, `OUT`). It builds, stops the installed app, and runs the local build in the background with `MallocStackLogging`. It drives the app only through the accessibility API (`Harness/ax.swift`): no keys, no mouse, no focus. It reports failed navigation checks, hangs of 5 s or more, crashes, `leaks`, the footprint per cycle (without the logging data), CPU spikes (with a `sample`), and CPU at rest. At the end it sets the volume back and opens the installed app again. Run it before a deploy that touches the UI, the player, the library, or the background work. The scripts never name a song, an artist, or a path of the user.
 - Uninstall: `brew uninstall --zap --cask overdrive`. The `.lrc` files in the music folders stay.
 
 ## Music library
 
 - The library is read-only. The app never writes, moves, renames, or deletes an audio file.
-- In a music folder the app writes only: `Cache.sqlite` (and its `-wal` and `-shm`) at the folder root, `.lrc` files next to the songs, and, at the root of the first folder, `Likes.plist` and the `Playlists` folder. The watcher ignores them.
+- In a music folder the app writes only: `Cache.sqlite` (and its `-wal` and `-shm`) and `Loudness.plist` at the folder root, `.lrc` files next to the songs, and, at the root of the first folder, `Likes.plist`, the `Playlists` folder, and the `Lyrics` folder (the lyrics cache, `.txt`). The watcher ignores them: a write there must never start a scan.
 
 ## Library cache
 
@@ -42,6 +43,7 @@ Commit each change when it is complete. Do not ask before you commit.
 - The scan commits each step atomically, then shows it. The UI never shows a state the cache does not have. A replaced scan keeps what it committed. Only the first snapshot can show files that changed while the app was closed.
 - A scan starts on: FSEvents changes to music files, folders, removals or renames, volume mount and unmount, folder changes, and the launch. Cache files, `.plist`s, `.lrc`s, `.DS_Store`, and hidden paths never start a scan, except a deleted `Cache.sqlite`, which starts a rebuild.
 - `LibraryHarnessTests` runs a live `Library` with the watcher on a temporary folder; the harness never touches `UserDefaults`.
+- `Loudness.plist` (EBU R128 loudness per song) lives at the root of each music folder, with paths relative to the folder (realpath), so a moved folder keeps its measurements.
 - SQLite is only a cache, rebuilt from the music files. Each folder has its own `Cache.sqlite` at its root, paths relative to the folder (realpath). It is the only data that is not a binary plist.
 - Tables: `tracks` (unique `path`, tags, `modified`, `size`, nullable `hash`), `tracks_album`, `covers` (JPEG), and the FTS5 `search` (`tokenize = 'trigram remove_diacritics 1'`), kept in sync by the insert, delete, and update triggers. Upserts use `ON CONFLICT(path) DO UPDATE`.
 - Settings: `page_size = 65536` (before WAL), `mmap_size = 1 GiB`, WAL, `synchronous = FULL`, `fullfsync`, `checkpoint_fullfsync`, infinite `busy_timeout`. No version: to change the schema, delete the `Cache.sqlite` files.
@@ -54,7 +56,7 @@ Commit each change when it is complete. Do not ask before you commit.
 
 - Every write of app data is atomic and durable. Period. This applies to every current file and every future file, without exception: binary plists through `Persist` (`write`, `move`, `remove`), and the cache through SQLite transactions. Never write in place, never `Data.write` directly, never a partial state.
 - Every data file is a binary plist. No JSON, no plain text. Exception: `Cache.sqlite`.
-- Song paths in the data files are home-relative (`~/…`) under the home directory, absolute outside it, computed at runtime.
+- Song paths in the data files in a music folder (`Likes.plist`, `Playlists/`, `Loudness.plist`) are relative to that folder, so the library can move. In `~/Library/Application Support/Overdrive` they are home-relative (`~/…`) under the home directory, absolute outside it, computed at runtime.
 
 ## Data files
 
@@ -63,14 +65,12 @@ In `~/Library/Application Support/Overdrive`:
 | File | Content |
 | --- | --- |
 | `Session.plist` | Queue, order, song, position, shuffle, repeat, scrobbles, open screen. |
-| `Loudness.plist` | EBU R128 loudness per song. |
 | `Scrobbles.plist` | Pending and rejected scrobbles. |
 | `lastfm.plist` | Last.fm session key and user name. |
 | `Videos.plist` | YouTube video ID per song. |
 | `Rules/` | Compiled ad block rules. |
-| `Lyrics/` | Lyrics from LRCLIB and lyrics.ovh, non-empty only. |
 
-`Likes.plist` and `Playlists/` live at the root of the first library folder, so they travel with the music.
+`Likes.plist`, `Playlists/`, and `Lyrics/` (lyrics from LRCLIB and lyrics.ovh, non-empty only) live at the root of the first library folder, so they travel with the music.
 
 ## Behavior
 

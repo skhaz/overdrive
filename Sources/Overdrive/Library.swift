@@ -100,6 +100,7 @@ final class Library {
     var folders: [URL] {
         didSet {
             if persistent { UserDefaults.standard.set(folders.map { StoredPath.encode($0.path) }, forKey: Library.key) }
+            loudness.folders = folders
             watch()
             scan()
         }
@@ -143,6 +144,7 @@ final class Library {
         self.loudness = loudness
         persistent = folders == nil
         self.folders = folders ?? Library.savedFolders()
+        loudness.folders = self.folders
         watch()
         scan()
 
