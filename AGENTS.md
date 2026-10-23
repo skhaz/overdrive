@@ -56,7 +56,7 @@ Commit each change when it is complete. Do not ask before you commit.
 
 ## Atomic writes
 
-- Every write of app data is atomic and durable: the binary plists with `Persist` (`Persist.write`, `Persist.move`, `Persist.remove`, which call `F_FULLFSYNC` and rename), and the cache with SQLite transactions. Never write in place and never use `Data.write` directly. Never write a partial state.
+- Every write of app data is atomic and durable. Period. This applies to every current file and every future file, without exception: the binary plists through `Persist` (`Persist.write`, `Persist.move`, `Persist.remove`, which call `F_FULLFSYNC` and rename), and the cache through SQLite transactions. Never write in place, never use `Data.write` directly, never write a partial state.
 - Every file the app produces for its data is a binary plist. No JSON, no plain text. The only exception is `Cache.sqlite`.
 - Every song path stored in the data files is home-relative (`~/…`) under the home directory, absolute outside it, computed from the current home at runtime.
 
@@ -99,6 +99,6 @@ Do these steps for each deploy:
 3. Wait for the `Release` action: `gh run watch <run-id> --exit-status`. If it fails, stop and report the failure.
 4. Update this host:
    1. Stop the app: `pkill -x Overdrive`.
-   2. `brew update && brew upgrade --cask overdrive`.
+   2. `brew update && brew upgrade --cask overdrive`. Both are needed: the cask lives in a git tap, and `brew update` pulls the new version at once; the automatic API data can lag behind.
    3. Start it: `open -a Overdrive`.
    4. Check the version: `defaults read /Applications/Overdrive.app/Contents/Info.plist CFBundleShortVersionString`.
