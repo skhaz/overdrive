@@ -1,5 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import OSLog
+
+let navLog = Logger(subsystem: "org.delduca.Overdrive", category: "navigation")
 
 enum Focus {
     case search, sidebar
@@ -1456,6 +1459,7 @@ struct ContentView: View {
         }
         .environment(lyrics)
         .environment(\.go, GoAction { destination in
+            navLog.notice("go \(String(describing: destination), privacy: .public) page=\(page.key, privacy: .public) path=\(path.count)")
             var value = path
 
             switch destination {
@@ -1506,7 +1510,14 @@ struct ContentView: View {
             guard let saved, !library.albums.isEmpty else { return }
 
             self.saved = nil
-            navigation.restore(saved.compactMap { Route(key: $0, albums: library.albums) })
+            let routes = saved.compactMap { Route(key: $0, albums: library.albums) }
+            navLog.notice("restore page=\(page.key, privacy: .public) routes=\(routes.count)")
+            switch page {
+            case .liked, .playlist:
+                navigation.restore([])
+            default:
+                navigation.restore(routes)
+            }
         }
         .onChange(of: library.folders) {
             lyrics = Lyrics(cache: Lyrics.directory(in: library.folders.first))
@@ -1528,6 +1539,7 @@ struct ContentView: View {
             if search != library.query { search = library.query }
         }
         .onChange(of: library.query) {
+            navLog.notice("query changed to \(library.query, privacy: .public)")
             remember()
         }
         .environment(\.tracker, tracker)
@@ -1570,7 +1582,10 @@ struct ContentView: View {
         let current = page == self.page
         let path = navigation.path(of: page)
 
-        return NavigationStack(path: Binding { navigation.path(of: page) } set: { if current { navigate($0) } }) {
+        return NavigationStack(path: Binding { navigation.path(of: page) } set: { value in
+            navLog.notice("stack writes page=\(page.key, privacy: .public) to=\(value.count) current=\(current)")
+            if current { navigate(value) }
+        }) {
             Group {
                 switch page {
                 case .section(.albums): AlbumGrid(albums: library.filtered)
@@ -1602,6 +1617,7 @@ struct ContentView: View {
     }
 
     private func goBack() {
+        navLog.notice("goBack path=\(path.count) back=\(navigation.back.count)")
         lyrics.settle {
             if !navigation.goBack(leaving: tracker.position) {
                 navigation.show(Array(path.dropLast()), leaving: tracker.position)
@@ -1610,6 +1626,7 @@ struct ContentView: View {
     }
 
     private func goForward() {
+        navLog.notice("goForward forward=\(navigation.forward.count)")
         lyrics.settle { navigation.goForward(leaving: tracker.position) }
     }
 
@@ -1673,6 +1690,7 @@ struct ContentView: View {
             player.toggle()
             return true
         case (53, false) where !path.isEmpty:
+            navLog.notice("press escape page=\(page.key, privacy: .public) path=\(path.count)")
             goBack()
             return true
         default: return false
@@ -1683,7 +1701,12 @@ struct ContentView: View {
     }
 
     private func reveal(_ track: Track) {
-        guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
+        guard let album = library.albums.first(where: { $0.id == track.albumID }) else {
+            navLog.error("reveal: no album for \(track.albumID, privacy: .public)")
+            return
+        }
+
+        navLog.notice("reveal \(track.url.lastPathComponent, privacy: .public) page=\(page.key, privacy: .public)")
         navigate([.album(album)])
     }
 
@@ -1693,6 +1716,7 @@ struct ContentView: View {
     }
 
     private func navigate(_ value: [Route]) {
+        navLog.notice("navigate page=\(page.key, privacy: .public) from=\(path.count) to=\(value.count) last=\(value.last?.key ?? "", privacy: .public)")
         lyrics.settle { navigation.show(value, leaving: tracker.position) }
     }
 
