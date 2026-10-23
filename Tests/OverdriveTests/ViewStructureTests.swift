@@ -33,6 +33,7 @@ struct ViewStructureTests {
         #expect(source.contains("AlbumStrip(albums: library.filtered)"), "the results must show the albums above the songs")
         #expect(strip.contains("player.play(album)\n                                go(.album(album))"), "playing an album from the results must open it")
         #expect(strip.contains("Button { go(.album(album)) }"), "a click on an album must open it")
+        #expect(strip.contains(".fixedSize(horizontal: false, vertical: true)"), "the albums row must take only its own height, not half of the page")
     }
 
     @Test func thePushedScreenKeepsARouteIdentity() throws {

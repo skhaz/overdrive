@@ -644,7 +644,7 @@ struct AlbumStrip: View {
             }
             .padding(16)
         }
-        .scrollIndicators(.automatic)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
