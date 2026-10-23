@@ -565,13 +565,15 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         var random = SystemRandomNumberGenerator()
         var files: [(URL, String)] = []
         var gone: [String] = []
+        var counter = 0
 
         for round in 0..<30 {
             for _ in 0..<Int.random(in: 1...4, using: &random) {
                 let folder = Bool.random(using: &random) ? first : second
                 switch Int.random(in: 0..<5, using: &random) {
                 case 0, 1:
-                    let name = "Album \(Int.random(in: 0..<3, using: &random))/round\(round)n\(files.count)q.mp3"
+                    let name = "Album \(Int.random(in: 0..<3, using: &random))/round\(round)n\(counter)q.mp3"
+                    counter += 1
                     try put(folder, name, samples.randomElement(using: &random)!, date: Double(round))
                     files.append((folder, name))
                 case 2 where !files.isEmpty:
@@ -581,7 +583,8 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
                 case 3 where !files.isEmpty:
                     let index = Int.random(in: 0..<files.count, using: &random)
                     let (folder, name) = files[index]
-                    let renamed = "Album \(Int.random(in: 0..<3, using: &random))/moved\(round)r\(index)k.mp3"
+                    let renamed = "Album \(Int.random(in: 0..<3, using: &random))/moved\(round)r\(counter)k.mp3"
+                    counter += 1
                     try move(folder, name, renamed)
                     files[index] = (folder, renamed)
                     gone.append(URL(filePath: name).deletingPathExtension().lastPathComponent)
