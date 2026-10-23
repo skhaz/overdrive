@@ -642,7 +642,7 @@ extension Notification.Name {
 }
 
 enum Key {
-    case step(Step), enter, menu, delete
+    case step(Step), enter, menu, delete, all
 }
 
 func showMenu(at point: CGPoint? = nil, in table: NSTableView? = nil) {
@@ -723,6 +723,7 @@ struct Keys: ViewModifier {
     var point: ((Int) -> CGPoint?)?
     var extend: ((Int) -> Void)?
     var delete: (() -> Void)?
+    var selectAll: (() -> Void)?
     @Environment(\.active) private var active
 
     func body(content: Content) -> some View {
@@ -743,6 +744,7 @@ struct Keys: ViewModifier {
             case .enter: if let first { enter(first) }
             case .menu: if let first { showMenu(at: point?(first)) }
             case .delete: if first != nil { delete?() }
+            case .all: selectAll?()
             }
         }
     }
@@ -851,6 +853,9 @@ struct AlbumView: View {
             }, enter: { player.start(album.tracks, at: $0) }, point: { CGPoint(x: list.rect.minX + 40, y: list.rect.minY + (CGFloat($0) + 0.5) * Stripe.height) }, extend: { index in
                 selection.insert(album.tracks[index].id)
                 proxy.scrollTo(index)
+            }, selectAll: {
+                selection = Set(album.tracks.map(\.id))
+                anchor = album.tracks.indices.first
             }))
             .modifier(Selected(tracks: album.tracks.filter { selection.contains($0.id) }))
             .modifier(Remember(selection: album.tracks.filter { selection.contains($0.id) }.map(\.url.path)) { paths in
@@ -1032,7 +1037,7 @@ struct SongTable: View {
             }, enter: { player.start(tracks, at: $0) }, extend: { index in
                 selection.insert(tracks[index].id)
                 proxy.scrollTo(tracks[index].id)
-            }))
+            }, selectAll: { selection = Set(tracks.map(\.id)) }))
             .modifier(Selected(tracks: tracks.filter { selection.contains($0.id) }))
 
         }
@@ -1120,7 +1125,7 @@ struct PlaylistView: View {
                 }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
-                }, delete: { removing = rows.filter { selection.contains($0.id) } }))
+                }, delete: { removing = rows.filter { selection.contains($0.id) } }, selectAll: { selection = Set(rows.map(\.id)) }))
                 .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track), playlist: name) { removing = rows.filter { selection.contains($0.id) } })
 
             }
@@ -1198,7 +1203,7 @@ struct LikedView: View {
                 }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
-                }))
+                }, selectAll: { selection = Set(rows.map(\.id)) }))
                 .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
 
             }
@@ -1620,6 +1625,11 @@ struct ContentView: View {
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if flags == .command, event.keyCode == 3 {
             focus = .search
+            return true
+        }
+
+        if flags == .command, event.keyCode == 0, !sidebar, !(window.firstResponder is NSText) {
+            NotificationCenter.default.post(name: .key, object: Key.all)
             return true
         }
 
