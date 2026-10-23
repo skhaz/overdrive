@@ -57,6 +57,19 @@ struct ViewStructureTests {
         #expect(source.contains("window.makeFirstResponder(field)"), "the search field must take the focus for real")
     }
 
+    @Test func commandAInTheSearchFieldSelectsItsText() throws {
+        #expect(try source().contains("if flags == .command, event.keyCode == 0, !sidebar, !Focus.typing(window.firstResponder) {"), "Command-A while editing the search selected all the results")
+    }
+
+    @Test func theQueueEditsThePlayerQueue() throws {
+        let source = try source()
+        let queue = region(source, from: "struct QueueView: View {")
+
+        #expect(source.contains("row(\"Queue\", \"list.bullet\", .queue)"))
+        #expect(queue.contains("player.move(Set(ids.compactMap { Int($0) }), to: index)"), "a drag must reorder the queue")
+        #expect(queue.contains("delete: { remove(selection) }"), "Delete must remove the selected songs")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }

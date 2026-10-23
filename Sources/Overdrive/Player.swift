@@ -179,6 +179,64 @@ final class Player {
         requeue()
     }
 
+    func jump(to position: Int) {
+        guard queue.indices.contains(position) else { return }
+
+        index = position
+        load()
+    }
+
+    func move(_ positions: Set<Int>, to target: Int) {
+        let moved = Player.moved(queue.count, positions, to: target)
+        guard moved != Array(queue.indices) else { return }
+
+        queue = moved.map { queue[$0] }
+        index = moved.firstIndex(of: index) ?? 0
+        if !shuffle { order = queue }
+
+        requeue()
+        save()
+    }
+
+    func remove(_ positions: Set<Int>) {
+        let (kept, current) = Player.removing(queue.count, positions, keeping: index)
+        guard kept.count < queue.count else { return }
+
+        let gone = Set(positions).subtracting(kept).filter(queue.indices.contains).map { queue[$0] }
+        queue = kept.map { queue[$0] }
+        index = current
+
+        if shuffle {
+            for track in gone {
+                if let position = order.firstIndex(of: track) { order.remove(at: position) }
+            }
+        } else {
+            order = queue
+        }
+
+        requeue()
+        save()
+    }
+
+    nonisolated static func moved(_ count: Int, _ positions: Set<Int>, to target: Int) -> [Int] {
+        var order = Array(0..<count)
+        let moved = positions.filter { order.indices.contains($0) }
+        guard !moved.isEmpty else { return order }
+
+        let target = min(max(target, 0), count)
+        let destination = target - order[..<target].count { moved.contains($0) }
+        let dragged = order.filter { moved.contains($0) }
+
+        order.removeAll { moved.contains($0) }
+        order.insert(contentsOf: dragged, at: destination)
+        return order
+    }
+
+    nonisolated static func removing(_ count: Int, _ positions: Set<Int>, keeping index: Int) -> (kept: [Int], index: Int) {
+        let kept = (0..<count).filter { $0 == index || !positions.contains($0) }
+        return (kept, kept.firstIndex(of: index) ?? 0)
+    }
+
     func restore(_ lookup: (String) -> Track?) {
         guard !restored else { return }
         restored = true

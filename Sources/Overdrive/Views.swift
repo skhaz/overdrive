@@ -1156,6 +1156,78 @@ struct SongTable: View {
     }
 }
 
+struct QueueView: View {
+    @Environment(Player.self) private var player
+    @Environment(YouTube.self) private var youTube
+    @Environment(Likes.self) private var likes
+    @State private var selection: Set<Row.ID> = []
+
+    var body: some View {
+        let rows = player.queue.indices.map { Row(id: $0, track: player.queue[$0]) }
+        let now = youTube.showing == nil ? player.index : nil
+
+        if rows.isEmpty {
+            ContentUnavailableView("No Songs", systemImage: "list.bullet", description: Text("Play a song or an album to fill the queue."))
+        } else {
+            ScrollViewReader { proxy in
+                Table(of: Row.self, selection: $selection) {
+                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track)) }
+                    TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.id == now) }
+                    TableColumn("Album") { Cell(text: $0.track.album, playing: $0.id == now) }
+                    TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
+                } rows: {
+                    ForEach(rows) { TableRow($0).draggable(String($0.id)) }
+                        .dropDestination(for: String.self) { index, ids in
+                            selection = []
+                            player.move(Set(ids.compactMap { Int($0) }), to: index)
+                        }
+                }
+                .onDeleteCommand { remove(selection) }
+                .contextMenu(forSelectionType: Row.ID.self) { ids in
+                    let picked = rows.filter { ids.contains($0.id) }
+
+                    if !picked.isEmpty {
+                        Button("Remove from Queue", role: .destructive) { remove(ids) }
+                            .keyboardShortcut(.delete)
+                            .disabled(ids == [player.index])
+                            .buttonStyle(PressableButtonStyle(isDestructive: true))
+                        Divider()
+
+                        if picked.count == 1 {
+                            GoMenu(track: picked[0].track)
+                        }
+
+                        CopyMenu(tracks: picked.map(\.track))
+                        FileMenu(urls: picked.map(\.track.url))
+                    }
+                } primaryAction: { ids in
+                    if let id = ids.first { start(id) }
+                }
+                .onChange(of: player.index, initial: true) {
+                    if rows.indices.contains(player.index) { selection = [player.index] }
+                }
+                .modifier(Keys(count: rows.count, selected: { selection.contains($0) }, select: { index in
+                    selection = [index]
+                    proxy.scrollTo(index)
+                }, enter: start, extend: { index in
+                    selection.insert(index)
+                    proxy.scrollTo(index)
+                }, delete: { remove(selection) }, selectAll: { selection = Set(rows.map(\.id)) }))
+                .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
+            }
+        }
+    }
+
+    private func start(_ position: Int) {
+        if position == player.index { player.toggle() } else { player.jump(to: position) }
+    }
+
+    private func remove(_ positions: Set<Int>) {
+        selection = []
+        player.remove(positions)
+    }
+}
+
 struct PlaylistView: View {
     let name: String
     @Environment(Library.self) private var library
@@ -1444,6 +1516,7 @@ struct ContentView: View {
                         }
 
                         row("Liked Songs", "heart", .liked)
+                        row("Queue", "list.bullet", .queue)
 
                         SwiftUI.Section {
                             ForEach(playlists.names, id: \.self) { name in
@@ -1616,7 +1689,7 @@ struct ContentView: View {
             let routes = saved.compactMap { Route(key: $0, albums: library.albums) }
             navLog.notice("restore page=\(page.key, privacy: .public) routes=\(routes.count)")
             switch page {
-            case .liked, .playlist:
+            case .liked, .playlist, .queue:
                 navigation.restore([])
             default:
                 navigation.restore(routes)
@@ -1685,6 +1758,7 @@ struct ContentView: View {
         case (nil, .section(.songs)): summary(library.tracks)
         case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
         case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
+        case (nil, .queue): summary(player.queue)
         }
     }
 
@@ -1699,6 +1773,7 @@ struct ContentView: View {
                 case .section(.artists): ArtistList(artists: library.artists)
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
+                case .queue: QueueView()
                 case .section(.songs):
                     VStack(spacing: 0) {
                         if !library.query.isEmpty, !library.filtered.isEmpty {
@@ -1766,7 +1841,7 @@ struct ContentView: View {
             return true
         }
 
-        if flags == .command, event.keyCode == 0, !sidebar {
+        if flags == .command, event.keyCode == 0, !sidebar, !Focus.typing(window.firstResponder) {
             NotificationCenter.default.post(name: .key, object: Key.all)
             return true
         }
