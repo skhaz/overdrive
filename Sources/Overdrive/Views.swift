@@ -604,37 +604,55 @@ struct Cover: View {
 }
 
 struct AlbumStrip: View {
+    static let minimum: CGFloat = 280
+    static let spacing: CGFloat = 12
+    static let padding: CGFloat = 16
+
     let albums: [Album]
     @Environment(Player.self) private var player
     @Environment(\.go) private var go
+    @State private var width: CGFloat = 0
+
+    static func width(of count: Int, in available: CGFloat) -> CGFloat {
+        guard count > 0 else { return minimum }
+
+        let room = available - 2 * padding - spacing * CGFloat(count - 1)
+        return max(minimum, room / CGFloat(count))
+    }
 
     var body: some View {
+        let card = Self.width(of: albums.count, in: width)
+
         ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: 16) {
+            LazyHStack(spacing: Self.spacing) {
                 ForEach(albums) { album in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Button { go(.album(album)) } label: {
-                            Cover(track: album.tracks[0]).frame(width: 120).shadow(radius: 2, y: 1)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(album.title)
-                        .overlay(alignment: .bottomTrailing) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Cover(track: album.tracks[0]).frame(width: 96).shadow(radius: 2, y: 1)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(album.title).font(.headline).lineLimit(2)
+                            Text(album.artist).foregroundStyle(.secondary).lineLimit(1)
+                            Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song")].compactMap(\.self).joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Spacer(minLength: 4)
                             Button("Play", systemImage: "play.fill") {
                                 player.play(album)
-                                go(.album(album))
+                                go(.playing(album.tracks[0]))
                             }
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.plain)
-                            .font(.title3)
-                            .frame(width: 32, height: 32)
-                            .background(.regularMaterial, in: .circle)
-                            .padding(6)
+                            .controlSize(.small)
                             .accessibilityLabel("Play \(album.title)")
                         }
-                        Text(album.title).lineLimit(1).padding(.top, 4)
-                        Text(album.artist).lineLimit(1).foregroundStyle(.secondary)
+
+                        Spacer(minLength: 0)
                     }
-                    .frame(width: 120)
+                    .padding(10)
+                    .frame(width: card, height: 116)
+                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                    .contentShape(.rect)
+                    .onTapGesture { go(.album(album)) }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityAction(named: "Open") { go(.album(album)) }
                     .contextMenu {
                         TrackMenu(tracks: album.tracks)
                         CopyMenu(tracks: album.tracks, album: album)
@@ -642,9 +660,10 @@ struct AlbumStrip: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(Self.padding)
         }
         .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }
 

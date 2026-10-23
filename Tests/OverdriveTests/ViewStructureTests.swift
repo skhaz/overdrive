@@ -31,8 +31,9 @@ struct ViewStructureTests {
         let strip = region(source, from: "struct AlbumStrip: View {")
 
         #expect(source.contains("AlbumStrip(albums: library.filtered)"), "the results must show the albums above the songs")
-        #expect(strip.contains("player.play(album)\n                                go(.album(album))"), "playing an album from the results must open it")
-        #expect(strip.contains("Button { go(.album(album)) }"), "a click on an album must open it")
+        #expect(strip.contains("player.play(album)\n                                go(.playing(album.tracks[0]))"), "playing an album from the results must open it on the playing song")
+        #expect(strip.contains(".onTapGesture { go(.album(album)) }"), "a click on an album must open it")
+        #expect(!strip.contains(".overlay"), "a button over another button loses the click")
         #expect(strip.contains(".fixedSize(horizontal: false, vertical: true)"), "the albums row must take only its own height, not half of the page")
     }
 
