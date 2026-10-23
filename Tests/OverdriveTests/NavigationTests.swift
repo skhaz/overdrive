@@ -353,13 +353,31 @@ struct NavigationTests {
         }
     }
 
+    @Test func aNewSearchFromAnOpenScreenShowsTheResults() {
+        let one = Self.album("one")
+        for path in [[Route.album(one)], [.artist("Artist")], [.artist("Artist"), .album(one)]] {
+            var navigation = Navigation(page: albums)
+            navigation.show(path)
+
+            navigation.searched(from: "", to: "a")
+            #expect(navigation.place == Place(page: songs, path: []))
+            navigation.goBack()
+            #expect(navigation.place == Place(page: albums, path: path))
+        }
+    }
+
     @Test func searchingKeepsTheOpenScreen() {
         let one = Self.album("one")
-        var navigation = Navigation(page: albums)
+        var navigation = Navigation(page: songs)
+        navigation.searched(from: "", to: "a")
         navigation.show([.album(one)])
 
-        navigation.searched(from: "", to: "a")
-        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+        navigation.searched(from: "a", to: "ab")
+        #expect(navigation.place == Place(page: songs, path: [.album(one)]))
+
+        var grid = Navigation(page: albums)
+        grid.searched(from: "", to: "a")
+        #expect(grid.place == Place(page: albums, path: []))
 
         var liked = Navigation(page: .liked)
         liked.searched(from: "a", to: "ab")

@@ -145,10 +145,9 @@ nonisolated struct Navigation {
     mutating func searched(from old: String, to new: String, leaving position: Position = Position()) {
         guard old.isEmpty, !new.isEmpty else { return }
 
-        switch place.page {
-        case .liked, .playlist: open(.section(.songs), leaving: position)
-        case .section: break
-        }
+        if case .section = place.page, place.path.isEmpty { return }
+
+        open(.section(.songs), leaving: position)
     }
 
     mutating func restore(_ path: [Route]) {

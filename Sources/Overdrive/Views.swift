@@ -6,6 +6,10 @@ let navLog = Logger(subsystem: "org.delduca.Overdrive", category: "navigation")
 
 enum Focus {
     case search, sidebar
+
+    static func typing(_ responder: NSResponder?) -> Bool {
+        (responder as? NSText)?.isEditable == true
+    }
 }
 
 enum Destination {
@@ -1652,7 +1656,7 @@ struct ContentView: View {
               playlists.naming == nil, deleting == nil else { return false }
 
         let sidebar = focus == .sidebar
-        guard sidebar || focus == .search || !(window.firstResponder is NSText) else {
+        guard sidebar || focus == .search || !Focus.typing(window.firstResponder) else {
             guard event.keyCode == 53, event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
 
             focus = .search
@@ -1682,7 +1686,7 @@ struct ContentView: View {
             return true
         }
 
-        if !(window.firstResponder is NSText), let characters = event.characters, characters.count == 1, let character = characters.first, character.isLetter || character.isNumber {
+        if !Focus.typing(window.firstResponder), let characters = event.characters, characters.count == 1, let character = characters.first, character.isLetter || character.isNumber {
             focus = .search
             search.append(character)
             DispatchQueue.main.async { (window.firstResponder as? NSTextView)?.moveToEndOfDocument(nil) }

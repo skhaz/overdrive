@@ -22,6 +22,10 @@ struct ViewStructureTests {
         #expect(!source.contains(".id(library.version)"), "a scan must not rebuild the screens")
     }
 
+    @Test func onlyAnEditableTextKeepsTheTypedKeys() throws {
+        #expect(!(try source().contains("firstResponder is NSText")), "the selectable lyrics are an NSText; use Focus.typing")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }
