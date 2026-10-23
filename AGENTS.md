@@ -21,7 +21,7 @@ Commit each change when it is complete. Do not ask before you commit.
 ## Build and test
 
 - Build: `./build.sh`. Last.fm: `LASTFM_KEY=... LASTFM_SECRET=... ./build.sh` (key from https://www.last.fm/api/account/create).
-- Every change gets tests. Every bug fix gets a regression test that fails without the fix. Navigation rules live in `Navigation` and are tested in `NavigationTests`; view wiring is checked in `ViewStructureTests`.
+- Every change gets tests: new code and the code it touches. Every bug fix gets a regression test that fails without the fix. Code without tests gets them when it changes.
 - Test: `swift test`. Test the release from Homebrew; a local build is only for debugging or profiling.
 - Sanitizers: `swift test --sanitize=address`, `swift test --sanitize=undefined`, `swift test --sanitize=thread`.
 - Fuzzing: `docker run --rm -v "$PWD":/src:ro -v /tmp/fuzz:/out -e OUT=/out --shm-size=256m swift:latest sh /src/Fuzz/fuzz.sh 300`. Targets in `Fuzz/Targets`, seeds in `Fuzz/Seeds`, crashes in `/tmp/fuzz/crashes`. Do not edit sources while it builds.
