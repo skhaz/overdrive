@@ -99,6 +99,6 @@ Do these steps for each deploy:
 3. Wait for the `Release` action: `gh run watch <run-id> --exit-status`. If it fails, stop and report the failure.
 4. Update this host:
    1. Stop the app: `pkill -x Overdrive`.
-   2. `brew update && brew upgrade --cask overdrive`. Both are needed: the cask lives in a git tap, and `brew update` pulls the new version at once; the automatic API data can lag behind.
+   2. `brew update && brew upgrade --cask overdrive`.
    3. Start it: `open -a Overdrive`.
    4. Check the version: `defaults read /Applications/Overdrive.app/Contents/Info.plist CFBundleShortVersionString`.
