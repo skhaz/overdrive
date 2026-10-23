@@ -292,6 +292,110 @@ struct NavigationTests {
         #expect(navigation.place == Place(page: albums, path: [.album(one)]))
     }
 
+    @Test func aHiddenStackCannotWriteItsPathOnTheCurrentPage() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+        navigation.open(.liked)
+        let back = navigation.back
+
+        navigation.write([.album(one)], on: albums)
+
+        #expect(navigation.place == Place(page: .liked, path: []))
+        #expect(navigation.path(of: albums) == [.album(one)])
+        #expect(navigation.back == back)
+    }
+
+    @Test func theCurrentStackWritesItsPath() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.write([.album(one)], on: albums)
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+        #expect(navigation.back.count == 1)
+
+        navigation.write([.album(one)], on: albums)
+        #expect(navigation.back.count == 1)
+
+        navigation.write([], on: albums)
+        #expect(navigation.path.isEmpty)
+    }
+
+    @Test func playingOnSongsOpensTheAlbum() {
+        let one = Self.album("one")
+        let two = Self.album("two")
+        var navigation = Navigation(page: songs)
+
+        navigation.played(one)
+        #expect(navigation.place == Place(page: songs, path: [.album(one)]))
+
+        navigation.played(two)
+        #expect(navigation.place == Place(page: songs, path: [.album(two)]))
+        navigation.goBack()
+        #expect(navigation.place == Place(page: songs, path: [.album(one)]))
+        navigation.goBack()
+        #expect(navigation.place == Place(page: songs, path: []))
+    }
+
+    @Test func playingTheOpenAlbumKeepsTheHistory() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: songs)
+        navigation.played(one)
+        navigation.played(one)
+
+        #expect(navigation.back.count == 1)
+        #expect(navigation.path == [.album(one)])
+    }
+
+    @Test func playingOnLikedOrAPlaylistStaysOnTheList() {
+        let one = Self.album("one")
+        for page in [Page.liked, mix] {
+            var navigation = Navigation(page: page)
+            navigation.played(one)
+
+            #expect(navigation.place == Place(page: page, path: []))
+            #expect(navigation.back.isEmpty)
+        }
+    }
+
+    @Test func playingOnLikedAfterVisitingAnAlbumStaysOnLiked() {
+        let one = Self.album("one")
+        let two = Self.album("two")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+        navigation.open(.liked)
+
+        navigation.write([.album(one)], on: albums)
+        navigation.played(two)
+
+        #expect(navigation.place == Place(page: .liked, path: []))
+        #expect(navigation.path(of: albums) == [.album(one)])
+    }
+
+    @Test func searchingFromLikedOrAPlaylistOpensTheSongs() {
+        for page in [Page.liked, mix] {
+            var navigation = Navigation(page: page)
+            navigation.searched(from: "", to: "a")
+
+            #expect(navigation.place == Place(page: songs, path: []))
+            navigation.goBack()
+            #expect(navigation.page == page)
+        }
+    }
+
+    @Test func searchingKeepsTheOpenScreen() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+
+        navigation.searched(from: "", to: "a")
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+
+        var liked = Navigation(page: .liked)
+        liked.searched(from: "a", to: "ab")
+        liked.searched(from: "a", to: "")
+        #expect(liked.place == Place(page: .liked, path: []))
+    }
+
     @Test func deletingAPlaylistClosesItsPage() {
         let one = Self.album("one")
         var navigation = Navigation(page: albums)

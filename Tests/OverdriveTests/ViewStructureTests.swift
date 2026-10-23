@@ -33,4 +33,19 @@ struct ViewStructureTests {
         #expect(!region(source, from: "struct PlaylistView").contains("go(.playing"), "a playlist only plays the row")
         #expect(!region(source, from: "struct LikedView").contains("go(.playing"), "the liked songs only play the row")
     }
+
+    @Test func onlyTheCurrentStackWritesThePath() throws {
+        let source = try source()
+
+        #expect(source.contains("navigation.write(value, on: page"), "a stack writes its path only through Navigation.write, which checks the page at call time")
+        #expect(!source.contains("if current { navigate(value) }"), "a captured flag goes stale and lets a hidden stack open its album on another page")
+    }
+
+    @Test func theAlbumOnlyPlaysTheRow() throws {
+        #expect(!region(try source(), from: "struct AlbumView").contains("go(.playing"), "playing a song in an open album stays on that album")
+    }
+
+    @Test func theArrowsMoveTheSidebarWhenItHasTheFocus() throws {
+        #expect(try source().contains("case (123...126, true): return false"), "the sidebar keeps its own arrow keys")
+    }
 }

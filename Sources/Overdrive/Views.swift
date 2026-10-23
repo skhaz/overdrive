@@ -1466,7 +1466,9 @@ struct ContentView: View {
             case .album(let album): value.append(.album(album))
             case .artist(let name): value.append(.artist(name))
             case .playing(let track):
-                reveal(track)
+                guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
+
+                lyrics.settle { navigation.played(album, leaving: tracker.position) }
                 return
             case .search(let text):
                 lyrics.settle {
@@ -1538,8 +1540,9 @@ struct ContentView: View {
         .onChange(of: library.query, initial: true) {
             if search != library.query { search = library.query }
         }
-        .onChange(of: library.query) {
-            navLog.notice("query changed to \(library.query, privacy: .public)")
+        .onChange(of: library.query) { old, new in
+            navLog.notice("query changed to \(new, privacy: .public)")
+            lyrics.settle { navigation.searched(from: old, to: new, leaving: tracker.position) }
             remember()
         }
         .environment(\.tracker, tracker)
@@ -1583,8 +1586,8 @@ struct ContentView: View {
         let path = navigation.path(of: page)
 
         return NavigationStack(path: Binding { navigation.path(of: page) } set: { value in
-            navLog.notice("stack writes page=\(page.key, privacy: .public) to=\(value.count) current=\(current)")
-            if current { navigate(value) }
+            navLog.notice("stack writes page=\(page.key, privacy: .public) to=\(value.count) current=\(page == navigation.page)")
+            lyrics.settle { navigation.write(value, on: page, leaving: tracker.position) }
         }) {
             Group {
                 switch page {
@@ -1680,6 +1683,7 @@ struct ContentView: View {
         case (48, true), (36, true), (76, true):
             focus = .search
             return true
+        case (123...126, true): return false
         case (126, _): key = .step(flags == .shift ? .extendUp : .up)
         case (125, _): key = .step(flags == .shift ? .extendDown : .down)
         case (123, _) where !typing: key = .step(.left)
