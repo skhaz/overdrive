@@ -9,7 +9,7 @@ enum Destination {
     case album(Album)
     case artist(String)
     case search(String)
-    case playing
+    case playing(Track)
 }
 
 struct GoAction: Equatable {
@@ -1031,7 +1031,7 @@ struct SongTable: View {
                 guard let id = ids.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
 
                 player.play(tracks, at: index)
-                go(.playing)
+                go(.playing(tracks[index]))
             }
             .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                 if let track, tracks.contains(track) { selection = [track.id] }
@@ -1039,7 +1039,10 @@ struct SongTable: View {
             .modifier(Keys(count: tracks.count, selected: { selection.contains(tracks[$0].id) }, select: { index in
                 selection = [tracks[index].id]
                 proxy.scrollTo(tracks[index].id)
-            }, enter: { player.start(tracks, at: $0) }, extend: { index in
+            }, enter: { index in
+                player.start(tracks, at: index)
+                go(.playing(tracks[index]))
+            }, extend: { index in
                 selection.insert(tracks[index].id)
                 proxy.scrollTo(tracks[index].id)
             }, selectAll: { selection = Set(tracks.map(\.id)) }))
@@ -1106,7 +1109,7 @@ struct PlaylistView: View {
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
                     player.play(rows.map(\.track), at: index)
-                    go(.playing)
+                    go(.playing(rows[index].track))
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1127,7 +1130,10 @@ struct PlaylistView: View {
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
-                }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
+                }, enter: { index in
+                    player.start(rows.map(\.track), at: index)
+                    go(.playing(rows[index].track))
+                }, extend: { index in
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
                 }, delete: { removing = rows.filter { selection.contains($0.id) } }, selectAll: { selection = Set(rows.map(\.id)) }))
@@ -1193,7 +1199,7 @@ struct LikedView: View {
                     guard let id = ids.first, let index = rows.firstIndex(where: { $0.id == id }) else { return }
 
                     player.play(rows.map(\.track), at: index)
-                    go(.playing)
+                    go(.playing(rows[index].track))
                 }
                 .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
                     guard let track else { return }
@@ -1205,7 +1211,10 @@ struct LikedView: View {
                 .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
                     selection = [rows[index].id]
                     proxy.scrollTo(rows[index].id)
-                }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
+                }, enter: { index in
+                    player.start(rows.map(\.track), at: index)
+                    go(.playing(rows[index].track))
+                }, extend: { index in
                     selection.insert(rows[index].id)
                     proxy.scrollTo(rows[index].id)
                 }, selectAll: { selection = Set(rows.map(\.id)) }))
@@ -1462,8 +1471,8 @@ struct ContentView: View {
             switch destination {
             case .album(let album): value.append(.album(album))
             case .artist(let name): value.append(.artist(name))
-            case .playing:
-                if let track = player.current { reveal(track) }
+            case .playing(let track):
+                reveal(track)
                 return
             case .search(let text):
                 lyrics.settle {
@@ -1594,6 +1603,7 @@ struct ContentView: View {
                     case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name })
                     }
                 }
+                .id(route)
                 .environment(\.active, current && path.last == route)
                 .environment(\.restore, current && path.last == route ? navigation.place.position : Position())
                 .navigationTitle(title)

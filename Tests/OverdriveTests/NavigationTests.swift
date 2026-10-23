@@ -52,6 +52,16 @@ struct NavigationTests {
         #expect(navigation.back.count == 3)
     }
 
+    @Test func goingBackThenShowingAnotherAlbumReplacesThePath() {
+        var navigation = Navigation(page: songs)
+        navigation.show([.album(Self.album("one"))])
+        navigation.goBack()
+        navigation.show([.album(Self.album("two"))])
+
+        #expect(navigation.path == [.album(Self.album("two"))])
+        #expect(navigation.back == [Place(page: songs, path: [])])
+    }
+
     @Test func newVisitClearsForward() {
         var navigation = Navigation(page: albums)
         navigation.open(songs)
