@@ -1332,6 +1332,7 @@ struct ContentView: View {
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
     @Environment(YouTube.self) private var youTube
+    @Environment(\.openWindow) private var openWindow
     @State private var lyrics = Lyrics(cache: Lyrics.directory(in: nil))
     @State private var navigation = Navigation(page: Page(key: Player.saved?.page ?? "") ?? .section(.albums))
     @State private var tracker = Tracker()
@@ -1538,7 +1539,7 @@ struct ContentView: View {
         }
         .onChange(of: lyrics.floating) {
             if lyrics.floating {
-                let panel = self.panel ?? LyricsPanel(lyrics: lyrics, player: player)
+                let panel = self.panel ?? LyricsPanel(lyrics: lyrics, player: player) { openWindow(id: "main") }
                 self.panel = panel
                 panel.show()
             } else {

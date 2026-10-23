@@ -79,4 +79,15 @@ struct ViewStructureTests {
         #expect(selected.contains("if let track = picked ?? player.current { lyrics.show(track) }"), "without one selected song the lyrics show the current song")
         #expect(selected.contains("lyrics.selected = picked != nil"), "the top screen tells if one song is selected")
     }
+
+    @Test func theFloatingLyricsBringTheAppBack() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let panel = try String(contentsOf: root.appending(path: "Sources/Overdrive/LyricsPanel.swift"), encoding: .utf8)
+
+        #expect(panel.contains("Button(\"Show Overdrive\", systemImage: \"macwindow\", action: open)"), "the panel has a button that shows the main window")
+        #expect(panel.contains(".onTapGesture(count: 2, perform: open)"), "a double-click on the song shows the main window")
+        #expect(panel.contains("NSApp.activate()"), "the panel does not activate the app by itself")
+        #expect(panel.contains(".nonactivatingPanel"), "a click on the panel must not take the focus")
+        #expect(try source().contains("LyricsPanel(lyrics: lyrics, player: player) { openWindow(id: \"main\") }"), "the main window opens again when it was closed")
+    }
 }

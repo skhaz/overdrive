@@ -4,7 +4,7 @@ import SwiftUI
 final class LyricsPanel {
     private let window: NSPanel
 
-    init(lyrics: Lyrics, player: Player) {
+    init(lyrics: Lyrics, player: Player, open: @escaping () -> Void) {
         let width: CGFloat = 340
         let height: CGFloat = 380
         let screen = NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
@@ -25,7 +25,10 @@ final class LyricsPanel {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.identifier = NSUserInterfaceItemIdentifier("lyrics")
-        window.contentView = NSHostingView(rootView: FloatingLyrics().environment(lyrics).environment(player))
+        window.contentView = NSHostingView(rootView: FloatingLyrics(open: {
+            NSApp.activate()
+            open()
+        }).environment(lyrics).environment(player))
     }
 
     func show() {
@@ -54,6 +57,7 @@ final class LyricsPanel {
 struct FloatingLyrics: View {
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
+    let open: () -> Void
     @State private var scrub: Double?
     @State private var editing = false
 
@@ -66,13 +70,15 @@ struct FloatingLyrics: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 10) {
-                    Cover(track: track).frame(width: 56)
+                    Cover(track: track).frame(width: 56).onTapGesture(count: 2, perform: open)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.title).font(.headline).lineLimit(2)
                         Text(track.artist).lineLimit(1)
                         Text(track.album).foregroundStyle(.secondary).lineLimit(1)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2, perform: open)
 
                     Spacer()
 
@@ -100,6 +106,11 @@ struct FloatingLyrics: View {
                                 .buttonStyle(.borderless)
                                 .controlSize(.small)
                         }
+
+                        Button("Show Overdrive", systemImage: "macwindow", action: open)
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
 
                         Button("Put the lyrics back in the window", systemImage: "xmark") { lyrics.floating = false }
                             .labelStyle(.iconOnly)
