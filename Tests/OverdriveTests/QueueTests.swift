@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Overdrive
 
@@ -63,6 +64,27 @@ struct QueueTests {
         #expect(added.items == ["b", "c", "a", "d"])
         #expect(added.index == 1)
         #expect(added.marks == [false, false, true, true])
+    }
+
+    @Test func removingTheCurrentSongAndAllNextOnesClearsTheQueue() {
+        #expect(Player.clears(5, [2, 3, 4], from: 2))
+        #expect(Player.clears(3, [0, 1, 2], from: 0))
+        #expect(!Player.clears(5, [3, 4], from: 2), "without the song that plays, the queue stays")
+        #expect(!Player.clears(5, [2, 4], from: 2))
+        #expect(!Player.clears(0, [], from: 0))
+    }
+
+    @Test func clearingResetsThePlayer() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(contentsOf: root.appending(path: "Sources/Overdrive/Player.swift"), encoding: .utf8)
+        let start = try #require(source.range(of: "    func clear() {"))
+        let body = source[start.upperBound...].prefix { _ in true }
+        let clear = String(body[..<body.range(of: "\n    }\n")!.lowerBound])
+
+        for line in ["player.removeAllItems()", "item = nil", "queue = []", "order = []", "added = []", "playing = false", "position = 0", "update()", "save()"] {
+            #expect(clear.contains(line), "Clear Queue must reset the player: \(line)")
+        }
+        #expect(!clear.contains("pause()"), "clearing resets the player, it does not pause it")
     }
 
     @Test func theQueuePageKeepsItsKey() {

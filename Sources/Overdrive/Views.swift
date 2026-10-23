@@ -743,6 +743,7 @@ extension Notification.Name {
     static let reveal = Notification.Name("reveal")
     static let editLyrics = Notification.Name("editLyrics")
     static let floatLyrics = Notification.Name("floatLyrics")
+    static let clearQueue = Notification.Name("clearQueue")
 }
 
 enum Key {
@@ -1161,6 +1162,23 @@ struct SongTable: View {
     }
 }
 
+struct ClearQueue: ViewModifier {
+    @Binding var clearing: Bool
+    @Environment(Player.self) private var player
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog("Clear the queue?", isPresented: $clearing) {
+                Button("Clear Queue", role: .destructive, action: player.clear)
+            } message: {
+                Text("The song stops and the queue empties.")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .clearQueue)) { _ in
+                if !player.queue.isEmpty { clearing = true }
+            }
+    }
+}
+
 struct QueueView: View {
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
@@ -1194,7 +1212,9 @@ struct QueueView: View {
                     if !picked.isEmpty {
                         Button("Remove from Queue", role: .destructive) { remove(ids) }
                             .keyboardShortcut(.delete)
-                            .disabled(ids == [player.index])
+                            .disabled(ids == [player.index] && rows.count > 1)
+                            .buttonStyle(PressableButtonStyle(isDestructive: true))
+                        Button("Clear Queue", role: .destructive) { NotificationCenter.default.post(name: .clearQueue, object: nil) }
                             .buttonStyle(PressableButtonStyle(isDestructive: true))
                         Divider()
 
@@ -1232,6 +1252,10 @@ struct QueueView: View {
     }
 
     private func remove(_ positions: Set<Int>) {
+        guard !Player.clears(player.queue.count, positions, from: player.index) else {
+            return NotificationCenter.default.post(name: .clearQueue, object: nil)
+        }
+
         selection = []
         player.remove(positions)
     }
@@ -1507,6 +1531,7 @@ struct ContentView: View {
     @State private var tracker = Tracker()
     @State private var name = ""
     @State private var deleting: String?
+    @State private var clearing = false
     @State private var saved = Player.saved?.path
     @State private var monitor: Any?
     @State private var swipe: CGFloat = 0
@@ -1595,6 +1620,13 @@ struct ContentView: View {
                             .keyboardShortcut("]")
                             .disabled(navigation.forward.isEmpty)
                     }
+                    if page == .queue {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Clear Queue", systemImage: "trash") { clearing = true }
+                                .help("Clear Queue")
+                                .disabled(player.queue.isEmpty)
+                        }
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button(player.lyrics ? "Hide Lyrics" : "Show Lyrics", systemImage: player.lyrics ? "quote.bubble.fill" : "quote.bubble") { player.lyrics.toggle() }
                             .help(player.lyrics ? "Hide Lyrics" : "Show Lyrics")
@@ -1667,6 +1699,7 @@ struct ContentView: View {
 
             navigate(value)
         })
+        .modifier(ClearQueue(clearing: $clearing))
         .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
             if let current = player.current { reveal(current) }
         }

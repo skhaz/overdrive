@@ -222,7 +222,31 @@ final class Player {
         save()
     }
 
+    func clear() {
+        player.removeAllItems()
+        item = nil
+        upcoming = nil
+        status = nil
+        queue = []
+        order = []
+        added = []
+        index = 0
+        playing = false
+        position = 0
+        played = 0
+        scrobbled = false
+        artwork = nil
+        update()
+        save()
+    }
+
+    nonisolated static func clears(_ count: Int, _ positions: Set<Int>, from index: Int) -> Bool {
+        count > 0 && (index..<count).allSatisfy(positions.contains)
+    }
+
     func remove(_ positions: Set<Int>) {
+        if Player.clears(queue.count, positions, from: index) { return clear() }
+
         let (kept, current) = Player.removing(queue.count, positions, keeping: index)
         guard kept.count < queue.count else { return }
 

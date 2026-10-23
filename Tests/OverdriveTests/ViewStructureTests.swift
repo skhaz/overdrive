@@ -79,6 +79,15 @@ struct ViewStructureTests {
         #expect(source.contains("lyrics.enabled = player.lyrics"), "hidden lyrics stop all work")
     }
 
+    @Test func clearingTheQueueAsksFirst() throws {
+        let source = try source()
+        let queue = region(source, from: "struct QueueView: View {")
+
+        #expect(source.contains("Button(\"Clear Queue\", systemImage: \"trash\") { clearing = true }"), "the Queue page must show a clear button that asks first")
+        #expect(source.contains("Button(\"Clear Queue\", role: .destructive, action: player.clear)"), "only the confirmation clears the queue")
+        #expect(!queue.contains("player.clear"), "the Queue page never clears without the confirmation")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }

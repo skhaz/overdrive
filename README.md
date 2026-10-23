@@ -17,7 +17,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Same volume for all songs**, so you do not have to change the volume between songs.
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.
-- **Playlists** and a queue (Play Next and Add to Queue). The Queue in the sidebar shows the song that plays and the songs that come next. Drag them to change the order, or press Delete to remove them.
+- **Playlists** and a queue (Play Next and Add to Queue). The Queue in the sidebar shows the song that plays and the songs that come next. Drag them to change the order, or press Delete to remove them. Click the trash button to clear the queue. After you confirm, the song stops and the player starts again with no song.
 - **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar.
 - **Continues where you stopped.** When you open the app again, it shows the same song, at the same time.
 - **Keyboard media keys** and Control Center play, pause, and change songs.
