@@ -26,6 +26,15 @@ struct ViewStructureTests {
         #expect(!(try source().contains("firstResponder is NSText")), "the selectable lyrics are an NSText; use Focus.typing")
     }
 
+    @Test func theSearchResultsShowTheMatchedAlbums() throws {
+        let source = try source()
+        let strip = region(source, from: "struct AlbumStrip: View {")
+
+        #expect(source.contains("AlbumStrip(albums: library.filtered)"), "the results must show the albums above the songs")
+        #expect(strip.contains("player.play(album)\n                                go(.album(album))"), "playing an album from the results must open it")
+        #expect(strip.contains("Button { go(.album(album)) }"), "a click on an album must open it")
+    }
+
     @Test func thePushedScreenKeepsARouteIdentity() throws {
         #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
     }

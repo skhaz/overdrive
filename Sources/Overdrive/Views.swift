@@ -603,6 +603,51 @@ struct Cover: View {
     }
 }
 
+struct AlbumStrip: View {
+    let albums: [Album]
+    @Environment(Player.self) private var player
+    @Environment(\.go) private var go
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: 16) {
+                ForEach(albums) { album in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Button { go(.album(album)) } label: {
+                            Cover(track: album.tracks[0]).frame(width: 120).shadow(radius: 2, y: 1)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(album.title)
+                        .overlay(alignment: .bottomTrailing) {
+                            Button("Play", systemImage: "play.fill") {
+                                player.play(album)
+                                go(.album(album))
+                            }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.plain)
+                            .font(.title3)
+                            .frame(width: 32, height: 32)
+                            .background(.regularMaterial, in: .circle)
+                            .padding(6)
+                            .accessibilityLabel("Play \(album.title)")
+                        }
+                        Text(album.title).lineLimit(1).padding(.top, 4)
+                        Text(album.artist).lineLimit(1).foregroundStyle(.secondary)
+                    }
+                    .frame(width: 120)
+                    .contextMenu {
+                        TrackMenu(tracks: album.tracks)
+                        CopyMenu(tracks: album.tracks, album: album)
+                        FileMenu(urls: album.tracks.map(\.url))
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .scrollIndicators(.automatic)
+    }
+}
+
 struct AlbumGrid: View {
     let albums: [Album]
     @Environment(\.go) private var go
@@ -737,6 +782,11 @@ extension Player {
     func start(_ tracks: [Track], at index: Int) {
         if tracks[index] == current { toggle() } else { play(tracks, at: index) }
     }
+
+    func play(_ album: Album) {
+        shuffle = false
+        play(album.tracks)
+    }
 }
 
 struct Keys: ViewModifier {
@@ -810,7 +860,7 @@ struct AlbumView: View {
                                 .foregroundStyle(.secondary)
 
                             HStack {
-                                Button("Play", systemImage: "play.fill") { player.shuffle = false; player.play(album.tracks) }
+                                Button("Play", systemImage: "play.fill") { player.play(album) }
                                 Button("Shuffle", systemImage: "shuffle") { player.shuffle = true; player.play(album.tracks, at: .random(in: album.tracks.indices)) }
                             }
                             .controlSize(.large)
@@ -1609,7 +1659,14 @@ struct ContentView: View {
                 case .section(.artists): ArtistList(artists: library.artists)
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
-                case .section(.songs): SongTable(tracks: library.tracks).id(library.query)
+                case .section(.songs):
+                    VStack(spacing: 0) {
+                        if !library.query.isEmpty, !library.filtered.isEmpty {
+                            AlbumStrip(albums: library.filtered)
+                            Divider()
+                        }
+                        SongTable(tracks: library.tracks).id(library.query)
+                    }
                 }
             }
 

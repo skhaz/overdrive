@@ -50,7 +50,7 @@ Commit each change when it is complete. Do not ask before you commit.
 - The scan walks by the real path. Same date and size: cached tags. New size: read again. Same size, new date: hash (SHA-256); the same hash keeps the tags. New files get no hash. Gone or unreadable files leave the cache.
 - Scans run one at a time. Each scan writes its adds, changes, removes, and covers in one transaction (`BEGIN IMMEDIATE` to `COMMIT`, or `ROLLBACK`). A failed write keeps the last good state.
 - The scan is progressive: first the cache, then the walk, then batches of 256 files. `Library.load` calls `progress` after each step and stops without a write when a newer scan replaces it. Adding a folder scans at once.
-- Search: fuzzy matches; FTS matches (words of 3+ characters) come first, in `bm25` order.
+- Search: fuzzy matches; FTS matches (words of 3+ characters) come first, in `bm25` order. The results (Songs with a query) show the matched albums above the songs (`AlbumStrip`). A click on an album opens it; its play button plays it from the first song, shuffle off, and opens it.
 
 ## Atomic writes
 
