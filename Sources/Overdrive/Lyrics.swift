@@ -25,7 +25,6 @@ final class Lyrics {
     private(set) var original = ""
     private(set) var saved = ""
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
-    var visible = false
     var floating = false
     private(set) var remote = false
     var hasLocalLyrics: Bool {
@@ -53,7 +52,7 @@ final class Lyrics {
     }
 
     func show(_ track: Track) {
-        guard !visible || track != self.track else { return }
+        guard track != self.track else { return }
 
         settle { self.open(track) }
     }
@@ -165,7 +164,6 @@ final class Lyrics {
 
     private func open(_ track: Track) {
         self.track = track
-        visible = true
 
         if let lyrics = Self.read(file(track)), !lyrics.isEmpty {
             saved = lyrics

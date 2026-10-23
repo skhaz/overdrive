@@ -116,6 +116,14 @@ nonisolated struct Navigation {
     var page: Page { place.page }
     var path: [Route] { place.path }
 
+    var lyrics: Bool {
+        switch (place.path.last, place.page) {
+        case (.album, _): true
+        case (.artist, _), (nil, .section(.albums)), (nil, .section(.artists)): false
+        case (nil, .section(.songs)), (nil, .liked), (nil, .playlist): true
+        }
+    }
+
     func path(of page: Page) -> [Route] {
         page == place.page ? place.path : paths[page] ?? []
     }

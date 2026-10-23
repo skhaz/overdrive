@@ -1726,7 +1726,7 @@ struct ContentView: View {
     }
 
     private var shown: Bool {
-        lyrics.visible && lyrics.track != nil
+        player.current != nil && lyrics.track != nil && navigation.lyrics
     }
 }
 

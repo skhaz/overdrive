@@ -64,4 +64,11 @@ struct ViewStructureTests {
     @Test func typingKeepsTheFirstCharacter() throws {
         #expect(try source().contains("moveToEndOfDocument"), "the search field selects its text when it takes the focus, so the next key would replace the first one")
     }
+
+    @Test func theLyricsLoadForEverySongAndShowOnlyWithASong() throws {
+        let source = try source()
+
+        #expect(source.contains("if let current = player.current { lyrics.show(current) }"), "every new current song starts its lyrics lookup")
+        #expect(source.contains("player.current != nil && lyrics.track != nil && navigation.lyrics"), "the docked lyrics need a current song and a song list")
+    }
 }

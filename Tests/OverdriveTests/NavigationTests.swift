@@ -367,6 +367,20 @@ struct NavigationTests {
         #expect(liked.place == Place(page: .liked, path: []))
     }
 
+    @Test func showsTheLyricsOnlyOnSongLists() {
+        let one = Self.album("one")
+
+        #expect(!Navigation(page: albums).lyrics)
+        #expect(!Navigation(page: .section(.artists)).lyrics)
+        #expect(Navigation(page: songs).lyrics)
+        #expect(Navigation(page: .liked).lyrics)
+        #expect(Navigation(page: mix).lyrics)
+        #expect(Navigation(page: albums, path: [.album(one)]).lyrics)
+        #expect(!Navigation(page: .section(.artists), path: [.artist("Artist")]).lyrics)
+        #expect(Navigation(page: .section(.artists), path: [.artist("Artist"), .album(one)]).lyrics)
+        #expect(Navigation(page: songs, path: [.album(one)]).lyrics)
+    }
+
     @Test func deletingAPlaylistClosesItsPage() {
         let one = Self.album("one")
         var navigation = Navigation(page: albums)
