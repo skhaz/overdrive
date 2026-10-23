@@ -1538,7 +1538,6 @@ struct ContentView: View {
             if search != library.query { search = library.query }
         }
         .onChange(of: library.query) {
-            navigate([])
             remember()
         }
         .environment(\.tracker, tracker)
