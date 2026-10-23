@@ -292,34 +292,6 @@ struct NavigationTests {
         #expect(navigation.place == Place(page: albums, path: [.album(one)]))
     }
 
-    @Test func aHiddenStackCannotWriteItsPathOnTheCurrentPage() {
-        let one = Self.album("one")
-        var navigation = Navigation(page: albums)
-        navigation.show([.album(one)])
-        navigation.open(.liked)
-        let back = navigation.back
-
-        navigation.write([.album(one)], on: albums)
-
-        #expect(navigation.place == Place(page: .liked, path: []))
-        #expect(navigation.path(of: albums) == [.album(one)])
-        #expect(navigation.back == back)
-    }
-
-    @Test func theCurrentStackWritesItsPath() {
-        let one = Self.album("one")
-        var navigation = Navigation(page: albums)
-        navigation.write([.album(one)], on: albums)
-        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
-        #expect(navigation.back.count == 1)
-
-        navigation.write([.album(one)], on: albums)
-        #expect(navigation.back.count == 1)
-
-        navigation.write([], on: albums)
-        #expect(navigation.path.isEmpty)
-    }
-
     @Test func playingOnSongsOpensTheAlbum() {
         let one = Self.album("one")
         let two = Self.album("two")
@@ -364,7 +336,6 @@ struct NavigationTests {
         navigation.show([.album(one)])
         navigation.open(.liked)
 
-        navigation.write([.album(one)], on: albums)
         navigation.played(two)
 
         #expect(navigation.place == Place(page: .liked, path: []))

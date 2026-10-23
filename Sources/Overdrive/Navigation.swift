@@ -128,12 +128,6 @@ nonisolated struct Navigation {
         visit(Place(page: place.page, path: path), leaving: position)
     }
 
-    mutating func write(_ path: [Route], on page: Page, leaving position: Position = Position()) {
-        guard page == place.page, path != place.path else { return }
-
-        show(path, leaving: position)
-    }
-
     mutating func played(_ album: Album, leaving position: Position = Position()) {
         guard case .section = place.page else { return }
 

@@ -600,7 +600,7 @@ struct AlbumGrid: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 20)], spacing: 24) {
                     ForEach(albums) { album in
-                        NavigationLink(value: Route.album(album)) {
+                        Button { go(.album(album)) } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Cover(track: album.tracks[0])
                                     .shadow(radius: 2, y: 1)
@@ -1384,11 +1384,10 @@ struct ContentView: View {
                             ZStack {
                                 ForEach(navigation.pages, id: \.self) { page in
                                     stack(page)
-                                        .opacity(page == self.page ? 1 : 0)
-                                        .allowsHitTesting(page == self.page)
-                                        .accessibilityHidden(page != self.page)
                                 }
                             }
+                            .navigationTitle(title)
+                            .navigationSubtitle(subtitle)
                         }
                     }
                     .overlay(alignment: swipe > 0 ? .leading : .trailing) {
@@ -1585,38 +1584,39 @@ struct ContentView: View {
         let current = page == self.page
         let path = navigation.path(of: page)
 
-        return NavigationStack(path: Binding { navigation.path(of: page) } set: { value in
-            navLog.notice("stack writes page=\(page.key, privacy: .public) to=\(value.count) current=\(page == navigation.page)")
-            lyrics.settle { navigation.write(value, on: page, leaving: tracker.position) }
-        }) {
-            Group {
+        return ZStack {
+            screen(current && path.isEmpty, current && path.isEmpty ? navigation.place.position : Position()) {
                 switch page {
                 case .section(.albums): AlbumGrid(albums: library.filtered)
                 case .section(.artists): ArtistList(artists: library.artists)
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
-                case .section(.songs): SongTable(tracks: library.tracks)
+                case .section(.songs): SongTable(tracks: library.tracks).id(library.query)
                 }
             }
-            .environment(\.active, current && path.isEmpty)
-            .environment(\.restore, current && path.isEmpty ? navigation.place.position : Position())
-            .navigationTitle(title)
-            .navigationSubtitle(subtitle)
-            .navigationDestination(for: Route.self) { route in
-                Group {
+
+            ForEach(path.indices, id: \.self) { index in
+                let route = path[index]
+                let top = current && index == path.count - 1
+
+                screen(top, top ? navigation.place.position : Position()) {
                     switch route {
                     case .album(let album): AlbumView(album: album)
                     case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name })
                     }
                 }
                 .id(route)
-                .environment(\.active, current && path.last == route)
-                .environment(\.restore, current && path.last == route ? navigation.place.position : Position())
-                .navigationTitle(title)
-                .navigationSubtitle(subtitle)
-                .navigationBarBackButtonHidden()
             }
         }
+    }
+
+    private func screen(_ top: Bool, _ position: Position, @ViewBuilder _ content: () -> some View) -> some View {
+        content()
+            .environment(\.active, top)
+            .environment(\.restore, position)
+            .opacity(top ? 1 : 0)
+            .allowsHitTesting(top)
+            .accessibilityHidden(!top)
     }
 
     private func goBack() {
@@ -1671,6 +1671,7 @@ struct ContentView: View {
         if !(window.firstResponder is NSText), let characters = event.characters, characters.count == 1, let character = characters.first, character.isLetter || character.isNumber {
             focus = .search
             search.append(character)
+            DispatchQueue.main.async { (window.firstResponder as? NSTextView)?.moveToEndOfDocument(nil) }
             return true
         }
 
@@ -1693,7 +1694,7 @@ struct ContentView: View {
         case (49, false) where !typing:
             player.toggle()
             return true
-        case (53, false) where !path.isEmpty:
+        case (53, _) where !path.isEmpty:
             navLog.notice("press escape page=\(page.key, privacy: .public) path=\(path.count)")
             goBack()
             return true

@@ -15,11 +15,11 @@ struct ViewStructureTests {
         return String(rest[..<end])
     }
 
-    @Test func theStackRootNeverChangesItsIdentity() throws {
+    @Test func theSongsTableIsRebuiltWhenTheQueryChanges() throws {
         let source = try source()
 
-        #expect(!source.contains(".id(library.query)"), "the stack root must not be recreated when the query changes")
-        #expect(!source.contains(".id(library.version)"), "the stack root must not be recreated when the library changes")
+        #expect(source.contains("SongTable(tracks: library.tracks).id(library.query)"), "a SwiftUI Table that diffs from a few rows to the whole library hangs the main thread")
+        #expect(!source.contains(".id(library.version)"), "a scan must not rebuild the screens")
     }
 
     @Test func thePushedScreenKeepsARouteIdentity() throws {
@@ -34,11 +34,19 @@ struct ViewStructureTests {
         #expect(!region(source, from: "struct LikedView").contains("go(.playing"), "the liked songs only play the row")
     }
 
-    @Test func onlyTheCurrentStackWritesThePath() throws {
+    @Test func noPageUsesASwiftUINavigationStack() throws {
         let source = try source()
 
-        #expect(source.contains("navigation.write(value, on: page"), "a stack writes its path only through Navigation.write, which checks the page at call time")
-        #expect(!source.contains("if current { navigate(value) }"), "a captured flag goes stale and lets a hidden stack open its album on another page")
+        #expect(!source.contains("NavigationStack"), "a NavigationSplitView detail links only one stack, so a push on one page goes to another page")
+        #expect(!source.contains("NavigationLink"), "a NavigationLink pushes into the stack SwiftUI picks, not the stack of its page")
+        #expect(!source.contains("navigationDestination"), "each page draws its own pushed screens")
+    }
+
+    @Test func onlyTheTopScreenIsActive() throws {
+        let source = try source()
+
+        #expect(source.contains("let top = current && index == path.count - 1"), "only the last pushed screen of the current page reacts to keys")
+        #expect(source.contains("screen(current && path.isEmpty"), "the root reacts only when nothing is pushed")
     }
 
     @Test func theAlbumOnlyPlaysTheRow() throws {
@@ -47,5 +55,13 @@ struct ViewStructureTests {
 
     @Test func theArrowsMoveTheSidebarWhenItHasTheFocus() throws {
         #expect(try source().contains("case (123...126, true): return false"), "the sidebar keeps its own arrow keys")
+    }
+
+    @Test func escapeGoesBackFromTheSidebar() throws {
+        #expect(try source().contains("case (53, _) where !path.isEmpty:"), "Escape goes back also when the sidebar has the focus")
+    }
+
+    @Test func typingKeepsTheFirstCharacter() throws {
+        #expect(try source().contains("moveToEndOfDocument"), "the search field selects its text when it takes the focus, so the next key would replace the first one")
     }
 }
