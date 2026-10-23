@@ -4,9 +4,9 @@ import Testing
 @testable import Overdrive
 
 struct HotKeyTests {
-    @Test func theFindShortcutIsControlOptionCommandF() {
-        #expect(HotKey.key == UInt32(kVK_ANSI_F))
-        #expect(HotKey.modifiers == UInt32(controlKey | optionKey | cmdKey))
+    @Test func theFindShortcutIsOptionSpace() {
+        #expect(HotKey.key == UInt32(kVK_Space))
+        #expect(HotKey.modifiers == UInt32(optionKey), "two keys only; Control-Command-F is full screen")
     }
 
     @Test func theDelegateRegistersTheShortcutAndShowsTheWindow() throws {
@@ -16,6 +16,6 @@ struct HotKeyTests {
         #expect(source.contains("hotKey = HotKey { [weak self] in self?.find() }"))
         #expect(source.contains("NSApp.activate()"))
         #expect(source.contains("open?(id: \"main\")"), "a closed main window must open again")
-        #expect(source.contains(".keyboardShortcut(\"f\", modifiers: [.control, .option, .command])"), "the menu shows the same shortcut")
+        #expect(source.contains(".keyboardShortcut(.space, modifiers: .option)"), "the menu shows the same shortcut")
     }
 }

@@ -2,8 +2,8 @@ import AppKit
 import Carbon.HIToolbox
 
 final class HotKey {
-    nonisolated static let key = UInt32(kVK_ANSI_F)
-    nonisolated static let modifiers = UInt32(controlKey | optionKey | cmdKey)
+    nonisolated static let key = UInt32(kVK_Space)
+    nonisolated static let modifiers = UInt32(optionKey)
 
     private let action: () -> Void
     private var reference: EventHotKeyRef?

@@ -148,7 +148,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 | Option-Command-S | Shuffle on or off |
 | Option-Command-R | Repeat: off, all songs, or one song |
 | Command-E | Edit the lyrics |
-| Control-Option-Command-F | From any app: open Overdrive and search |
+| Option-Space | From any app: open Overdrive and search |
 | Command-U | Show the lyrics in a floating window |
 | Option-Command-Y | Show or hide the lyrics |
 | Command-N | New playlist |

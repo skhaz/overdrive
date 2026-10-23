@@ -134,7 +134,7 @@ struct Overdrive: App {
 
             CommandGroup(after: .textEditing) {
                 Button("Find Song") { delegate.find() }
-                    .keyboardShortcut("f", modifiers: [.control, .option, .command])
+                    .keyboardShortcut(.space, modifiers: .option)
                 Button("Clear Search") { library.query = "" }
                     .keyboardShortcut("k")
                     .disabled(library.query.isEmpty)
