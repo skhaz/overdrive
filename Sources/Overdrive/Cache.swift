@@ -140,7 +140,10 @@ nonisolated final class Cache {
 
     @discardableResult
     func save(_ changes: [Change], removed: [String], covers: [String: Data]) -> Bool {
-        guard exec("BEGIN IMMEDIATE") else { return false }
+        guard exec("BEGIN IMMEDIATE") else {
+            Log.cache.error("begin failed", metadata: ["root": "\(root)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"])
+            return false
+        }
 
         let saved = run("""
             INSERT INTO tracks (path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, hash)
@@ -175,10 +178,12 @@ nonisolated final class Cache {
             && exec("DELETE FROM covers WHERE album_id NOT IN (SELECT album_id FROM tracks)")
 
         guard saved, exec("COMMIT") else {
+            Log.cache.error("save failed", metadata: ["root": "\(root)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"])
             exec("ROLLBACK")
             return false
         }
 
+        Log.cache.info("saved", metadata: ["root": "\(root)", "changes": "\(changes.count)", "removed": "\(removed.count)", "covers": "\(covers.count)"])
         return true
     }
 
@@ -189,12 +194,16 @@ nonisolated final class Cache {
         guard sqlite3_open_v2(file.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK,
               sqlite3_busy_timeout(db, Int32.max) == SQLITE_OK,
               exec("PRAGMA page_size = 65536; PRAGMA mmap_size = 1073741824; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON")
-        else { return false }
+        else {
+            Log.cache.error("open failed", metadata: ["file": "\(file.path)", "sqlite": "\(db.map { String(cString: sqlite3_errmsg($0)) } ?? "no database")"])
+            return false
+        }
 
-        return exec(Self.schema)
+        return exec(Self.schema) || { Log.cache.error("schema failed", metadata: ["file": "\(file.path)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"]); return false }()
     }
 
     private static func discard(_ file: URL) -> Bool {
+        Log.cache.warning("discard", metadata: ["file": "\(file.path)"])
         for suffix in ["", "-wal", "-shm"] {
             let url = URL(filePath: file.path + suffix)
             if FileManager.default.fileExists(atPath: url.path), !Persist.remove(url) { return false }

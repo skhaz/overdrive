@@ -105,6 +105,8 @@ final class Loudness {
             let (valid, missing) = await Loudness.stale(urls, known)
             guard !Task.isCancelled else { return }
 
+            Log.loudness.info("update", metadata: ["songs": "\(urls.count)", "valid": "\(valid.count)", "missing": "\(missing.count)"])
+
             let count = entries.count
             entries = entries.filter { valid.contains($0.key) || known[$0.key] == nil }
             if entries.count != count { save() }
@@ -229,7 +231,13 @@ final class Loudness {
 
     @concurrent
     private nonisolated static func measure(_ file: File) async -> Entry? {
-        guard let audio = try? AVAudioFile(forReading: file.url) else { return nil }
+        let audio: AVAudioFile
+        do {
+            audio = try AVAudioFile(forReading: file.url)
+        } catch {
+            Log.loudness.error("open failed", metadata: ["path": "\(file.url.path)", "error": "\(error)"])
+            return nil
+        }
 
         let format = audio.processingFormat
         let channels = min(Int(format.channelCount), 2)
@@ -252,6 +260,7 @@ final class Loudness {
                 try audio.read(into: buffer)
             } catch {
                 if frames > 0 || (error as NSError).code == eofErr { break }
+                Log.loudness.error("read failed", metadata: ["path": "\(file.url.path)", "error": "\(error)"])
                 return nil
             }
 
@@ -314,6 +323,8 @@ final class Loudness {
             count += 1
         }
 
-        return Entry(size: file.size, modified: file.modified, lufs: lufs(gated / Double(count)), peak: peak, seconds: seconds)
+        let entry = Entry(size: file.size, modified: file.modified, lufs: lufs(gated / Double(count)), peak: peak, seconds: seconds)
+        Log.loudness.debug("measured", metadata: ["path": "\(file.url.path)", "lufs": "\(entry.lufs)", "peak": "\(entry.peak)"])
+        return entry
     }
 }

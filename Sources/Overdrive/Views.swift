@@ -1,8 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import OSLog
 
-let navLog = Logger(subsystem: "org.delduca.Overdrive", category: "navigation")
 
 enum Focus {
     case search, sidebar
@@ -1689,7 +1687,7 @@ struct ContentView: View {
         }
         .environment(lyrics)
         .environment(\.go, GoAction { destination in
-            navLog.notice("go \(String(describing: destination), privacy: .public) page=\(page.key, privacy: .public) path=\(path.count)")
+            Log.navigation.info("go", metadata: ["destination": "\(String(describing: destination))", "page": "\(page.key)", "path": "\(path.count)"])
             var value = path
 
             switch destination {
@@ -1750,7 +1748,7 @@ struct ContentView: View {
 
             self.saved = nil
             let routes = saved.compactMap { Route(key: $0, albums: library.albums) }
-            navLog.notice("restore page=\(page.key, privacy: .public) routes=\(routes.count)")
+            Log.navigation.info("restore", metadata: ["page": "\(page.key)", "routes": Log.list(routes.map(\.key))])
             switch page {
             case .liked, .playlist, .queue:
                 navigation.restore([])
@@ -1771,6 +1769,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: navigation.place) {
+            Log.navigation.info("place", metadata: ["page": "\(page.key)", "path": Log.list(path.map(\.key)), "back": "\(navigation.back.count)", "forward": "\(navigation.forward.count)", "searching": "\(navigation.searching)"])
             tracker.position = navigation.place.position
             remember()
         }
@@ -1784,7 +1783,7 @@ struct ContentView: View {
             if search != library.query { search = library.query }
         }
         .onChange(of: library.query) { old, new in
-            navLog.notice("query changed to \(new, privacy: .public)")
+            Log.navigation.info("query", metadata: ["old": "\(old)", "new": "\(new)"])
             lyrics.settle { navigation.searched(from: old, to: new, leaving: tracker.position) }
             remember()
         }
@@ -1873,7 +1872,7 @@ struct ContentView: View {
     }
 
     private func goBack() {
-        navLog.notice("goBack path=\(path.count) back=\(navigation.back.count)")
+        Log.navigation.info("back", metadata: ["path": "\(path.count)", "back": "\(navigation.back.count)"])
         lyrics.settle {
             if !navigation.goBack(leaving: tracker.position) {
                 navigation.show(Array(path.dropLast()), leaving: tracker.position)
@@ -1882,7 +1881,7 @@ struct ContentView: View {
     }
 
     private func goForward() {
-        navLog.notice("goForward forward=\(navigation.forward.count)")
+        Log.navigation.info("forward", metadata: ["forward": "\(navigation.forward.count)"])
         lyrics.settle { navigation.goForward(leaving: tracker.position) }
     }
 
@@ -1890,6 +1889,7 @@ struct ContentView: View {
         guard let window = event.window, window.isKeyWindow, window.identifier?.rawValue.hasPrefix("main") == true, window.attachedSheet == nil,
               playlists.naming == nil, deleting == nil else { return false }
 
+        Log.keys.debug("key", metadata: ["code": "\(event.keyCode)", "flags": "\(String(event.modifierFlags.rawValue, radix: 16))", "focus": "\(String(describing: focus))", "responder": "\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "")"])
         let sidebar = focus == .sidebar
         guard sidebar || focus == .search || !Focus.typing(window.firstResponder) else {
             guard event.keyCode == 53, event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
@@ -1950,7 +1950,7 @@ struct ContentView: View {
             player.toggle()
             return true
         case (53, _) where !path.isEmpty:
-            navLog.notice("press escape page=\(page.key, privacy: .public) path=\(path.count)")
+            Log.navigation.info("escape", metadata: ["page": "\(page.key)", "path": "\(path.count)"])
             goBack()
             return true
         default: return false
@@ -1970,11 +1970,11 @@ struct ContentView: View {
 
     private func reveal(_ track: Track) {
         guard let album = library.albums.first(where: { $0.id == track.albumID }) else {
-            navLog.error("reveal: no album for \(track.albumID, privacy: .public)")
+            Log.navigation.error("reveal without album", metadata: ["album": "\(track.albumID)"])
             return
         }
 
-        navLog.notice("reveal \(track.url.lastPathComponent, privacy: .public) page=\(page.key, privacy: .public)")
+        Log.navigation.info("reveal", metadata: ["path": "\(track.url.path)", "page": "\(page.key)"])
         navigate([.album(album)])
     }
 
@@ -1984,7 +1984,7 @@ struct ContentView: View {
     }
 
     private func navigate(_ value: [Route]) {
-        navLog.notice("navigate page=\(page.key, privacy: .public) from=\(path.count) to=\(value.count) last=\(value.last?.key ?? "", privacy: .public)")
+        Log.navigation.info("navigate", metadata: ["page": "\(page.key)", "from": "\(path.count)", "to": Log.list(value.map(\.key))])
         lyrics.settle { navigation.show(value, leaving: tracker.position) }
     }
 

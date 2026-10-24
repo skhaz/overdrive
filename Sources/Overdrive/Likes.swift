@@ -61,6 +61,7 @@ final class Likes {
     }
 
     func add(_ tracks: [Track]) {
+        Log.likes.info("add", metadata: ["paths": Log.list(tracks.map(\.url.path))])
         var changed = false
 
         for track in tracks where liked.insert(track.url.path).inserted {
@@ -72,6 +73,7 @@ final class Likes {
     }
 
     func remove(_ tracks: [Track]) {
+        Log.likes.info("remove", metadata: ["paths": Log.list(tracks.map(\.url.path))])
         let removed = Set(tracks.map(\.url.path))
         guard !removed.isEmpty, !liked.isDisjoint(with: removed) else { return }
 

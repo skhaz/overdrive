@@ -41,10 +41,11 @@ final class Player {
     private(set) var position = 0.0
     private(set) var artwork: NSImage?
 
-    var shuffle = false { didSet { if shuffle != oldValue { reorder() } } }
-    var repeatMode = Repeat.off { didSet { requeue() } }
+    var shuffle = false { didSet { if shuffle != oldValue { Log.player.info("shuffle", metadata: ["on": "\(shuffle)"]); reorder() } } }
+    var repeatMode = Repeat.off { didSet { Log.player.info("repeat", metadata: ["mode": "\(repeatMode)"]); requeue() } }
     var normalize = UserDefaults.standard.object(forKey: "normalize") as? Bool ?? true {
         didSet {
+            Log.player.info("normalize", metadata: ["on": "\(normalize)"])
             UserDefaults.standard.set(normalize, forKey: "normalize")
             if let item, let track = current { Task { await adjust(item, track) } }
             requeue()
@@ -52,6 +53,7 @@ final class Player {
     }
     var volume = UserDefaults.standard.object(forKey: "volume") as? Float ?? 1 {
         didSet {
+            Log.player.debug("volume", metadata: ["value": "\(volume)"])
             player.volume = volume
             UserDefaults.standard.set(volume, forKey: "volume")
         }
@@ -68,6 +70,7 @@ final class Player {
     }
 
     func toggleMute() {
+        Log.player.info("mute", metadata: ["on": "\(!isMuted)"])
         if isMuted {
             isMuted = false
             player.volume = volume
@@ -138,6 +141,8 @@ final class Player {
         item.observe(\.status, options: [.initial]) { item, _ in
             guard item.status == .failed else { return }
 
+            Log.player.error("item failed", metadata: ["error": "\(String(describing: item.error))", "events": Log.list(item.errorLog()?.events.map { "\($0.errorDomain) \($0.errorStatusCode) \($0.errorComment ?? "")" } ?? [])])
+
             let id = ObjectIdentifier(item)
             Task { @MainActor in failed(id) }
         }
@@ -148,6 +153,7 @@ final class Player {
     }
 
     func play(_ tracks: [Track], at start: Int = 0) {
+        Log.player.info("play", metadata: ["songs": "\(tracks.count)", "start": "\(start)", "shuffle": "\(shuffle)", "path": "\(tracks.indices.contains(start) ? tracks[start].url.path : "")"])
         order = tracks
         queue = tracks
         added = Array(repeating: false, count: tracks.count)
@@ -164,6 +170,7 @@ final class Player {
     }
 
     func insert(_ tracks: [Track], next: Bool) {
+        Log.player.info("insert", metadata: ["next": "\(next)", "paths": Log.list(tracks.map(\.url.path))])
         guard let track = current, item != nil else { return play(tracks) }
 
         let tracks = tracks.filter { $0 != track }
@@ -203,6 +210,7 @@ final class Player {
     }
 
     func jump(to position: Int) {
+        Log.player.info("jump", metadata: ["position": "\(position)", "count": "\(queue.count)"])
         guard queue.indices.contains(position) else { return }
 
         index = position
@@ -210,6 +218,7 @@ final class Player {
     }
 
     func move(_ positions: Set<Int>, to target: Int) {
+        Log.player.info("move", metadata: ["positions": Log.list(positions.sorted()), "target": "\(target)"])
         let moved = Player.moved(queue.count, positions, to: target)
         guard moved != Array(queue.indices) else { return }
 
@@ -223,6 +232,7 @@ final class Player {
     }
 
     func clear() {
+        Log.player.info("clear", metadata: ["count": "\(queue.count)"])
         player.removeAllItems()
         item = nil
         upcoming = nil
@@ -245,6 +255,7 @@ final class Player {
     }
 
     func remove(_ positions: Set<Int>) {
+        Log.player.info("remove", metadata: ["positions": Log.list(positions.sorted()), "index": "\(index)", "count": "\(queue.count)"])
         if Player.clears(queue.count, positions, from: index) { return clear() }
 
         let (kept, current) = Player.removing(queue.count, positions, keeping: index)
@@ -290,9 +301,10 @@ final class Player {
         guard !restored else { return }
         restored = true
 
-        guard item == nil, let session = Player.saved else { return }
+        guard item == nil, let session = Player.saved else { return Log.player.info("restore without session") }
 
         let tracks = session.queue.compactMap { lookup(StoredPath.decode($0)) }
+        Log.player.info("restore", metadata: ["found": "\(tracks.count)", "saved": "\(session.queue.count)", "index": "\(session.index)", "position": "\(session.position)"])
         guard !tracks.isEmpty else { return }
 
         let path = session.queue.indices.contains(session.index) ? StoredPath.decode(session.queue[session.index]) : nil
@@ -332,6 +344,7 @@ final class Player {
     }
 
     private func perform(_ command: Remote) {
+        Log.player.info("remote", metadata: ["command": "\(command)", "intercepted": "\(intercept != nil)"])
         if let intercept { return intercept(command) }
 
         switch command {
@@ -348,6 +361,7 @@ final class Player {
     }
 
     func resume() {
+        Log.player.info("resume", metadata: ["path": "\(current?.url.path ?? "")"])
         guard let track = current else { return }
         guard item != nil else { return load() }
 
@@ -365,6 +379,7 @@ final class Player {
     }
 
     func pause() {
+        Log.player.info("pause", metadata: ["position": "\(position)"])
         player.pause()
         playing = false
         update()
@@ -372,6 +387,7 @@ final class Player {
     }
 
     func next() {
+        Log.player.info("next", metadata: ["index": "\(index)"])
         guard let next = following(index, manual: true) else { return stop() }
 
         index = next
@@ -379,6 +395,7 @@ final class Player {
     }
 
     func previous() {
+        Log.player.info("previous", metadata: ["index": "\(index)", "position": "\(position)"])
         guard position < 3, index > 0 else { return seek(0) }
 
         index -= 1
@@ -386,6 +403,7 @@ final class Player {
     }
 
     func seek(_ seconds: Double) {
+        Log.player.info("seek", metadata: ["seconds": "\(seconds)"])
         seeks += 1
         position = seconds
         update()
@@ -397,6 +415,7 @@ final class Player {
     }
 
     private func stop() {
+        Log.player.info("stop")
         player.removeAllItems()
         item = nil
         upcoming = nil
@@ -413,6 +432,7 @@ final class Player {
     }
 
     private func load(play: Bool = true) {
+        Log.player.info("load", metadata: ["index": "\(index)", "count": "\(queue.count)", "play": "\(play)", "path": "\(queue[index].url.path)"])
         player.removeAllItems()
         let item = enqueue(index, start: play)
         self.item = item
@@ -451,7 +471,9 @@ final class Player {
 
         await loudness.measure(track, album: album)
         guard normalize, let gain = loudness.gain(track, album: album),
-              let audio = try? await item.asset.loadTracks(withMediaType: .audio).first else { return }
+              let audio = try? await item.asset.loadTracks(withMediaType: .audio).first else { return Log.player.debug("no gain", metadata: ["path": "\(track.url.path)"]) }
+
+        Log.player.debug("gain", metadata: ["path": "\(track.url.path)", "gain": "\(gain)", "album": "\(album)"])
 
         let parameters = AVMutableAudioMixInputParameters(track: audio)
         parameters.setVolume(gain, at: .zero)
@@ -462,6 +484,8 @@ final class Player {
 
     private func finished(_ ended: AVPlayerItem?) {
         guard let ended, ended === item else { return }
+
+        Log.player.info("finished", metadata: ["path": "\(current?.url.path ?? "")"])
         guard let next = following(index) else { return stop() }
 
         index = next
@@ -477,6 +501,7 @@ final class Player {
         guard let item, ObjectIdentifier(item) == id else { return }
 
         failures += 1
+        Log.player.error("failed", metadata: ["path": "\(current?.url.path ?? "")", "failures": "\(failures)"])
         guard failures < queue.count, let next = following(index, manual: true) else {
             failures = 0
             return stop()
@@ -489,6 +514,7 @@ final class Player {
     private func begin() {
         guard let track = current, let item else { return }
 
+        Log.player.info("begin", metadata: ["path": "\(track.url.path)", "playing": "\(playing)", "upcoming": "\(upcoming != nil)"])
         played = 0
         position = 0
         scrobbled = false
@@ -528,6 +554,7 @@ final class Player {
 
         if !scrobbled, track.duration >= 30, played >= min(track.duration / 2, 240) {
             scrobbled = true
+            Log.player.info("scrobble", metadata: ["path": "\(track.url.path)", "played": "\(played)"])
             lastFM.scrobble(track, at: started)
         }
     }

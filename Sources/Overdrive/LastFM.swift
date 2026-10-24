@@ -86,6 +86,7 @@ final class LastFM {
     }
 
     func connect(_ username: String, _ password: String) async {
+        Log.lastFM.info("connect", metadata: ["user": "\(username)"])
         connecting = true
         defer { connecting = false }
 
@@ -118,6 +119,7 @@ final class LastFM {
     }
 
     func disconnect() {
+        Log.lastFM.info("disconnect")
         session = ""
         user = ""
     }
@@ -129,6 +131,7 @@ final class LastFM {
     }
 
     func scrobble(_ track: Track, at date: Date) {
+        Log.lastFM.info("queue scrobble", metadata: ["artist": "\(track.artist)", "title": "\(track.title)", "date": "\(date)", "pending": "\(pending.count + 1)"])
         pending.append(parameters(track).merging(["timestamp": String(Int(date.timeIntervalSince1970)), "_id": UUID().uuidString]) { $1 })
 
         Task { await flush() }
@@ -140,6 +143,7 @@ final class LastFM {
         flushing = true
         defer { flushing = false }
 
+        Log.lastFM.info("flush", metadata: ["pending": "\(pending.count)", "rejected": "\(rejected.count)"])
         if pending.contains(where: { $0["_uncertain"] != nil }) { await settle() }
 
         var size = 50
@@ -162,6 +166,7 @@ final class LastFM {
                 let json = try await call("track.scrobble", parameters, session: true)
                 guard let codes = LastFM.codes(json, batch.count) else { return }
 
+                Log.lastFM.info("scrobbled", metadata: ["count": "\(batch.count)", "codes": Log.list(codes)])
                 let limited = zip(batch, codes).filter { $1 == 5 }.map(\.0)
                 rejected.append(contentsOf: zip(batch, codes).filter { $1 != 0 && $1 != 5 }.map { $0.merging(["_code": String($1)]) { $1 } })
                 remove(batch.filter { entry in !limited.contains { $0["_id"] == entry["_id"] } })
@@ -304,10 +309,18 @@ final class LastFM {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(parameters.map { "\($0.key.addingPercentEncoding(withAllowedCharacters: allowed)!)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)" }.joined(separator: "&").utf8)
 
-        let (data, _) = try await configuration.transport.data(for: request)
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await configuration.transport.data(for: request)
+        } catch {
+            Log.lastFM.error("request failed", metadata: ["method": "\(method)", "error": "\(error)"])
+            throw error
+        }
+        Log.lastFM.info("response", metadata: ["method": "\(method)", "status": "\((response as? HTTPURLResponse)?.statusCode ?? 0)", "bytes": "\(data.count)"])
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
 
         if let code = json["error"] as? Int {
+            Log.lastFM.error("api error", metadata: ["method": "\(method)", "code": "\(code)", "reason": "\(json["message"] as? String ?? "")"])
             throw Failure(code: code, message: json["message"] as? String ?? "Last.fm error \(code)")
         }
 

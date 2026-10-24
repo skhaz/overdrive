@@ -1,11 +1,14 @@
 import Foundation
+import Logging
 
 nonisolated enum Persist {
     private static let queue = DispatchQueue(label: "Persist", qos: .utility)
 
     @discardableResult
     static func write(_ data: Data, to url: URL) -> Bool {
-        queue.sync { store(data, url) }
+        let done = queue.sync { store(data, url) }
+        Log.persist.log(level: done ? .debug : .error, "write", metadata: ["path": "\(url.path)", "bytes": "\(data.count)", "result": Self.result(done)])
+        return done
     }
 
     static func flush() {
@@ -14,17 +17,25 @@ nonisolated enum Persist {
 
     @discardableResult
     static func move(_ source: URL, to destination: URL) -> Bool {
-        queue.sync { relocate(source, destination) }
+        let done = queue.sync { relocate(source, destination) }
+        Log.persist.log(level: done ? .info : .error, "move", metadata: ["from": "\(source.path)", "to": "\(destination.path)", "result": Self.result(done)])
+        return done
     }
 
     @discardableResult
     static func remove(_ url: URL) -> Bool {
-        queue.sync {
+        let done = queue.sync {
             guard unlink(url.path) == 0 else { return false }
 
             sync(url.deletingLastPathComponent())
             return true
         }
+        Log.persist.log(level: done ? .info : .error, "remove", metadata: ["path": "\(url.path)", "result": Self.result(done)])
+        return done
+    }
+
+    private static func result(_ done: Bool) -> Logging.Logger.MetadataValue {
+        .string(done ? "ok" : String(cString: strerror(errno)))
     }
 
     private static func store(_ data: Data, _ url: URL) -> Bool {

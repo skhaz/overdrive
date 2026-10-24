@@ -15,9 +15,30 @@ final class Delegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         hotKey = HotKey { [weak self] in self?.find() }
+        Log.app.info("launched")
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { notification in
+                Log.app.info("workspace", metadata: ["event": "\(notification.name.rawValue)", "volume": "\((notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL)?.path ?? "")"])
+            }
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Log.app.info("active")
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        Log.app.info("inactive")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Log.app.info("quit")
+        Log.flush()
     }
 
     func find() {
+        Log.app.info("find shortcut")
         NSApp.activate()
         if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.isVisible }) {
             window.makeKeyAndOrderFront(nil)
@@ -48,9 +69,11 @@ struct Reopen: ViewModifier {
 
 struct Overdrive: App {
     private static let shared = {
+        Log.start()
+        Log.app.info("start", metadata: ["version": "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")", "macos": "\(ProcessInfo.processInfo.operatingSystemVersionString)", "pid": "\(getpid())"])
         signal(SIGTERM, SIG_IGN)
         let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        termination.setEventHandler { NSApp.terminate(nil) }
+        termination.setEventHandler { Log.app.info("terminate signal"); NSApp.terminate(nil) }
         termination.resume()
 
         let lastFM = LastFM()

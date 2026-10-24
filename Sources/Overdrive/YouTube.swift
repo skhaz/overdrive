@@ -148,6 +148,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     private func load() {
+        Log.youTube.info("load player page")
         mode = .loading
         var request = URLRequest(url: YouTube.resident)
         request.setValue("https://\((Bundle.main.bundleIdentifier ?? "org.delduca.Overdrive").lowercased())/", forHTTPHeaderField: "Referer")
@@ -155,6 +156,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func watch(_ track: Track) {
+        Log.youTube.info("watch", metadata: ["artist": "\(track.artist)", "title": "\(track.title)", "mode": "\(mode)", "searching": "\(searching)"])
         guard !searching else { return }
 
         self.track = track
@@ -194,6 +196,8 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         guard request == current else { return }
         guard let id else { return stop("No video found for “\(track.artist) - \(track.title)”.") }
+
+        Log.youTube.info("video", metadata: ["id": "\(id)", "artist": "\(track.artist)", "title": "\(track.title)"])
 
         if videos[name] != id {
             videos[name] = id
@@ -238,11 +242,13 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     private func stop(_ message: String) {
+        Log.youTube.error("stop", metadata: ["reason": "\(message)"])
         if panel.isVisible { panel.close() }
         alert(message)
     }
 
     func close() {
+        Log.youTube.info("close", metadata: ["visible": "\(panel.isVisible)"])
         if panel.isVisible {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
@@ -258,6 +264,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func signOut() async {
+        Log.youTube.info("sign out")
         let store = WKWebsiteDataStore.default()
         let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
         await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records.filter { $0.displayName.contains("youtube") || $0.displayName.contains("google") })
@@ -267,6 +274,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     private func show(_ mode: Mode) {
+        Log.youTube.info("show", metadata: ["mode": "\(mode)"])
         self.mode = mode
         handle.isHidden = mode != .video
         
@@ -317,6 +325,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         let youTube = webView.url?.host() == YouTube.account.host()
         let path = webView.url?.path() ?? ""
+        Log.youTube.info("page finished", metadata: ["url": "\(webView.url?.absoluteString ?? "")", "mode": "\(mode)"])
 
         if mode == .login {
             guard youTube else { return }
@@ -352,12 +361,14 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        Log.youTube.error("web content process ended")
         mode = .failed
         if panel.isVisible { panel.close() }
         load()
     }
 
     private func failed(_ error: any Error) {
+        Log.youTube.error("failed", metadata: ["mode": "\(mode)", "error": "\(error)"])
         guard mode == .loading, (error as? URLError)?.code != .cancelled else { return }
 
         mode = .failed
@@ -386,6 +397,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         """
         let text = try await web.callAsyncJavaScript(script, arguments: ["query": "\(track.artist) \(track.title)"], contentWorld: .page) as? String ?? ""
         let json = try JSONSerialization.jsonObject(with: Data(text.utf8))
+        Log.youTube.info("search", metadata: ["artist": "\(track.artist)", "title": "\(track.title)", "bytes": "\(text.utf8.count)", "matches": Log.list(YouTube.match(YouTube.results(json), track.artist, track.title).prefix(5))])
 
         for id in YouTube.match(YouTube.results(json), track.artist, track.title).prefix(5) {
             if browser { return id }

@@ -57,6 +57,15 @@ Commit each change when it is complete. Do not ask before you commit.
 - Every data file is a binary plist. No JSON, no plain text. Exception: `Cache.sqlite`.
 - Song paths in the data files in a music folder (`Likes.plist`, `Playlists/`, `Loudness.plist`) are relative to that folder, so the library can move. In `~/Library/Application Support/Overdrive` they are home-relative (`~/…`) under the home directory, absolute outside it, computed at runtime.
 
+## Logging
+
+- Every log is a structured log through `swift-log` (`Logging`, pinned to an exact version). Use the loggers in `Log` (`Log.player`, `Log.library`, ...). The message is a short, fixed event name; every value goes in `metadata`. Never put values in the message. Never use `print`, `NSLog`, `os_log`, or `os.Logger` directly.
+- Log everything that helps to debug: user actions, player state changes, navigation, keys (key code and flags only, never the typed characters), scans, cache and file writes, network requests and responses, errors with their cause. Never log a password, a session key, or an API secret.
+- The handler (`Handler`) writes each record as one JSON line (`time` in UTC, `level`, `label`, `message`, `source`, `metadata`) to `~/Library/Logs/Overdrive/<UTC hour>.log` (`Sink`), and the same record to the unified log (subsystem `org.delduca.Overdrive`).
+- A new file starts every hour. Files older than one day (24 files) are deleted. A record is one `write(2)` with `O_APPEND`; errors and crashes call `fsync`. A crash signal or an uncaught exception writes a last record.
+- Only the app bundle (`org.delduca.Overdrive`) writes the file. Tests never write it (`Log.sink` is nil).
+- The log files are the only app files that are not binary plists or `Cache.sqlite`.
+
 ## Data files
 
 In `~/Library/Application Support/Overdrive`:

@@ -70,6 +70,7 @@ final class Playlists {
 
     @discardableResult
     func create(_ name: String, _ urls: [URL]) -> String? {
+        Log.playlists.info("create", metadata: ["name": "\(name)", "songs": Log.list(urls.map(\.path))])
         let name = name.trimmingCharacters(in: .whitespaces)
         guard valid(name) else { return nil }
 
@@ -81,6 +82,7 @@ final class Playlists {
     }
 
     func add(_ urls: [URL], to name: String) {
+        Log.playlists.info("add", metadata: ["name": "\(name)", "songs": Log.list(urls.map(\.path))])
         var list = storedPaths[name] ?? []
         var seen = Set(list.map { StoredPath.decode($0, relativeTo: folderPath) })
 
@@ -92,6 +94,7 @@ final class Playlists {
     }
 
     func remove(_ positions: Set<Int>, from name: String) {
+        Log.playlists.info("remove", metadata: ["name": "\(name)", "positions": Log.list(positions.sorted())])
         var list = storedPaths[name] ?? []
         guard positions.contains(where: list.indices.contains) else { return }
 
@@ -100,6 +103,7 @@ final class Playlists {
     }
 
     func duplicate(_ positions: Set<Int>, in name: String) {
+        Log.playlists.info("duplicate", metadata: ["name": "\(name)", "positions": Log.list(positions.sorted())])
         let list = storedPaths[name] ?? []
         guard positions.contains(where: list.indices.contains) else { return }
 
@@ -115,6 +119,7 @@ final class Playlists {
     }
 
     func reorder(_ order: [Int], in name: String) {
+        Log.playlists.info("reorder", metadata: ["name": "\(name)", "order": Log.list(order)])
         let list = storedPaths[name] ?? []
         var result = list
 
@@ -126,6 +131,7 @@ final class Playlists {
     }
 
     func delete(_ name: String) {
+        Log.playlists.info("delete", metadata: ["name": "\(name)"])
         let backup = directory().appending(path: name + ".backup.plist", directoryHint: .notDirectory)
 
         guard Persist.move(file(name), to: backup) else { return }

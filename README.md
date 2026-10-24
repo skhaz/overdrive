@@ -166,6 +166,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 - No Last.fm play is lost. If there is no internet, the app sends them later.
 - The video window opens at once, and you stay signed in to YouTube.
 - YouTube can show an ad. With YouTube Premium, there are no ads.
+- If something goes wrong, the app keeps a log of the last day in `~/Library/Logs/Overdrive`. Send it with your bug report.
 
 ## Credits
 

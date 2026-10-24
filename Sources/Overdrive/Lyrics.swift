@@ -25,7 +25,7 @@ final class Lyrics {
     private(set) var original = ""
     private(set) var saved = ""
     var text = "" { didSet { if text != oldValue { synced = LRC.parse(text) } } }
-    var floating = false
+    var floating = false { didSet { if floating != oldValue { Log.lyrics.info("floating", metadata: ["floating": "\(floating)"]) } } }
     var selected = false
     var enabled: Bool { didSet { if !enabled, oldValue { stop() } } }
     private(set) var remote = false
@@ -57,10 +57,13 @@ final class Lyrics {
     func show(_ track: Track) {
         guard enabled, track != self.track else { return }
 
+        Log.lyrics.info("show", metadata: ["path": "\(track.url.path)"])
+
         settle { self.open(track) }
     }
 
     private func stop() {
+        Log.lyrics.info("stop")
         flush()
         lookupTask?.cancel()
         lookupTask = nil
@@ -77,6 +80,8 @@ final class Lyrics {
 
     func edit(_ value: String) {
         guard value != text else { return }
+
+        Log.lyrics.debug("edit", metadata: ["characters": "\(value.count)"])
 
         text = value
         lookupTask?.cancel()
@@ -98,6 +103,8 @@ final class Lyrics {
 
     func refresh() {
         guard let track = self.track else { return }
+
+        Log.lyrics.info("refresh", metadata: ["path": "\(track.url.path)"])
         loading = true
         lookupTask?.cancel()
         lookupTask = Task {
@@ -151,6 +158,7 @@ final class Lyrics {
 
     func save(_ value: String, for track: Track) {
         let url = file(track)
+        Log.lyrics.info("save", metadata: ["path": "\(url.path)", "characters": "\(value.count)"])
 
         if !value.isEmpty {
             guard Persist.write(Data(value.utf8), to: url) else { return }
@@ -184,6 +192,7 @@ final class Lyrics {
         self.track = track
 
         if let lyrics = Self.read(file(track)), !lyrics.isEmpty {
+            Log.lyrics.info("local", metadata: ["path": "\(file(track).path)"])
             saved = lyrics
             original = saved
             text = saved
@@ -197,6 +206,7 @@ final class Lyrics {
         text = ""
 
         if let lyrics = cached(track), !lyrics.isEmpty {
+            Log.lyrics.info("cached", metadata: ["path": "\(track.url.path)"])
             apply(.success(lyrics))
             loading = false
             return
@@ -207,7 +217,9 @@ final class Lyrics {
         lookupTask?.cancel()
         lookupTask = Task {
             let result = await Self.lookup(track, cache: cache)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return Log.lyrics.debug("lookup cancelled", metadata: ["path": "\(track.url.path)"]) }
+
+            Log.lyrics.info("lookup", metadata: ["path": "\(track.url.path)", "result": "\((try? result.get()).map { "\($0.count) characters" } ?? String(describing: result))"])
 
             apply(result)
             loading = false
@@ -305,8 +317,15 @@ final class Lyrics {
         request.setValue(agent, forHTTPHeaderField: "User-Agent")
         for attempt in 0..<attempts {
             if attempt > 0 { try? await Task.sleep(for: .seconds(Double.random(in: retryDelay))) }
-            guard let (data, response) = try? await URLSession.shared.data(for: request) else { continue }
+            let (data, response): (Data, URLResponse)
+            do {
+                (data, response) = try await URLSession.shared.data(for: request)
+            } catch {
+                Log.lyrics.error("request failed", metadata: ["url": "\(url.absoluteString)", "error": "\(error)"])
+                continue
+            }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            Log.lyrics.info("response", metadata: ["url": "\(url.absoluteString)", "status": "\(status)", "bytes": "\(data.count)"])
             if status == 200,
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let lyrics = json["lyrics"] as? String
@@ -366,12 +385,17 @@ final class Lyrics {
         for retry in 0..<attempts {
             if retry > 0 { try? await Task.sleep(for: .seconds(Double.random(in: retryDelay))) }
 
-            guard let (data, response) = try? await URLSession.shared.data(for: request) else {
+            let (data, response): (Data, URLResponse)
+            do {
+                (data, response) = try await URLSession.shared.data(for: request)
+            } catch {
+                Log.lyrics.error("request failed", metadata: ["url": "\(request.url?.absoluteString ?? "")", "error": "\(error)"])
                 failure = .offline
                 continue
             }
 
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            Log.lyrics.info("response", metadata: ["url": "\(request.url?.absoluteString ?? "")", "status": "\(status)", "bytes": "\(data.count)"])
             if status == 200 || status == 404 { return .success((try? JSONSerialization.jsonObject(with: data)) ?? [:]) }
             guard status == 429 || status >= 500 else { return .failure(.status(status)) }
 

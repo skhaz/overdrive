@@ -180,6 +180,7 @@ final class Library {
 
     func add(_ urls: [URL]) {
         let new = urls.filter { url in !folders.contains { url.path.hasPrefix($0.path + "/") || url.path == $0.path } }
+        Log.library.info("add folders", metadata: ["folders": Log.list(urls.map(\.path)), "new": Log.list(new.map(\.path))])
         guard !new.isEmpty else { return }
 
         folders = folders.filter { folder in !new.contains { folder.path.hasPrefix($0.path + "/") } } + new
@@ -192,6 +193,7 @@ final class Library {
         let covers = Artwork.covers
 
         scanning = true
+        Log.library.info("scan", metadata: ["generation": "\(generation)", "folders": Log.list(folders.map(\.path))])
 
         let previous = running
         running = Task {
@@ -211,8 +213,9 @@ final class Library {
                     return true
                 }
             }
-            guard generation == self.generation else { return }
+            guard generation == self.generation else { return Log.library.info("scan replaced", metadata: ["generation": "\(generation)"]) }
 
+            Log.library.info("scan done", metadata: ["generation": "\(generation)", "albums": "\(result.albums.count)"])
             show(result, folders)
             scanning = false
             loudness.update(result.albums)
@@ -380,7 +383,11 @@ final class Library {
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
             let paths = unsafeBitCast(paths, to: NSArray.self)
-            guard Library.relevant((0..<count).map { (paths[$0] as! String, flags[$0]) }) else { return }
+            let events = (0..<count).map { (path: paths[$0] as! String, flags: flags[$0]) }
+            Log.library.trace("file events", metadata: ["events": .dictionary(Dictionary(events.map { ($0.path, .string(String($0.flags, radix: 16))) }) { $1 })])
+            guard Library.relevant(events) else { return }
+
+            Log.library.info("change starts a scan", metadata: ["paths": Log.list(events.map(\.path))])
 
             MainActor.assumeIsolated {
                 Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
@@ -435,6 +442,7 @@ final class Library {
         }
 
         let cached = knowns.flatMap { $0.values.map(\.track) }
+        Log.library.info("load", metadata: ["folders": Log.list(folders.map(\.path)), "cached": "\(cached.count)", "caches": Log.list(caches.map { $0 != nil })])
         if !cached.isEmpty {
             let (albums, index) = assemble(cached)
             guard await progress((albums, index, stored)) else { return (albums, index, stored) }
@@ -469,6 +477,7 @@ final class Library {
             removed.append(Array(known.keys))
         }
 
+        Log.library.info("walk", metadata: ["files": "\(slots.count)", "read": "\(pending.count)", "removed": Log.list(removed.flatMap(\.self))])
         if !pending.isEmpty || removed.contains(where: { !$0.isEmpty }) {
             for (number, cache) in caches.enumerated() where !removed[number].isEmpty {
                 cache?.save([], removed: removed[number], covers: [:])
@@ -511,6 +520,7 @@ final class Library {
                 }
             }
 
+            Log.library.info("batch", metadata: ["start": "\(start)", "end": "\(part.endIndex)", "total": "\(work.count)", "unreadable": Log.list(failed.flatMap(\.self))])
             for (number, cache) in caches.enumerated() where !changes[number].isEmpty || !failed[number].isEmpty {
                 cache?.save(changes[number], removed: failed[number], covers: [:])
             }
