@@ -1252,6 +1252,7 @@ struct ClearQueue: ViewModifier {
         content
             .confirmationDialog("Clear the queue?", isPresented: $clearing) {
                 Button("Clear Queue", role: .destructive, action: player.clear)
+                Button("Cancel", role: .cancel) { Log.player.info("clear cancelled", metadata: ["count": "\(player.queue.count)"]) }
             } message: {
                 Text("The song stops and the queue empties.")
             }
@@ -1287,7 +1288,7 @@ struct QueueView: View {
                 } rows: {
                     ForEach(rows) { TableRow($0).draggable(String($0.id)) }
                         .dropDestination(for: String.self) { index, ids in
-                            guard sort.column == nil else { return }
+                            guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
 
                             selection = []
                             player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))
@@ -1381,7 +1382,7 @@ struct PlaylistView: View {
                 } rows: {
                     ForEach(rows) { TableRow($0).draggable(String($0.id)) }
                         .dropDestination(for: String.self) { index, ids in
-                            guard sort.column == nil else { return }
+                            guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
 
                             move(rows, ids.compactMap { Int($0) }, to: index)
                         }
@@ -1768,6 +1769,7 @@ struct ContentView: View {
         }
         .dropDestination(for: URL.self) { urls, _ in
             let folders = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            Log.library.info("drop", metadata: ["folders": "\(folders.count)", "rejected": Log.list(urls.filter { !folders.contains($0) }.prefix(20).map(\.path))])
             library.add(folders)
             return !folders.isEmpty
         }
@@ -1779,9 +1781,13 @@ struct ContentView: View {
                 name = ""
             }
             .disabled(!playlists.valid(name))
-            Button("Cancel", role: .cancel) { name = "" }
+            Button("Cancel", role: .cancel) {
+                Log.playlists.info("create cancelled")
+                name = ""
+            }
         }
         .confirmationDialog("Delete the playlist “\(deleting ?? "")”?", isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } }) {
+            Button("Cancel", role: .cancel) { Log.playlists.info("delete cancelled", metadata: ["name": "\(deleting ?? "")"]) }
             Button("Delete", role: .destructive) {
                 if let deleting {
                     lyrics.settle { navigation.remove(.playlist(deleting), fallback: .section(.albums)) }
@@ -1834,6 +1840,7 @@ struct ContentView: View {
             if let current = player.current { lyrics.show(current) }
         }
         .onChange(of: player.lyrics) {
+            Log.lyrics.info("shown", metadata: ["on": "\(player.lyrics)"])
             lyrics.enabled = player.lyrics
             if let current = player.current { lyrics.show(current) }
         }
@@ -2118,7 +2125,7 @@ struct ContentView: View {
 
     private func reveal(_ track: Track) {
         guard let album = library.album(track.albumID) else {
-            Log.navigation.error("reveal without album", metadata: ["album": "\(track.albumID)"])
+            Log.navigation.warning("reveal without album", metadata: ["album": "\(track.albumID)"])
             return
         }
 

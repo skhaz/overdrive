@@ -157,6 +157,28 @@ final class Records: @unchecked Sendable {
         try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/\(name)"), encoding: .utf8)
     }
 
+    @Test func everyDecisionLogs() throws {
+        let events: [String: [String]] = [
+            "Persist.swift": ["read failed", "decode failed", "write", "move", "remove"],
+            "Cache.swift": ["query failed", "statement failed", "begin failed", "save failed", "open failed", "discard"],
+            "Picture.swift": ["covers process failed", "covers"],
+            "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled"],
+            "LastFM.swift": ["connected", "connect failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "settle", "now playing"],
+            "Player.swift": ["restore partial", "give up", "no gain", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue"],
+            "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
+            "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up"],
+            "AppleMusic.swift": ["blocked apple music"],
+            "LyricsPanel.swift": ["panel shown", "panel hidden"],
+            "Views.swift": ["drop ignored", "drop", "create cancelled", "delete cancelled", "clear cancelled", "shown", "gesture", "gesture ignored", "open in mp3tag", "show in finder"],
+        ]
+        for (file, names) in events {
+            let text = try source(file)
+            for name in names {
+                #expect(text.contains("\"\(name)\", metadata") || text.contains("(\"\(name)\")"), "\(file) must log \(name)")
+            }
+        }
+    }
+
     @Test func everyActionLogs() throws {
         let player = try source("Player.swift")
         for name in ["toggleMute", "play", "insert", "jump", "move", "clear", "remove", "restore", "resume", "pause", "next", "previous", "seek", "perform", "stop", "load", "finished", "failed", "begin"] {

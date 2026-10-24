@@ -157,6 +157,7 @@ final class Library {
     @ObservationIgnored private var readers: [Cache] = []
     @ObservationIgnored private var readerFolders: [URL] = []
     @ObservationIgnored private var pending: Task<Void, Never>?
+    @ObservationIgnored private var reported: Set<[Int]> = []
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var grouped: (version: Int, artists: [(name: String, albums: [Album])]) = (-1, [])
     @ObservationIgnored private var bytes: [UInt8] = []
@@ -206,7 +207,7 @@ final class Library {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
 
-        guard panel.runModal() == .OK else { return }
+        guard panel.runModal() == .OK else { return Log.library.info("choose cancelled") }
 
         add(panel.urls)
     }
@@ -311,11 +312,21 @@ final class Library {
         _ = scans
         let hits = query.isEmpty ? nil : hits
 
-        return paths.indices.compactMap { position in
-            guard let track = lookup[paths[position]], hits?.contains(track.id) ?? true else { return nil }
+        var missing: [String] = []
+        let rows = paths.indices.compactMap { position -> Row? in
+            guard let track = lookup[paths[position]] else {
+                if missing.count < 20 { missing.append(paths[position]) }
+                return nil
+            }
+            guard hits?.contains(track.id) ?? true else { return nil }
 
             return Row(id: position, track: track)
         }
+
+        if !missing.isEmpty, !albums.isEmpty, reported.insert([scans, paths.count, missing.count]).inserted {
+            Log.library.warning("rows missing", metadata: ["requested": "\(paths.count)", "paths": Log.list(missing)])
+        }
+        return rows
     }
 
     private func search() {
@@ -466,9 +477,14 @@ final class Library {
             }
         }
 
-        stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes))
-        FSEventStreamSetDispatchQueue(stream!, .main)
-        FSEventStreamStart(stream!)
+        guard let stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)) else {
+            return Log.library.error("watch failed", metadata: ["folders": Log.list(folders.map(\.path))])
+        }
+
+        self.stream = stream
+        FSEventStreamSetDispatchQueue(stream, .main)
+        let started = FSEventStreamStart(stream)
+        Log.library.log(level: started ? .info : .error, "watch", metadata: ["folders": Log.list(folders.map(\.path)), "started": "\(started)"])
     }
 
     nonisolated static func relevant(_ events: [(path: String, flags: FSEventStreamEventFlags)]) -> Bool {

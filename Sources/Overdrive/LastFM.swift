@@ -91,19 +91,24 @@ final class LastFM {
         do {
             guard let result = try await call("auth.getMobileSession", ["username": username, "password": password])["session"] as? [String: Any],
                   let key = result["key"] as? String, let name = result["name"] as? String else {
+                Log.lastFM.warning("connect failed", metadata: ["reason": "invalid response"])
                 status = "Last.fm sent a response that is not valid."
                 return
             }
 
+            Log.lastFM.info("connected", metadata: ["user": "\(name)"])
             session = key
             user = name
             status = ""
             await flush()
         } catch let failure as Failure where failure.code == 4 && username.contains("@") {
+            Log.lastFM.warning("connect failed", metadata: ["reason": "email", "code": "\(failure.code)"])
             status = "Enter the Last.fm username, not the email."
         } catch let failure as Failure {
+            Log.lastFM.warning("connect failed", metadata: ["reason": "api", "code": "\(failure.code)", "message": "\(failure.message)"])
             status = failure.message
         } catch {
+            Log.lastFM.warning("connect failed", metadata: ["reason": "network", "error": "\(error)"])
             status = error.localizedDescription
         }
     }
@@ -125,7 +130,10 @@ final class LastFM {
     func nowPlaying(_ track: Track) {
         guard !session.isEmpty else { return }
 
-        Task { _ = try? await call("track.updateNowPlaying", parameters(track), session: true) }
+        Task {
+            let sent = (try? await call("track.updateNowPlaying", parameters(track), session: true)) != nil
+            Log.lastFM.debug("now playing", metadata: ["artist": "\(track.artist)", "title": "\(track.title)", "sent": "\(sent)"])
+        }
     }
 
     func scrobble(_ track: Track, at date: Date) {
@@ -162,7 +170,9 @@ final class LastFM {
 
             do {
                 let json = try await call("track.scrobble", parameters, session: true)
-                guard let codes = LastFM.codes(json, batch.count) else { return }
+                guard let codes = LastFM.codes(json, batch.count) else {
+                    return Log.lastFM.error("scrobble response invalid", metadata: ["count": "\(batch.count)", "keys": Log.list(json.keys.sorted())])
+                }
 
                 Log.lastFM.info("scrobbled", metadata: ["count": "\(batch.count)", "codes": Log.list(codes)])
                 let limited = zip(batch, codes).filter { $1 == 5 }.map(\.0)
@@ -172,6 +182,7 @@ final class LastFM {
                 status = ""
 
                 guard limited.isEmpty else {
+                    Log.lastFM.warning("flush stopped", metadata: ["action": "daily limit", "kept": "\(limited.count)"])
                     status = "Last.fm daily scrobble limit reached. The app will send the rest later."
                     return
                 }
@@ -181,23 +192,29 @@ final class LastFM {
 
                 switch failure.code {
                 case 9:
+                    Log.lastFM.warning("flush stopped", metadata: ["action": "disconnect", "code": "\(failure.code)"])
                     disconnect()
                 case 6, 7, 13:
                     guard batch.count == 1 else {
+                        Log.lastFM.warning("flush split", metadata: ["code": "\(failure.code)", "batch": "\(batch.count)"])
                         size = 1
                         continue
                     }
 
+                    Log.lastFM.warning("scrobble isolated", metadata: ["code": "\(failure.code)", "artist": "\(batch[0]["artist"] ?? "")", "title": "\(batch[0]["track"] ?? "")"])
                     rejected.append(batch[0].merging(["_code": String(failure.code)]) { $1 })
                     remove(batch)
                 default:
+                    Log.lastFM.warning("flush stopped", metadata: ["action": "abort", "code": "\(failure.code)"])
                     return
                 }
             } catch let error as URLError where LastFM.unsent.contains(error.code) {
+                Log.lastFM.warning("flush stopped", metadata: ["action": "offline", "error": "\(error)"])
                 mark(batch, nil)
                 status = error.localizedDescription
                 return
             } catch {
+                Log.lastFM.error("flush stopped", metadata: ["action": "uncertain", "error": "\(error)"])
                 status = error.localizedDescription
                 return
             }
@@ -226,12 +243,16 @@ final class LastFM {
         let uncertain = pending.filter { $0["_uncertain"] != nil }
         let now = Date.now.timeIntervalSince1970
         let marked = uncertain.compactMap { $0["_uncertain"].flatMap(Double.init) }.max() ?? 0
-        guard now - marked > configuration.settle else { return }
+        guard now - marked > configuration.settle else {
+            return Log.lastFM.debug("settle skipped", metadata: ["uncertain": "\(uncertain.count)"])
+        }
 
         let stamps = uncertain.compactMap { $0["timestamp"].flatMap(Int.init) }
 
         if let low = stamps.min(), let high = stamps.max(), let found = await history(low, high) {
-            remove(uncertain.filter { $0["timestamp"].map(found.contains) ?? false })
+            let matched = uncertain.filter { $0["timestamp"].map(found.contains) ?? false }
+            Log.lastFM.info("settle", metadata: ["uncertain": "\(uncertain.count)", "matched": "\(matched.count)", "result": "history"])
+            remove(matched)
             pending = pending.map { $0.filter { $0.key != "_uncertain" } }
             return
         }
@@ -239,12 +260,15 @@ final class LastFM {
         let deadline = now - LastFM.limit + 86400
         var entries = pending
 
+        var expired = 0
         for index in entries.indices where entries[index]["_uncertain"] != nil {
             if let stamp = entries[index]["timestamp"].flatMap(Double.init), stamp < deadline {
                 entries[index]["_uncertain"] = nil
+                expired += 1
             }
         }
 
+        Log.lastFM.warning("settle", metadata: ["uncertain": "\(uncertain.count)", "expired": "\(expired)", "result": "no history"])
         pending = entries
     }
 
@@ -314,7 +338,7 @@ final class LastFM {
             Log.lastFM.error("request failed", metadata: ["method": "\(method)", "error": "\(error)"])
             throw error
         }
-        Log.lastFM.info("response", metadata: ["method": "\(method)", "status": "\((response as? HTTPURLResponse)?.statusCode ?? 0)", "bytes": "\(data.count)"])
+        Log.lastFM.debug("response", metadata: ["method": "\(method)", "status": "\((response as? HTTPURLResponse)?.statusCode ?? 0)", "bytes": "\(data.count)"])
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
 
         if let code = json["error"] as? Int {

@@ -110,7 +110,9 @@ final class Lyrics {
             guard !Task.isCancelled else { return }
             if case .success(let lyrics) = result, !lyrics.isEmpty {
                 Persist.write(Data(lyrics.utf8), to: key(track))
-                if (Self.read(file(track)) ?? "").isEmpty {
+                let local = !(Self.read(file(track)) ?? "").isEmpty
+                Log.lyrics.info("refresh result", metadata: ["path": "\(track.url.path)", "characters": "\(lyrics.count)", "pending": "\(local)"])
+                if !local {
                     original = lyrics
                     text = lyrics
                     remote = true
@@ -118,6 +120,8 @@ final class Lyrics {
                     pendingReplace = true
                     pendingLyrics = lyrics
                 }
+            } else {
+                Log.lyrics.info("refresh result", metadata: ["path": "\(track.url.path)", "result": "\(String(describing: result))"])
             }
             loading = false
         }
@@ -135,11 +139,13 @@ final class Lyrics {
             return .success(fallback)
         }
 
-        return .failure(Failure.offline)
+        return result
     }
 
     func confirmReplace() {
         guard pendingReplace, !pendingLyrics.isEmpty, let track else { return }
+
+        Log.lyrics.info("replace", metadata: ["path": "\(track.url.path)", "accepted": "true", "characters": "\(pendingLyrics.count)"])
         let lyrics = pendingLyrics
         original = lyrics
         text = lyrics
@@ -150,6 +156,7 @@ final class Lyrics {
     }
 
     func cancelReplace() {
+        Log.lyrics.info("replace", metadata: ["path": "\(track?.url.path ?? "")", "accepted": "false"])
         pendingReplace = false
         pendingLyrics = ""
     }
@@ -276,7 +283,10 @@ final class Lyrics {
 
     private nonisolated static func read(_ url: URL) -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+        if let text = String(data: data, encoding: .utf8) { return text }
+
+        Log.lyrics.debug("latin1 fallback", metadata: ["path": "\(url.path)"])
+        return String(data: data, encoding: .isoLatin1) ?? ""
     }
 
     @concurrent
@@ -285,25 +295,30 @@ final class Lyrics {
         let staleLyrics = read(keyURL)
 
         if let lyrics = staleLyrics, !lyrics.isEmpty, !isCacheStale(keyURL) {
+            Log.lyrics.debug("source", metadata: ["path": "\(track.url.path)", "source": "cache"])
             return .success(lyrics)
         }
 
         let result = await fetch(track)
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
+            Log.lyrics.info("source", metadata: ["path": "\(track.url.path)", "source": "lrclib"])
             Persist.write(Data(lyrics.utf8), to: keyURL)
             return .success(lyrics)
         }
 
         if let fallback = await ovh(artist: track.artist, title: track.title), !fallback.isEmpty {
+            Log.lyrics.info("source", metadata: ["path": "\(track.url.path)", "source": "lyrics.ovh"])
             Persist.write(Data(fallback.utf8), to: keyURL)
             return .success(fallback)
         }
 
         if let lyrics = staleLyrics, !lyrics.isEmpty {
+            Log.lyrics.info("source", metadata: ["path": "\(track.url.path)", "source": "stale cache"])
             return .success(lyrics)
         }
 
+        Log.lyrics.info("source", metadata: ["path": "\(track.url.path)", "source": "none", "result": "\(String(describing: result))"])
         return result
     }
 
@@ -322,7 +337,7 @@ final class Lyrics {
             do {
                 (data, response) = try await URLSession.shared.data(for: request)
             } catch {
-                Log.lyrics.error("request failed", metadata: ["url": "\(url.absoluteString)", "error": "\(error)"])
+                Log.lyrics.warning("request failed", metadata: ["url": "\(url.absoluteString)", "error": "\(error)"])
                 continue
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -390,19 +405,26 @@ final class Lyrics {
             do {
                 (data, response) = try await URLSession.shared.data(for: request)
             } catch {
-                Log.lyrics.error("request failed", metadata: ["url": "\(request.url?.absoluteString ?? "")", "error": "\(error)"])
+                Log.lyrics.warning("request failed", metadata: ["url": "\(request.url?.absoluteString ?? "")", "error": "\(error)"])
                 failure = .offline
                 continue
             }
 
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             Log.lyrics.info("response", metadata: ["url": "\(request.url?.absoluteString ?? "")", "status": "\(status)", "bytes": "\(data.count)"])
-            if status == 200 || status == 404 { return .success((try? JSONSerialization.jsonObject(with: data)) ?? [:]) }
+            if status == 200 || status == 404 {
+                guard let json = try? JSONSerialization.jsonObject(with: data) else {
+                    if status == 200 { Log.lyrics.warning("invalid json", metadata: ["url": "\(request.url?.absoluteString ?? "")", "bytes": "\(data.count)"]) }
+                    return .success([:])
+                }
+                return .success(json)
+            }
             guard status == 429 || status >= 500 else { return .failure(.status(status)) }
 
             failure = .busy
         }
 
+        Log.lyrics.error("request gave up", metadata: ["url": "\(request.url?.absoluteString ?? "")", "failure": "\(failure)"])
         return .failure(failure)
     }
 }

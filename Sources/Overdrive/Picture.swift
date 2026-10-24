@@ -18,6 +18,7 @@ nonisolated enum Picture {
         do {
             try process.run()
         } catch {
+            Log.cache.error("covers process failed", metadata: ["albums": "\(urls.count)", "error": "\(error)"])
             return [Data?](repeating: nil, count: urls.count)
         }
 
@@ -60,6 +61,9 @@ nonisolated enum Picture {
             offset += count
         }
 
+        Log.cache.log(level: process.terminationStatus == 0 && covers.count == urls.count ? .info : .error, "covers", metadata: [
+            "requested": "\(urls.count)", "returned": "\(covers.count)", "found": "\(covers.count { $0 != nil })", "bytes": "\(data.count)", "exit": "\(process.terminationStatus)",
+        ])
         return covers
     }
 

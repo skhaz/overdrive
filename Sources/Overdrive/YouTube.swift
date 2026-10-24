@@ -67,6 +67,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     var browser: Bool { didSet { Log.youTube.info("browser", metadata: ["on": "\(browser)"]); configuration.defaults.set(browser, forKey: "youtube.browser") } }
     var corner: Corner {
         didSet {
+            Log.youTube.info("corner", metadata: ["corner": "\(corner.rawValue)"])
             configuration.defaults.set(corner.rawValue, forKey: "youtube.corner")
             place()
         }
@@ -129,6 +130,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         player.resumed = { [weak self] in
             guard let self else { return }
 
+            Log.youTube.info("song resumed", metadata: ["action": "\(panel.isVisible ? "close" : "cancel")"])
             if panel.isVisible {
                 panel.close()
             } else {
@@ -194,8 +196,11 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             }
         }
 
-        guard request == current else { return }
-        guard let id else { return stop("No video found for “\(track.artist) - \(track.title)”.") }
+        guard request == current else { return Log.youTube.debug("superseded", metadata: ["stage": "search"]) }
+        guard let id else {
+            Log.youTube.warning("no video", metadata: ["artist": "\(track.artist)", "title": "\(track.title)"])
+            return stop("No video found for “\(track.artist) - \(track.title)”.")
+        }
 
         Log.youTube.info("video", metadata: ["id": "\(id)", "artist": "\(track.artist)", "title": "\(track.title)"])
 
@@ -233,6 +238,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         }
 
         guard request == current else {
+            Log.youTube.debug("superseded", metadata: ["stage": "play", "id": "\(id)"])
             _ = try? await web.evaluateJavaScript("document.getElementById('movie_player').stopVideo()")
             return
         }
@@ -242,7 +248,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     private func stop(_ message: String) {
-        Log.youTube.error("stop", metadata: ["reason": "\(message)"])
+        Log.youTube.info("stop", metadata: ["reason": "\(message)"])
         if panel.isVisible { panel.close() }
         alert(message)
     }
@@ -345,7 +351,15 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         }
 
         Task {
-            logged = (try? await webView.evaluateJavaScript("ytcfg.get('LOGGED_IN')")) as? Bool ?? false || signedIn
+            let value: Any?
+            do {
+                value = try await webView.evaluateJavaScript("ytcfg.get('LOGGED_IN')")
+            } catch {
+                Log.youTube.warning("login check failed", metadata: ["error": "\(error)"])
+                value = nil
+            }
+            logged = value as? Bool ?? false || signedIn
+            Log.youTube.info("ready", metadata: ["logged": "\(logged)", "signed in": "\(signedIn)", "waiting": "\(track != nil)"])
             signedIn = false
             mode = .ready
             if track != nil { await find() }
@@ -368,9 +382,11 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     private func failed(_ error: any Error) {
-        Log.youTube.error("failed", metadata: ["mode": "\(mode)", "error": "\(error)"])
-        guard mode == .loading, (error as? URLError)?.code != .cancelled else { return }
+        guard mode == .loading, (error as? URLError)?.code != .cancelled else {
+            return Log.youTube.debug("failure ignored", metadata: ["mode": "\(mode)", "error": "\(error)"])
+        }
 
+        Log.youTube.error("failed", metadata: ["mode": "\(mode)", "error": "\(error)"])
         mode = .failed
 
         retry?.cancel()
@@ -404,7 +420,14 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
             var components = URLComponents(string: "https://www.youtube.com/oembed")!
             components.queryItems = [URLQueryItem(name: "format", value: "json"), URLQueryItem(name: "url", value: "https://www.youtube.com/watch?v=\(id)")]
-            if let (_, response) = try? await configuration.transport.data(from: components.url!), (response as? HTTPURLResponse)?.statusCode == 200 { return id }
+            do {
+                let (_, response) = try await configuration.transport.data(from: components.url!)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if status == 200 { return id }
+                Log.youTube.debug("candidate rejected", metadata: ["id": "\(id)", "status": "\(status)"])
+            } catch {
+                Log.youTube.debug("candidate rejected", metadata: ["id": "\(id)", "error": "\(error)"])
+            }
         }
 
         return nil
@@ -469,9 +492,12 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         case .toggle: "v.paused ? v.play() : v.pause()"
         case .next, .previous: ""
         }
-        guard !action.isEmpty else { return }
+        guard !action.isEmpty else { return Log.youTube.debug("remote ignored", metadata: ["command": "\(command)"]) }
 
-        web.evaluateJavaScript("(v => { if (v) { \(action) } })(document.querySelector('video'))")
+        Log.youTube.info("remote", metadata: ["command": "\(command)"])
+        web.evaluateJavaScript("(v => { if (v) { \(action) } })(document.querySelector('video'))") { _, error in
+            if let error { Log.youTube.warning("remote failed", metadata: ["command": "\(command)", "error": "\(error)"]) }
+        }
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
@@ -489,6 +515,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        Log.youTube.info("window closed", metadata: ["mode": "\(mode)", "reload": "\(mode != .video)"])
         showing = nil
         cancel()
 

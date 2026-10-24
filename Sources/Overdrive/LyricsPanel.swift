@@ -33,6 +33,7 @@ final class LyricsPanel {
     }
 
     func show() {
+        Log.lyrics.info("panel shown")
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -42,6 +43,7 @@ final class LyricsPanel {
     }
 
     func hide() {
+        Log.lyrics.info("panel hidden")
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)

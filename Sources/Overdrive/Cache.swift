@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 import SQLite3
 
 nonisolated final class Cache {
@@ -218,28 +219,47 @@ nonisolated final class Cache {
 
     private func query(_ sql: String, _ values: [String] = [], _ row: (OpaquePointer) -> Void) {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else { return }
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            return Log.cache.error("query failed", metadata: failure(sql))
+        }
         defer { sqlite3_finalize(statement) }
 
         for (index, value) in values.enumerated() { Self.bind(statement, Int32(index + 1), value) }
-        while sqlite3_step(statement) == SQLITE_ROW { row(statement) }
+        var code = sqlite3_step(statement)
+        while code == SQLITE_ROW {
+            row(statement)
+            code = sqlite3_step(statement)
+        }
+        if code != SQLITE_DONE { Log.cache.error("query failed", metadata: failure(sql)) }
     }
 
     private func run<T>(_ sql: String, _ items: [T], _ bind: (OpaquePointer, T) -> Void) -> Bool {
         guard !items.isEmpty else { return true }
 
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else { return false }
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            Log.cache.error("statement failed", metadata: failure(sql))
+            return false
+        }
         defer { sqlite3_finalize(statement) }
 
-        for item in items {
+        for (index, item) in items.enumerated() {
             sqlite3_reset(statement)
             sqlite3_clear_bindings(statement)
             bind(statement, item)
-            guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                Log.cache.error("statement failed", metadata: failure(sql, index))
+                return false
+            }
         }
 
         return true
+    }
+
+    private func failure(_ sql: String, _ index: Int? = nil) -> Logging.Logger.Metadata {
+        var metadata: Logging.Logger.Metadata = ["root": "\(root)", "sql": "\(sql.prefix(80))", "code": "\(sqlite3_errcode(db))", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"]
+        if let index { metadata["index"] = "\(index)" }
+        return metadata
     }
 
     private static func bind(_ statement: OpaquePointer, _ index: Int32, _ value: String) {
