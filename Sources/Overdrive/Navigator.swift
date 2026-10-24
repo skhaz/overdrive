@@ -4,7 +4,7 @@ import SwiftUI
 final class Navigator: NSResponder {
     var available: () -> (back: Bool, forward: Bool) = { (false, false) }
     var progress: (CGFloat) -> Void = { _ in }
-    var go: (_ back: Bool) -> Void = { _ in }
+    var go: (_ back: Bool, _ source: String) -> Void = { _, _ in }
 
     override func wantsScrollEventsForSwipeTracking(on axis: NSEvent.GestureAxis) -> Bool {
         axis == .horizontal
@@ -23,7 +23,7 @@ final class Navigator: NSResponder {
 
             if phase == .ended, !committed, amount != 0 {
                 committed = true
-                go(amount > 0)
+                go(amount > 0, "swipe")
             }
             progress(committed || complete ? 0 : amount)
         }
@@ -31,8 +31,8 @@ final class Navigator: NSResponder {
 
     override func otherMouseDown(with event: NSEvent) {
         switch event.buttonNumber {
-        case 3: go(true)
-        case 4: go(false)
+        case 3: go(true, "mouse")
+        case 4: go(false, "mouse")
         default: super.otherMouseDown(with: event)
         }
     }
@@ -40,7 +40,7 @@ final class Navigator: NSResponder {
     override func swipe(with event: NSEvent) {
         guard event.deltaX != 0 else { return super.swipe(with: event) }
 
-        go(event.deltaX > 0)
+        go(event.deltaX > 0, "swipe")
     }
 }
 

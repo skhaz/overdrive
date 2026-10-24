@@ -117,12 +117,12 @@ struct NavigationTests {
     @Test func restoresOnlyAnEmptyPathWithoutHistory() {
         let one = Self.album("one")
         var navigation = Navigation(page: albums)
-        navigation.restore([.album(one)])
+        navigation.restore([.album(one)], on: albums)
 
         #expect(navigation.path == [.album(one)])
         #expect(navigation.back.isEmpty)
 
-        navigation.restore([.artist("Other")])
+        navigation.restore([.artist("Other")], on: albums)
         #expect(navigation.path == [.album(one)])
     }
 
@@ -187,7 +187,11 @@ struct NavigationTests {
         navigation.goBack()
         navigation.refresh([new])
 
-        #expect(navigation.path == [.album(new)])
+        guard case .album(let shown) = navigation.path.first else {
+            Issue.record("no album")
+            return
+        }
+        #expect(shown.title == "New")
         #expect(navigation.forward == [Place(page: songs, path: [])])
     }
 
@@ -386,7 +390,7 @@ struct NavigationTests {
         navigation.searched(from: "", to: "a")
         navigation.remove(.liked, fallback: albums)
         #expect(!navigation.searching)
-        navigation.filter(albums)
+        navigation.filter(albums, to: "Artist")
         #expect(navigation.place == Place(page: albums, path: []))
         #expect(navigation.searching)
     }
@@ -426,7 +430,7 @@ struct NavigationTests {
     @Test func anArtistLinkKeepsItsFilteredAlbums() {
         let one = Self.album("one")
         var navigation = Navigation(page: songs, path: [.album(one)])
-        navigation.filter(albums)
+        navigation.filter(albums, to: "Artist")
         navigation.searched(from: "", to: "Artist")
         #expect(navigation.place == Place(page: albums, path: []))
 
@@ -531,5 +535,108 @@ struct NavigationTests {
         #expect(Step.extendUp.index(first: 0, last: 2, count: 5, columns: 1) == nil)
         #expect(Step.extendDown.index(first: 0, last: 4, count: 5, columns: 1) == nil)
         #expect(Step.extendDown.index(first: nil, last: nil, count: 5, columns: 1) == nil)
+    }
+
+    @Test func anArtistLinkWithTheSameQueryDoesNotSwallowTheNextSearch() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: songs, query: "Artist")
+        navigation.show([.album(one)])
+        navigation.filter(albums, to: "Artist")
+        #expect(navigation.place == Place(page: albums, path: []))
+
+        navigation.searched(from: "Artist", to: "Artist x")
+        #expect(navigation.place == Place(page: songs, path: []), "the query did not change for the link, so the next change must open the results")
+    }
+
+    @Test func clearingAfterAnArtistLinkDoesNotSwallowTheNextSearch() {
+        var navigation = Navigation(page: songs)
+        navigation.filter(albums, to: "Artist")
+        navigation.searched(from: "", to: "Artist")
+        navigation.searched(from: "Artist", to: "")
+        navigation.searched(from: "", to: "abc")
+
+        #expect(navigation.place == Place(page: songs, path: []))
+    }
+
+    @Test func backWithoutHistoryClosesTheScreenAndCanGoForward() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums, path: [.album(one)])
+        #expect(navigation.canGoBack, "a restored album can close with Back")
+
+        let went = navigation.goBack()
+        let popped = navigation.pop()
+        #expect(!went)
+        #expect(popped)
+        #expect(navigation.place == Place(page: albums, path: []))
+        #expect(navigation.back.isEmpty, "closing a restored album must not add it to the back history")
+        #expect(!navigation.canGoBack)
+
+        navigation.goForward()
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+    }
+
+    @Test func theSavedPathGoesOnlyToTheSavedPage() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.open(songs)
+        navigation.restore([.album(one)], on: albums)
+        #expect(navigation.place == Place(page: songs, path: []), "the user moved to another page before the library loaded")
+
+        var other = Navigation(page: albums)
+        other.open(songs)
+        other.goBack()
+        other.restore([.album(one)], on: albums)
+        #expect(other.path.isEmpty, "a page with history keeps what the user did")
+    }
+
+    @Test func aDeletedPlaylistLeavesTheHistory() {
+        var navigation = Navigation(page: mix)
+        navigation.open(albums)
+        navigation.open(.playlist("Other"))
+        navigation.prune(["Other"], fallback: albums)
+
+        #expect(navigation.page == .playlist("Other"))
+        #expect(!navigation.back.contains { $0.page == mix })
+
+        var gone = Navigation(page: mix)
+        gone.prune([], fallback: albums)
+        #expect(gone.page == albums, "a playlist file removed while the app was closed must not stay open")
+    }
+
+    @Test func aChangedAlbumKeepsItsScreen() {
+        let old = Album(id: "one", title: "T", artist: "A", year: 2000, tracks: [])
+        let new = Album(id: "one", title: "T", artist: "A", year: 2001, tracks: [])
+        #expect(Route.album(old) == Route.album(new), "a scan that changes the songs of an open album must not rebuild its screen")
+        #expect(Route.album(old).hashValue == Route.album(new).hashValue)
+    }
+
+    @Test func refreshCutsArtistsThatAreGone() {
+        var navigation = Navigation(page: albums)
+        navigation.show([.artist("Gone")])
+        navigation.refresh([Self.album("one")])
+
+        #expect(navigation.path.isEmpty)
+    }
+
+    @Test func backRestoresTheQueryOfTheOldScreen() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.show([.album(one)])
+        navigation.filter(albums, to: "Artist")
+        navigation.searched(from: "", to: "Artist")
+        #expect(navigation.query == "Artist")
+
+        navigation.goBack()
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]))
+        #expect(navigation.place.query == "", "the album was open without a query")
+        #expect(navigation.searching, "the page change must not clear the query before it goes back")
+
+        navigation.searched(from: "Artist", to: "")
+        #expect(navigation.place == Place(page: albums, path: [.album(one)]), "putting back the old query does not open the results")
+
+        navigation.goForward()
+        #expect(navigation.place.query == "Artist")
+        navigation.searched(from: "", to: "Artist")
+        #expect(navigation.place == Place(page: albums, path: []))
     }
 }

@@ -55,6 +55,14 @@ nonisolated enum Route: Hashable {
     case album(Album)
     case artist(String)
 
+    static func == (lhs: Route, rhs: Route) -> Bool {
+        lhs.key == rhs.key
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(key)
+    }
+
     init?(key: String, albums: [Album]) {
         if key.hasPrefix("artist:") {
             self = .artist(String(key.dropFirst(7)))
@@ -82,23 +90,25 @@ nonisolated struct Place: Equatable {
     let page: Page
     let path: [Route]
     var position = Position()
+    var query = ""
 
     static func == (lhs: Place, rhs: Place) -> Bool {
         lhs.page == rhs.page && lhs.path == rhs.path
     }
 
-    func resolved(_ albums: [String: Album]) -> Place {
-        Place(page: page, path: Self.resolve(path, albums), position: position)
+    func resolved(_ albums: [String: Album], _ artists: Set<String>) -> Place {
+        Place(page: page, path: Self.resolve(path, albums, artists), position: position, query: query)
     }
 
-    static func resolve(_ path: [Route], _ albums: [String: Album]) -> [Route] {
+    static func resolve(_ path: [Route], _ albums: [String: Album], _ artists: Set<String>) -> [Route] {
         var routes: [Route] = []
         for route in path {
             switch route {
             case .album(let album):
                 guard let current = albums[album.id] else { return routes }
                 routes.append(.album(current))
-            case .artist:
+            case .artist(let name):
+                guard artists.contains(name) else { return routes }
                 routes.append(route)
             }
         }
@@ -112,16 +122,19 @@ nonisolated struct Navigation {
     private(set) var forward: [Place] = []
     private(set) var pages: [Page]
     private(set) var searching = false
-    private var filtering = false
+    private(set) var query: String
+    private var quiet = false
     private var paths: [Page: [Route]] = [:]
 
-    init(page: Page, path: [Route] = []) {
-        place = Place(page: page, path: path)
+    init(page: Page, path: [Route] = [], query: String = "") {
+        place = Place(page: page, path: path, query: query)
         pages = [page]
+        self.query = query
     }
 
     var page: Page { place.page }
     var path: [Route] { place.path }
+    var canGoBack: Bool { !back.isEmpty || !place.path.isEmpty }
 
     var lyrics: Bool {
         switch (place.path.last, place.page) {
@@ -139,10 +152,10 @@ nonisolated struct Navigation {
         visit(Place(page: page, path: []), leaving: position)
     }
 
-    mutating func filter(_ page: Page, leaving position: Position = Position()) {
+    mutating func filter(_ page: Page, to text: String, leaving position: Position = Position()) {
         open(page, leaving: position)
         searching = true
-        filtering = true
+        quiet = text != query
     }
 
     mutating func show(_ path: [Route], leaving position: Position = Position()) {
@@ -156,21 +169,39 @@ nonisolated struct Navigation {
     }
 
     mutating func searched(from old: String, to new: String, leaving position: Position = Position()) {
-        guard !new.isEmpty, new != old else { return }
+        defer { query = new }
 
-        if filtering {
-            filtering = false
+        if quiet {
+            quiet = false
             return
         }
+
+        guard !new.isEmpty, new != old else { return }
 
         open(.section(.songs), leaving: position)
         searching = true
     }
 
-    mutating func restore(_ path: [Route]) {
-        guard place.path.isEmpty else { return }
+    mutating func restore(_ path: [Route], on page: Page) {
+        guard place.page == page, place.path.isEmpty, back.isEmpty, forward.isEmpty else { return }
 
-        place = Place(page: place.page, path: path)
+        place = Place(page: place.page, path: path, query: query)
+    }
+
+    @discardableResult
+    mutating func pop(leaving position: Position = Position()) -> Bool {
+        guard back.isEmpty, !place.path.isEmpty else { return false }
+
+        forward.append(left(position))
+        move(to: Place(page: place.page, path: Array(place.path.dropLast()), query: query))
+        return true
+    }
+
+    mutating func prune(_ names: [String], fallback: Page) {
+        let names = Set(names)
+        for page in Set(pages + back.map(\.page) + forward.map(\.page) + [place.page]) {
+            if case .playlist(let name) = page, !names.contains(name) { remove(page, fallback: fallback) }
+        }
     }
 
     @discardableResult
@@ -179,6 +210,7 @@ nonisolated struct Navigation {
 
         forward.append(left(position))
         move(to: previous)
+        arrive()
         return true
     }
 
@@ -188,12 +220,13 @@ nonisolated struct Navigation {
 
         back.append(left(position))
         move(to: next)
+        arrive()
         return true
     }
 
     mutating func remove(_ page: Page, fallback: Page) {
         searching = false
-        filtering = false
+        quiet = false
         back.removeAll { $0.page == page }
         forward.removeAll { $0.page == page }
         pages.removeAll { $0 == page }
@@ -207,10 +240,11 @@ nonisolated struct Navigation {
 
     mutating func refresh(_ albums: [Album]) {
         let index = Dictionary(albums.map { ($0.id, $0) }) { first, _ in first }
-        place = place.resolved(index)
-        back = back.map { $0.resolved(index) }
-        forward = forward.map { $0.resolved(index) }
-        paths = paths.mapValues { Place.resolve($0, index) }
+        let artists = Set(albums.map(\.artist))
+        place = place.resolved(index, artists)
+        back = back.map { $0.resolved(index, artists) }
+        forward = forward.map { $0.resolved(index, artists) }
+        paths = paths.mapValues { Place.resolve($0, index, artists) }
         collapse()
     }
 
@@ -222,9 +256,16 @@ nonisolated struct Navigation {
         move(to: new)
     }
 
+    private mutating func arrive() {
+        guard place.query != query else { return }
+
+        quiet = true
+        searching = true
+    }
+
     private mutating func move(to new: Place) {
         searching = false
-        filtering = false
+        quiet = false
         if new.page != place.page {
             paths[place.page] = place.path
             if !pages.contains(new.page) { pages.append(new.page) }
@@ -235,6 +276,7 @@ nonisolated struct Navigation {
     private func left(_ position: Position) -> Place {
         var old = place
         old.position = position
+        old.query = query
         return old
     }
 

@@ -46,7 +46,7 @@ struct ViewStructureTests {
                     library.query = ""
                 }
         """), "a page change must clear the search, except the page the search opens")
-        #expect(try source().contains("navigation.filter(.section(.albums), leaving: tracker.position)"), "a click on an artist name must keep its search")
+        #expect(try source().contains("navigation.filter(.section(.albums), to: text, leaving: tracker.position)"), "a click on an artist name must keep its search")
     }
 
     @Test func typedKeysGoToTheSearchWhileItHasText() throws {
@@ -131,8 +131,35 @@ struct ViewStructureTests {
         #expect(try source().contains("case (123...126, true): return false"), "the sidebar keeps its own arrow keys")
     }
 
-    @Test func escapeGoesBackFromTheSidebar() throws {
-        #expect(try source().contains("case (53, _) where !path.isEmpty:"), "Escape goes back also when the sidebar has the focus")
+    @Test func escapeFollowsItsOrderFromAnyFocus() throws {
+        let source = try source()
+        let escape = region(source, from: "private func escape(")
+
+        #expect(source.contains("if event.keyCode == 53, event.modifierFlags.isDisjoint(with: [.command, .option, .control]) { return escape(window, sidebar: sidebar) }\n        guard sidebar || focus == .search || !Focus.typing(window.firstResponder)"), "Escape runs before the editable text guard, so it closes the video and goes back also from the lyrics editor")
+        let order = ["youTube.close()", "goBack()", "focus = .search", "library.query = \"\""].compactMap { escape.range(of: $0)?.lowerBound }
+        #expect(order.count == 4 && order == order.sorted(), "close the video, go back, leave the lyrics editor, clear the search")
+    }
+
+    @Test func hiddenScreensDoNotReact() throws {
+        let source = try source()
+
+        #expect(source.contains(".onDeleteCommand { if active { remove(selection) } }"), "Delete must not remove songs from a hidden queue")
+        #expect(source.contains("if active { removing = rows.filter { selection.contains($0.id) } }"))
+        #expect(source.contains("guard active, let point = notification.object as? CGPoint, list.rect.contains(point)"), "a right-click must not change a hidden album")
+        #expect(source.contains("reachable(table, in: content)"), "Control-Return opens the menu of the table that shows")
+    }
+
+    @Test func emptyListsClearTheSelectedSong() throws {
+        let source = try source()
+
+        #expect(source.components(separatedBy: ".modifier(Selected(tracks: []").count - 1 == 3, "an empty queue, playlist, or Liked Songs shows the lyrics of the song that plays")
+    }
+
+    @Test func aDoubleClickAndEnterDoTheSame() throws {
+        let source = try source()
+
+        #expect(!source.contains("ids.first"), "a Set has no order: play the first selected row as shown")
+        #expect(source.components(separatedBy: "player.start(").count - 1 >= 6, "a double-click and Enter both start the row")
     }
 
     @Test func typingKeepsTheFirstCharacter() throws {
