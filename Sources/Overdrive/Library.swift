@@ -32,6 +32,17 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
     }
 }
 
+nonisolated final class Failures: @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: [String] = []
+
+    var items: [String] { lock.withLock { list } }
+
+    func add(_ url: URL, _ error: any Error) {
+        lock.withLock { list.append("\(url.path): \(error.localizedDescription)") }
+    }
+}
+
 nonisolated struct Row: Identifiable, Sendable {
     let id: Int
     let track: Track
@@ -472,7 +483,15 @@ final class Library {
             let cache = caches[number]
             var known = knowns[number]
 
-            if let enumerator = FileManager.default.enumerator(at: cache.map { URL(filePath: $0.root) } ?? folder, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+            let root = cache.map { URL(filePath: $0.root) } ?? folder
+            let failures = Failures()
+            let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants]) { url, error in
+                failures.add(url, error)
+                return true
+            }
+            if enumerator == nil { failures.add(root, CocoaError(.fileReadUnknown)) }
+
+            if let enumerator {
                 while let url = enumerator.nextObject() as? URL {
                     guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
 
@@ -490,7 +509,13 @@ final class Library {
                 }
             }
 
-            removed.append(Array(known.keys))
+            if failures.items.isEmpty {
+                removed.append(Array(known.keys))
+            } else {
+                Log.library.error("folder unreadable", metadata: ["folder": "\(root.path)", "kept": "\(known.count)", "errors": Log.list(failures.items.prefix(20))])
+                for entry in known.values { slots.append(entry.track) }
+                removed.append([])
+            }
         }
 
         Log.library.info("walk", metadata: ["files": "\(slots.count)", "read": "\(pending.count)", "removed": Log.list(removed.flatMap(\.self))])

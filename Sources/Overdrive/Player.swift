@@ -31,7 +31,7 @@ final class Player {
     }
 
     private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
-    static let saved = (try? Data(contentsOf: session)).flatMap { try? PropertyListDecoder().decode(Session.self, from: $0) }
+    static let saved = Persist.read(Session.self, from: session)
 
     private(set) var queue: [Track] = []
     private(set) var index = 0

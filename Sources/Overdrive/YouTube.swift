@@ -92,7 +92,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         self.player = player
         browser = configuration.defaults.object(forKey: "youtube.browser") as? Bool ?? false
         corner = configuration.defaults.string(forKey: "youtube.corner").flatMap(Corner.init) ?? .bottomRight
-        videos = (try? Data(contentsOf: configuration.store)).flatMap { try? PropertyListDecoder().decode([String: String].self, from: $0) } ?? [:]
+        videos = Persist.read([String: String].self, from: configuration.store) ?? [:]
 
         let settings = WKWebViewConfiguration()
         settings.mediaTypesRequiringUserActionForPlayback = []

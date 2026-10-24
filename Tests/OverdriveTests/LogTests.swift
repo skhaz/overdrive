@@ -117,7 +117,13 @@ struct LogTests {
     }
 }
 
-private final class Records: @unchecked Sendable {
+let logRecords: Records = {
+    let records = Records()
+    Log.tap = { records.add($0) }
+    return records
+}()
+
+final class Records: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [[String: Any]] = []
 
@@ -172,9 +178,7 @@ private final class Records: @unchecked Sendable {
     }
 
     @Test @MainActor func theComponentsWriteStructuredRecords() async throws {
-        let records = Records()
-        Log.tap = { records.add($0) }
-        defer { Log.tap = nil }
+        let records = logRecords
 
         let folder = FileManager.default.temporaryDirectory.appending(path: "LogCoverage-\(UUID().uuidString)")
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }

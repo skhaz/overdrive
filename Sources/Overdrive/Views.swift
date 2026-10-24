@@ -1784,7 +1784,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: library.folders) {
+            lyrics.flush()
             lyrics = Lyrics(cache: Lyrics.directory(in: library.folders.first), enabled: player.lyrics)
+            playlists.load()
+            likes.load()
         }
         .onChange(of: lyrics.floating) {
             if lyrics.floating {

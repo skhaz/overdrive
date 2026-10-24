@@ -52,7 +52,7 @@ final class Loudness {
         entries = [:]
 
         for root in roots {
-            guard let stored = try? PropertyListDecoder().decode([String: Entry].self, from: Data(contentsOf: root.folder.appending(path: Self.name))) else { continue }
+            guard let stored = Persist.read([String: Entry].self, from: root.folder.appending(path: Self.name)) else { continue }
 
             entries.reserveCapacity(entries.count + stored.count)
             for (key, entry) in stored {

@@ -48,6 +48,7 @@ Always run `swift test` before every commit. Commit only when all tests pass. Gi
 - SQLite is only a cache, rebuilt from the music files. Each folder has its own `Cache.sqlite` at its root, paths relative to the folder (realpath). It is the only data that is not a binary plist.
 - Tables: `tracks` (unique `path`, tags, `modified`, `size`, nullable `hash`), `tracks_album`, `covers` (JPEG), and the FTS5 `search` (`tokenize = 'trigram remove_diacritics 1'`), kept in sync by the insert, delete, and update triggers. Upserts use `ON CONFLICT(path) DO UPDATE`.
 - Settings: `page_size = 65536` (before WAL), `mmap_size = 1 GiB`, WAL, `synchronous = FULL`, `fullfsync`, `checkpoint_fullfsync`, infinite `busy_timeout`. No version: to change the schema, delete the `Cache.sqlite` files.
+- A folder that cannot be walked (no enumerator, or a directory error during the walk) keeps all its cached songs: nothing leaves the cache for that folder in that scan, and `library`, `folder unreadable` logs the errors.
 - The scan walks by the real path. Same date and size: cached tags. New size: read again. Same size, new date: hash (SHA-256); the same hash keeps the tags. New files get no hash. Gone or unreadable files leave the cache.
 - Scans run one at a time. Each scan writes its adds, changes, removes, and covers in one transaction (`BEGIN IMMEDIATE` to `COMMIT`, or `ROLLBACK`). A failed write keeps the last good state.
 - The scan is progressive: first the cache, then the walk, then batches of 256 files. `Library.load` calls `progress` after each step and stops without a write when a newer scan replaces it. Adding a folder scans at once.
@@ -57,6 +58,8 @@ Always run `swift test` before every commit. Commit only when all tests pass. Gi
 
 - Every write of app data is atomic and durable. Period. This applies to every current file and every future file, without exception: binary plists through `Persist` (`write`, `move`, `remove`), and the cache through SQLite transactions. Never write in place, never `Data.write` directly, never a partial state.
 - Every data file is a binary plist. No JSON, no plain text. Exception: `Cache.sqlite`.
+- Read data files only through `Persist.read`. A missing file is normal; a file that cannot be read or decoded logs an error (`persist`, `read failed` or `decode failed`) before the app replaces it.
+- `Likes` and `Playlists` keep absolute paths in memory, decoded once on load. They encode relative paths only when they save, against the current first folder. They reload when the folders change.
 - Song paths in the data files in a music folder (`Likes.plist`, `Playlists/`, `Loudness.plist`) are relative to that folder, so the library can move. In `~/Library/Application Support/Overdrive` they are home-relative (`~/…`) under the home directory, absolute outside it, computed at runtime.
 
 ## Logging

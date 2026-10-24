@@ -35,6 +35,10 @@ nonisolated enum Log {
         .array(items.map { .string($0.description) })
     }
 
+    static func paths(_ items: [String], limit: Int = 20) -> Logging.Logger.Metadata {
+        ["count": "\(items.count)", "paths": list(items.prefix(limit))]
+    }
+
     static func flush() {
         sink?.flush()
     }

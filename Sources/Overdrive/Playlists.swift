@@ -8,60 +8,55 @@ final class Playlists {
     }
 
     private(set) var names: [String] = []
-    private var storedPaths: [String: [String]] = [:]
-
-    var paths: [String: [String]] {
-        var result: [String: [String]] = [:]
-        for (name, list) in storedPaths {
-            result[name] = list.map { StoredPath.decode($0, relativeTo: folderPath) }
-        }
-        return result
-    }
+    private(set) var paths: [String: [String]] = [:]
 
     var naming: [URL]?
 
     @ObservationIgnored private let directory: () -> URL
     @ObservationIgnored private let folder: () -> URL?
-    private let folderPath: String
 
     init(directory: URL, folder: URL) {
         self.directory = { directory }
         self.folder = { folder }
-        self.folderPath = folder.path
         load()
     }
 
     init(directory: URL, folderPath: String) {
         self.directory = { directory }
         self.folder = { URL(fileURLWithPath: folderPath) }
-        self.folderPath = folderPath
         load()
     }
 
     init(directory: @escaping () -> URL, folder: @escaping () -> URL?) {
         self.directory = directory
         self.folder = folder
-        self.folderPath = folder()?.path ?? ""
         load()
     }
 
-    func load() {
-        let files = (try? FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+    private var folderPath: String { folder()?.path ?? "" }
 
-        storedPaths = [:]
+    func load() {
+        let base = folderPath
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+        } catch {
+            if (error as NSError).code != NSFileReadNoSuchFileError {
+                Log.playlists.error("list failed", metadata: ["directory": "\(directory().path)", "error": "\(error)"])
+            }
+            files = []
+        }
+
+        paths = [:]
 
         for file in files where file.pathExtension == "plist" {
             let name = file.deletingPathExtension().lastPathComponent
-            guard !name.hasSuffix(".backup") else { continue }
-            guard let data = try? Data(contentsOf: file), let list = try? PropertyListDecoder().decode([String].self, from: data) else {
-                Log.playlists.error("unreadable", metadata: ["file": "\(file.path)"])
-                continue
-            }
+            guard !name.hasSuffix(".backup"), let list = Persist.read([String].self, from: file) else { continue }
 
-            storedPaths[name] = list.map { StoredPath.decode($0, relativeTo: folderPath) }
+            paths[name] = list.map { StoredPath.decode($0, relativeTo: base) }
         }
 
-        names = storedPaths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        names = paths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         Log.playlists.info("load", metadata: ["directory": "\(directory().path)", "names": Log.list(names)])
     }
 
@@ -74,10 +69,13 @@ final class Playlists {
 
     @discardableResult
     func create(_ name: String, _ urls: [URL]) -> String? {
-        Log.playlists.info("create", metadata: ["name": "\(name)", "songs": Log.list(urls.map(\.path))])
         let name = name.trimmingCharacters(in: .whitespaces)
-        guard valid(name) else { return nil }
+        guard valid(name) else {
+            Log.playlists.warning("create rejected", metadata: ["name": "\(name)"])
+            return nil
+        }
 
+        Log.playlists.info("create", metadata: ["name": "\(name)", "songs": "\(urls.count)"])
         names.append(name)
         names.sort { $0.localizedStandardCompare($1) == .orderedAscending }
         add(urls, to: name)
@@ -86,20 +84,22 @@ final class Playlists {
     }
 
     func add(_ urls: [URL], to name: String) {
-        Log.playlists.info("add", metadata: ["name": "\(name)", "songs": Log.list(urls.map(\.path))])
-        var list = storedPaths[name] ?? []
-        var seen = Set(list.map { StoredPath.decode($0, relativeTo: folderPath) })
+        var metadata = Log.paths(urls.map(\.path))
+        metadata["name"] = "\(name)"
+        Log.playlists.info("add", metadata: metadata)
+        var list = paths[name] ?? []
+        var seen = Set(list)
 
         for url in urls where seen.insert(url.path).inserted {
-            list.append(StoredPath.encode(url.path, relativeTo: folderPath))
+            list.append(url.path)
         }
 
         save(name, list)
     }
 
     func remove(_ positions: Set<Int>, from name: String) {
-        Log.playlists.info("remove", metadata: ["name": "\(name)", "positions": Log.list(positions.sorted())])
-        var list = storedPaths[name] ?? []
+        Log.playlists.info("remove", metadata: ["name": "\(name)", "count": "\(positions.count)", "positions": Log.list(positions.sorted().prefix(20))])
+        var list = paths[name] ?? []
         guard positions.contains(where: list.indices.contains) else { return }
 
         list.removeSubranges(RangeSet(positions.filter(list.indices.contains).map { $0..<$0 + 1 }))
@@ -107,8 +107,8 @@ final class Playlists {
     }
 
     func duplicate(_ positions: Set<Int>, in name: String) {
-        Log.playlists.info("duplicate", metadata: ["name": "\(name)", "positions": Log.list(positions.sorted())])
-        let list = storedPaths[name] ?? []
+        Log.playlists.info("duplicate", metadata: ["name": "\(name)", "count": "\(positions.count)", "positions": Log.list(positions.sorted().prefix(20))])
+        let list = paths[name] ?? []
         guard positions.contains(where: list.indices.contains) else { return }
 
         var result: [String] = []
@@ -123,11 +123,11 @@ final class Playlists {
     }
 
     func reorder(_ order: [Int], in name: String) {
-        Log.playlists.info("reorder", metadata: ["name": "\(name)", "order": Log.list(order)])
-        let list = storedPaths[name] ?? []
+        Log.playlists.info("reorder", metadata: ["name": "\(name)", "count": "\(order.count)"])
+        let list = paths[name] ?? []
         var result = list
 
-        for (slot, position) in zip(order.sorted(), order) {
+        for (slot, position) in zip(order.sorted(), order) where list.indices.contains(position) && result.indices.contains(slot) {
             result[slot] = list[position]
         }
 
@@ -140,16 +140,17 @@ final class Playlists {
 
         guard Persist.move(file(name), to: backup) else { return }
 
-        storedPaths[name] = nil
+        paths[name] = nil
         names.removeAll { $0 == name }
     }
 
     private func save(_ name: String, _ list: [String]) {
-        storedPaths[name] = list
+        paths[name] = list
 
+        let base = folderPath
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(list.map { StoredPath.encode($0, relativeTo: folderPath) }) else { return }
+        guard let data = try? encoder.encode(list.map { StoredPath.encode($0, relativeTo: base) }) else { return }
 
         Persist.write(data, to: file(name))
     }

@@ -11,6 +11,27 @@ nonisolated enum Persist {
         return done
     }
 
+    static func read<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            if (error as NSError).code != NSFileReadNoSuchFileError {
+                Log.persist.error("read failed", metadata: ["path": "\(url.path)", "error": "\(error)"])
+            }
+            return nil
+        }
+
+        do {
+            let value = try PropertyListDecoder().decode(type, from: data)
+            Log.persist.debug("read", metadata: ["path": "\(url.path)", "bytes": "\(data.count)"])
+            return value
+        } catch {
+            Log.persist.error("decode failed", metadata: ["path": "\(url.path)", "bytes": "\(data.count)", "error": "\(error)"])
+            return nil
+        }
+    }
+
     static func flush() {
         queue.sync {}
     }

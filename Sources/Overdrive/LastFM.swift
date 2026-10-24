@@ -45,7 +45,7 @@ final class LastFM {
     init(_ configuration: Configuration = Configuration()) {
         self.configuration = configuration
 
-        let saved = (try? PropertyListDecoder().decode([String: String].self, from: Data(contentsOf: configuration.credentials))) ?? [:]
+        let saved = Persist.read([String: String].self, from: configuration.credentials) ?? [:]
         session = saved["session"] ?? ""
         user = saved["user"] ?? ""
 
@@ -72,9 +72,7 @@ final class LastFM {
     }
 
     private static func load(_ configuration: Configuration) -> Queue {
-        if let data = try? Data(contentsOf: configuration.store), let queue = try? PropertyListDecoder().decode(Queue.self, from: data) { return queue }
-
-        return Queue()
+        Persist.read(Queue.self, from: configuration.store) ?? Queue()
     }
 
     private func persist() {
