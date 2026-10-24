@@ -148,7 +148,7 @@ nonisolated final class Sink: @unchecked Sendable {
     }
 
     func write(_ record: Data, at date: Date) {
-        queue.sync { [self] in
+        queue.async { [self] in
             rotate(Int((date.timeIntervalSince1970 / Self.interval).rounded(.down)))
             guard file >= 0 else { return }
 
