@@ -45,6 +45,8 @@ Drag a music folder to the window, or choose Overdrive > Settings > Folders > Ad
 - Type in the search field to find an artist, an album, or a song. The search stays until you clear it with Escape, Command-K, or the clear button.
 - To go back to the previous screen, click the back arrow at the top, press Command-[, or swipe to the right on the trackpad. To go forward again, click the forward arrow, press Command-], or swipe to the left. The side buttons of a mouse also work.
 - Double-click a song to play it. On an album, click **Play** or **Shuffle**.
+- Click a column title (Title, Artist, Album, Time) to sort a list. Click again to reverse the order, and a third time to go back to the order of the list. When you leave a list or quit the app, the list goes back to its own order.
+- Albums go from the oldest to the newest.
 - Use the bar at the bottom to play, pause, go to the previous or next song, shuffle, repeat, go to a different part of the song, and change the volume.
 - Click the cover or the name in the bottom bar to open the album that plays.
 

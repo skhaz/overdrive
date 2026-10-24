@@ -1116,17 +1116,21 @@ struct SongTable: View {
     @Environment(Likes.self) private var likes
     @Environment(\.go) private var go
     @State private var selection: Set<Track.ID> = []
+    @State private var sort = Sort()
+    @Environment(\.active) private var active
 
     var body: some View {
         let now = youTube.showing ?? player.current
+        let tracks = sort.apply(self.tracks)
 
         ScrollViewReader { proxy in
-            Table(tracks, selection: $selection) {
-                TableColumn("Title") { Cell(text: $0.title, playing: $0 == now, liked: likes.contains($0)) }
-                TableColumn("Artist") { Cell(text: $0.artist, playing: $0 == now) }
-                TableColumn("Album") { Cell(text: $0.album, playing: $0 == now) }
-                TableColumn("Time") { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
+            Table(tracks, selection: $selection, sortOrder: order($sort, "songs")) {
+                TableColumn("Title", value: \.title) { Cell(text: $0.title, playing: $0 == now, liked: likes.contains($0)) }
+                TableColumn("Artist", value: \.artist) { Cell(text: $0.artist, playing: $0 == now) }
+                TableColumn("Album", value: \.album) { Cell(text: $0.album, playing: $0 == now) }
+                TableColumn("Time", value: \.duration) { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
             }
+            .onChange(of: active) { if !active { sort = Sort() } }
             .contextMenu(forSelectionType: Track.ID.self) { ids in
                 TrackMenu(tracks: tracks.filter { ids.contains($0.id) })
 
@@ -1193,28 +1197,33 @@ struct QueueView: View {
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
     @State private var selection: Set<Row.ID> = []
+    @State private var sort = Sort()
+    @Environment(\.active) private var active
 
     var body: some View {
-        let rows = player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) }
+        let rows = sort.apply(player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) })
         let now = youTube.showing == nil ? player.index : nil
 
         if rows.isEmpty {
             ContentUnavailableView("No Songs", systemImage: "list.bullet", description: Text("Play a song or an album to fill the queue."))
         } else {
             ScrollViewReader { proxy in
-                Table(of: Row.self, selection: $selection) {
-                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track), added: added($0)) }
-                    TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.id == now) }
-                    TableColumn("Album") { Cell(text: $0.track.album, playing: $0.id == now) }
-                    TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
+                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "queue")) {
+                    TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track), added: added($0)) }
+                    TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.id == now) }
+                    TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.id == now) }
+                    TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
                 } rows: {
                     ForEach(rows) { TableRow($0).draggable(String($0.id)) }
                         .dropDestination(for: String.self) { index, ids in
+                            guard sort.column == nil else { return }
+
                             selection = []
                             player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))
                         }
                 }
                 .onDeleteCommand { remove(selection) }
+                .onChange(of: active) { if !active { sort = Sort() } }
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1279,27 +1288,34 @@ struct PlaylistView: View {
     @Environment(Likes.self) private var likes
     @State private var selection: Set<Row.ID> = []
     @State private var removing: [Row] = []
+    @State private var sort = Sort()
+    @Environment(\.active) private var active
 
     var body: some View {
-        let rows = library.rows(playlists.paths[name] ?? [])
+        let rows = sort.apply(library.rows(playlists.paths[name] ?? []))
         let now = youTube.showing ?? player.current
 
         if playlists.paths[name]?.isEmpty ?? true {
             ContentUnavailableView("No Songs", systemImage: "music.note.list", description: Text("Right-click a song or an album and choose Add to Playlist."))
         } else {
             ScrollViewReader { proxy in
-                Table(of: Row.self, selection: $selection) {
-                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now, liked: likes.contains($0.track)) }
-                    TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
-                    TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
-                    TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
+                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "playlist")) {
+                    TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.track == now, liked: likes.contains($0.track)) }
+                    TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.track == now) }
+                    TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.track == now) }
+                    TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
                 } rows: {
                     ForEach(rows) { TableRow($0).draggable(String($0.id)) }
-                        .dropDestination(for: String.self) { index, ids in move(rows, ids.compactMap { Int($0) }, to: index) }
+                        .dropDestination(for: String.self) { index, ids in
+                            guard sort.column == nil else { return }
+
+                            move(rows, ids.compactMap { Int($0) }, to: index)
+                        }
                 }
                 .onDeleteCommand {
                     removing = rows.filter { selection.contains($0.id) }
                 }
+                .onChange(of: active) { if !active { sort = Sort() } }
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1377,23 +1393,26 @@ struct LikedView: View {
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
     @State private var selection: Set<Row.ID> = []
+    @State private var sort = Sort()
+    @Environment(\.active) private var active
 
     var body: some View {
-        let rows = library.rows(likes.paths)
+        let rows = sort.apply(library.rows(likes.paths))
         let now = youTube.showing ?? player.current
 
         if likes.paths.isEmpty {
             ContentUnavailableView("No Liked Songs", systemImage: "heart", description: Text("Right-click a song and choose Like Song, or click the heart next to the song that plays."))
         } else {
             ScrollViewReader { proxy in
-                Table(of: Row.self, selection: $selection) {
-                    TableColumn("Title") { Cell(text: $0.track.title, playing: $0.track == now) }
-                    TableColumn("Artist") { Cell(text: $0.track.artist, playing: $0.track == now) }
-                    TableColumn("Album") { Cell(text: $0.track.album, playing: $0.track == now) }
-                    TableColumn("Time") { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
+                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "liked")) {
+                    TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.track == now) }
+                    TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.track == now) }
+                    TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.track == now) }
+                    TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
                 } rows: {
                     ForEach(rows) { TableRow($0) }
                 }
+                .onChange(of: active) { if !active { sort = Sort() } }
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1854,7 +1873,7 @@ struct ContentView: View {
                 screen(top, top ? navigation.place.position : Position()) {
                     switch route {
                     case .album(let album): AlbumView(album: album)
-                    case .artist(let name): AlbumGrid(albums: library.albums.filter { $0.artist == name })
+                    case .artist(let name): AlbumGrid(albums: Library.chronological(library.albums.filter { $0.artist == name }))
                     }
                 }
                 .id(route)

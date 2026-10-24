@@ -107,6 +107,18 @@ final class Library {
         }
     }
 
+    nonisolated static func chronological(_ albums: [Album]) -> [Album] {
+        albums.sorted {
+            guard $0.year == $1.year else { return $1.year == 0 || $0.year != 0 && $0.year < $1.year }
+
+            let artist = $0.artist.localizedStandardCompare($1.artist)
+            guard artist == .orderedSame else { return artist == .orderedAscending }
+
+            let title = $0.title.localizedStandardCompare($1.title)
+            return title == .orderedSame ? $0.id < $1.id : title == .orderedAscending
+        }
+    }
+
     private static func savedFolders() -> [URL] {
         (UserDefaults.standard.stringArray(forKey: key) ?? []).map { URL(filePath: StoredPath.decode($0)) }
     }
@@ -114,7 +126,7 @@ final class Library {
     var artists: [(name: String, albums: [Album])] {
         if grouped.version != version {
             grouped = (version, Dictionary(grouping: filtered, by: \.artist)
-                .map { ($0.key, $0.value.sorted { $0.year < $1.year }) }
+                .map { ($0.key, $0.value) }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
         }
 
@@ -254,6 +266,7 @@ final class Library {
 
     private func search() {
         defer {
+            filtered = Library.chronological(filtered)
             hits = query.isEmpty ? [] : Set(tracks.map(\.id))
             version += 1
         }
