@@ -15,11 +15,14 @@ nonisolated enum Column: String, CaseIterable {
 
 nonisolated protocol Sortable {
     var song: Track { get }
+    func same(_ other: Self) -> Bool
     static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Self>
 }
 
 nonisolated extension Track: Sortable {
     var song: Track { self }
+
+    func same(_ other: Track) -> Bool { self == other }
 
     static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Track> {
         switch column {
@@ -34,6 +37,8 @@ nonisolated extension Track: Sortable {
 nonisolated extension Row: Sortable {
     var song: Track { track }
 
+    func same(_ other: Row) -> Bool { id == other.id && track == other.track }
+
     static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Row> {
         switch column {
         case .title: KeyPathComparator(\.track.title, order: order)
@@ -44,7 +49,7 @@ nonisolated extension Row: Sortable {
     }
 }
 
-nonisolated struct Sort: Equatable, RawRepresentable {
+nonisolated struct Sort: Hashable, RawRepresentable {
     var column: Column?
     var ascending = true
 
@@ -91,6 +96,23 @@ nonisolated struct Sort: Equatable, RawRepresentable {
             return (result == .orderedAscending) == ascending
         }
         return order.map { items[$0] }
+    }
+}
+
+final class Sorted<T: Sortable> {
+    private var sort = Sort()
+    private var source: [T] = []
+    private var result: [T] = []
+    private(set) var runs = 0
+
+    func apply(_ sort: Sort, _ items: [T]) -> [T] {
+        if sort == self.sort, items.count == source.count, items.elementsEqual(source, by: { $0.same($1) }) { return result }
+
+        self.sort = sort
+        source = items
+        result = sort.apply(items)
+        runs += 1
+        return result
     }
 }
 

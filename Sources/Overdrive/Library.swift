@@ -135,6 +135,7 @@ final class Library {
 
     @ObservationIgnored private var index = Index()
     @ObservationIgnored private var everything: [Track] = []
+    @ObservationIgnored private var byYear: [Album] = []
     @ObservationIgnored private var lookup: [String: Track] = [:]
     @ObservationIgnored private var readers: [Cache] = []
     @ObservationIgnored private var running: Task<Void, Never>?
@@ -243,6 +244,7 @@ final class Library {
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
         readers = folders.compactMap { Cache($0) }
         albums = snapshot.albums
+        byYear = Library.chronological(snapshot.albums)
         search()
     }
 
@@ -266,12 +268,11 @@ final class Library {
 
     private func search() {
         defer {
-            filtered = Library.chronological(filtered)
             hits = query.isEmpty ? [] : Set(tracks.map(\.id))
             version += 1
         }
 
-        filtered = query.isEmpty ? [] : albums.filter { $0.artist == query }
+        filtered = query.isEmpty ? [] : byYear.filter { $0.artist == query }
         songMatches.removeAll(keepingCapacity: true)
 
         guard filtered.isEmpty else {
@@ -289,7 +290,7 @@ final class Library {
         }
 
         guard !tokens.isEmpty else {
-            filtered = albums
+            filtered = byYear
             tracks = everything
             return
         }
@@ -345,6 +346,7 @@ final class Library {
         filtered = []
         filtered.reserveCapacity(ranked.count)
         for hit in ranked { filtered.append(albums[Int(hit.item)]) }
+        filtered = Library.chronological(filtered)
 
         rank(trackHits, limit)
         tracks = []

@@ -1117,11 +1117,12 @@ struct SongTable: View {
     @Environment(\.go) private var go
     @State private var selection: Set<Track.ID> = []
     @State private var sort = Sort()
+    @State private var sorted = Sorted<Track>()
     @Environment(\.active) private var active
 
     var body: some View {
         let now = youTube.showing ?? player.current
-        let tracks = sort.apply(self.tracks)
+        let tracks = sorted.apply(sort, self.tracks)
 
         ScrollViewReader { proxy in
             Table(tracks, selection: $selection, sortOrder: order($sort, "songs")) {
@@ -1131,6 +1132,7 @@ struct SongTable: View {
                 TableColumn("Time", value: \.duration) { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
             }
             .onChange(of: active) { if !active { sort = Sort() } }
+            .id(sort)
             .contextMenu(forSelectionType: Track.ID.self) { ids in
                 TrackMenu(tracks: tracks.filter { ids.contains($0.id) })
 
@@ -1198,10 +1200,11 @@ struct QueueView: View {
     @Environment(Likes.self) private var likes
     @State private var selection: Set<Row.ID> = []
     @State private var sort = Sort()
+    @State private var sorted = Sorted<Row>()
     @Environment(\.active) private var active
 
     var body: some View {
-        let rows = sort.apply(player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) })
+        let rows = sorted.apply(sort, player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) })
         let now = youTube.showing == nil ? player.index : nil
 
         if rows.isEmpty {
@@ -1224,6 +1227,7 @@ struct QueueView: View {
                 }
                 .onDeleteCommand { remove(selection) }
                 .onChange(of: active) { if !active { sort = Sort() } }
+                .id(sort)
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1289,10 +1293,11 @@ struct PlaylistView: View {
     @State private var selection: Set<Row.ID> = []
     @State private var removing: [Row] = []
     @State private var sort = Sort()
+    @State private var sorted = Sorted<Row>()
     @Environment(\.active) private var active
 
     var body: some View {
-        let rows = sort.apply(library.rows(playlists.paths[name] ?? []))
+        let rows = sorted.apply(sort, library.rows(playlists.paths[name] ?? []))
         let now = youTube.showing ?? player.current
 
         if playlists.paths[name]?.isEmpty ?? true {
@@ -1316,6 +1321,7 @@ struct PlaylistView: View {
                     removing = rows.filter { selection.contains($0.id) }
                 }
                 .onChange(of: active) { if !active { sort = Sort() } }
+                .id(sort)
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1394,10 +1400,11 @@ struct LikedView: View {
     @Environment(Likes.self) private var likes
     @State private var selection: Set<Row.ID> = []
     @State private var sort = Sort()
+    @State private var sorted = Sorted<Row>()
     @Environment(\.active) private var active
 
     var body: some View {
-        let rows = sort.apply(library.rows(likes.paths))
+        let rows = sorted.apply(sort, library.rows(likes.paths))
         let now = youTube.showing ?? player.current
 
         if likes.paths.isEmpty {
@@ -1413,6 +1420,7 @@ struct LikedView: View {
                     ForEach(rows) { TableRow($0) }
                 }
                 .onChange(of: active) { if !active { sort = Sort() } }
+                .id(sort)
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 

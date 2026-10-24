@@ -69,6 +69,42 @@ struct SortTests {
         #expect(Sort([KeyPathComparator<Track>]()) == Sort())
     }
 
+    @Test func sortingTheWholeLibraryIsFast() {
+        let tracks = (0..<20_000).map { track("Song \($0 % 997)", "Artist \($0 % 311)", Double($0 % 500)) }
+        let start = ContinuousClock.now
+        for column in Column.allCases { _ = Sort(column).apply(tracks) }
+        #expect(ContinuousClock.now - start < .seconds(5), "a sort by artist of every song hung the app")
+    }
+
+    @Test @MainActor func theSortRunsOnlyWhenTheSortOrTheListChanges() {
+        let cache = Sorted<Track>()
+        let tracks = [track("b"), track("a")]
+
+        #expect(cache.apply(Sort(.title), tracks).map(\.title) == ["a", "b"])
+        _ = cache.apply(Sort(.title), tracks)
+        _ = cache.apply(Sort(.title), tracks)
+        #expect(cache.runs == 1, "a redraw, such as a click on a row, must not sort again")
+
+        #expect(cache.apply(Sort(.title, ascending: false), tracks).map(\.title) == ["b", "a"])
+        #expect(cache.apply(Sort(.title, ascending: false), tracks + [track("c")]).map(\.title) == ["c", "b", "a"])
+        #expect(cache.runs == 3)
+    }
+
+    @Test @MainActor func aMovedRowSortsAgain() {
+        let cache = Sorted<Row>()
+        let song = track("a")
+        _ = cache.apply(Sort(.title), [Row(id: 0, track: song), Row(id: 1, track: song)])
+        #expect(cache.apply(Sort(.title), [Row(id: 1, track: song), Row(id: 0, track: song)]).map(\.id) == [1, 0], "the same song at another position is another row")
+    }
+
+    @Test func theSearchSortsOnlyWhatItFinds() throws {
+        let source = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Library.swift"), encoding: .utf8)
+
+        #expect(source.contains("byYear = Library.chronological(snapshot.albums)"), "all the albums sort once per scan, not once per key")
+        #expect(source.contains("filtered = byYear\n"), "an empty search uses the sorted albums")
+        #expect(source.components(separatedBy: "Library.chronological(").count - 1 == 2, "only the found albums sort on a key")
+    }
+
     @Test func albumsGoFromTheOldestToTheNewest() {
         let albums = [album("Late", "A", 2010), album("Unknown", "A", 0), album("Early", "B", 1990), album("Same B", "B", 2000), album("Same A", "A", 2000)]
         #expect(Library.chronological(albums).map(\.title) == ["Early", "Same A", "Same B", "Late", "Unknown"], "a year ties by artist, and an album without a year goes last")
@@ -87,5 +123,7 @@ struct SortTests {
         #expect(source.components(separatedBy: "@State private var sort = Sort()").count - 1 == 4, "the sort is not saved")
         #expect(source.components(separatedBy: ".onChange(of: active) { if !active { sort = Sort() } }").count - 1 == 4, "a list that leaves goes back to its own order")
         #expect(!source.contains("@AppStorage(\"sort."), "the sort is not saved")
+        #expect(source.components(separatedBy: "{ if !active { sort = Sort() } }\n").count - 1 == source.components(separatedBy: ".id(sort)").count - 1, "a SwiftUI Table that diffs a new order of the whole library hangs the main thread; a new sort builds a new table")
+        #expect(source.components(separatedBy: "sorted.apply(sort, ").count - 1 == 4, "the sorted rows are kept between redraws")
     }
 }
