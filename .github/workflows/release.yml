@@ -14,8 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - run: swift test
-
       - run: ./build.sh
         env:
           LASTFM_KEY: ${{ secrets.LASTFM_KEY }}

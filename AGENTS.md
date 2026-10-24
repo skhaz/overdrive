@@ -9,6 +9,8 @@
 
 Commit each change when it is complete. Do not ask before you commit.
 
+Always run `swift test` before every commit. Commit only when all tests pass. GitHub Actions does not run the tests; the `Release` workflow only builds.
+
 ## Data
 
 - Never write migration code. A file that does not match the current format is ignored, or deleted and built again. No schema numbers, no legacy readers.
@@ -100,7 +102,7 @@ In `~/Library/Application Support/Overdrive`:
 
 1. Commit the change and push it to `main`.
 2. Push a new tag, the last tag plus one.
-3. Wait for the `Release` action: `gh run watch <run-id> --exit-status`. If it fails, stop and report the failure.
+3. Wait for the `Release` action (build only): `gh run watch <run-id> --exit-status`. If it fails, stop and report the failure.
 4. Update this host:
    1. Stop the app: `pkill -x Overdrive`.
    2. Upgrade the app: `brew update && brew upgrade --cask overdrive`.
