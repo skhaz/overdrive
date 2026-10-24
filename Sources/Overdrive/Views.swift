@@ -1687,7 +1687,7 @@ struct ContentView: View {
         }
         .environment(lyrics)
         .environment(\.go, GoAction { destination in
-            Log.navigation.info("go", metadata: ["destination": "\(String(describing: destination))", "page": "\(page.key)", "path": "\(path.count)"])
+            Log.navigation.info("go", metadata: ["destination": "\(String(describing: destination))", "page": "\(page.key)", "path": Log.list(path.map(\.key))])
             var value = path
 
             switch destination {
@@ -1872,7 +1872,7 @@ struct ContentView: View {
     }
 
     private func goBack() {
-        Log.navigation.info("back", metadata: ["path": "\(path.count)", "back": "\(navigation.back.count)"])
+        Log.navigation.info("back", metadata: ["page": "\(page.key)", "path": Log.list(path.map(\.key)), "back": "\(navigation.back.count)"])
         lyrics.settle {
             if !navigation.goBack(leaving: tracker.position) {
                 navigation.show(Array(path.dropLast()), leaving: tracker.position)
@@ -1881,7 +1881,7 @@ struct ContentView: View {
     }
 
     private func goForward() {
-        Log.navigation.info("forward", metadata: ["forward": "\(navigation.forward.count)"])
+        Log.navigation.info("forward", metadata: ["page": "\(page.key)", "path": Log.list(path.map(\.key)), "forward": "\(navigation.forward.count)"])
         lyrics.settle { navigation.goForward(leaving: tracker.position) }
     }
 
@@ -1950,7 +1950,7 @@ struct ContentView: View {
             player.toggle()
             return true
         case (53, _) where !path.isEmpty:
-            Log.navigation.info("escape", metadata: ["page": "\(page.key)", "path": "\(path.count)"])
+            Log.navigation.info("escape", metadata: ["page": "\(page.key)", "path": Log.list(path.map(\.key))])
             goBack()
             return true
         default: return false
@@ -1984,7 +1984,7 @@ struct ContentView: View {
     }
 
     private func navigate(_ value: [Route]) {
-        Log.navigation.info("navigate", metadata: ["page": "\(page.key)", "from": "\(path.count)", "to": Log.list(value.map(\.key))])
+        Log.navigation.info("navigate", metadata: ["page": "\(page.key)", "from": Log.list(path.map(\.key)), "to": Log.list(value.map(\.key))])
         lyrics.settle { navigation.show(value, leaving: tracker.position) }
     }
 

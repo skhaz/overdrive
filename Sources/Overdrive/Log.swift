@@ -163,6 +163,17 @@ nonisolated final class Sink: @unchecked Sendable {
         }
     }
 
+    static func repair(_ file: Int32) {
+        var end = lseek(file, 0, SEEK_END)
+        var byte: UInt8 = 0
+        while end > 0, pread(file, &byte, 1, end - 1) == 1, byte != 0x0A { end -= 1 }
+
+        guard end < lseek(file, 0, SEEK_END) else { return }
+
+        ftruncate(file, end)
+        fsync(file)
+    }
+
     static func crashed(_ number: Int32) {
         guard descriptor >= 0, let message = messages[number] else { return }
 
@@ -181,7 +192,8 @@ nonisolated final class Sink: @unchecked Sendable {
         }
         hour = now
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        file = open(directory.appending(path: Self.name(now)).path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o600)
+        file = open(directory.appending(path: Self.name(now)).path, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, 0o600)
+        if file >= 0 { Self.repair(file) }
         Self.descriptor = file
 
         let oldest = Self.name(now - Self.kept + 1)

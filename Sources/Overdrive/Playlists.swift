@@ -53,12 +53,16 @@ final class Playlists {
         for file in files where file.pathExtension == "plist" {
             let name = file.deletingPathExtension().lastPathComponent
             guard !name.hasSuffix(".backup") else { continue }
-            guard let data = try? Data(contentsOf: file), let list = try? PropertyListDecoder().decode([String].self, from: data) else { continue }
+            guard let data = try? Data(contentsOf: file), let list = try? PropertyListDecoder().decode([String].self, from: data) else {
+                Log.playlists.error("unreadable", metadata: ["file": "\(file.path)"])
+                continue
+            }
 
             storedPaths[name] = list.map { StoredPath.decode($0, relativeTo: folderPath) }
         }
 
         names = storedPaths.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        Log.playlists.info("load", metadata: ["directory": "\(directory().path)", "names": Log.list(names)])
     }
 
     func valid(_ name: String) -> Bool {

@@ -20,6 +20,7 @@ final class HotKey {
             return noErr
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &handler)
 
-        RegisterEventHotKey(Self.key, Self.modifiers, EventHotKeyID(signature: OSType(0x4F564452), id: 1), GetApplicationEventTarget(), 0, &reference)
+        let status = RegisterEventHotKey(Self.key, Self.modifiers, EventHotKeyID(signature: OSType(0x4F564452), id: 1), GetApplicationEventTarget(), 0, &reference)
+        Log.app.log(level: status == noErr ? .info : .error, "register hot key", metadata: ["status": "\(status)"])
     }
 }

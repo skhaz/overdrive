@@ -99,6 +99,7 @@ final class Library {
 
     var folders: [URL] {
         didSet {
+            Log.library.info("folders", metadata: ["old": Log.list(oldValue.map(\.path)), "new": Log.list(folders.map(\.path))])
             if persistent { UserDefaults.standard.set(folders.map { StoredPath.encode($0.path) }, forKey: Library.key) }
             loudness.folders = folders
             watch()

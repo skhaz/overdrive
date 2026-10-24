@@ -64,7 +64,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     })();
     """
 
-    var browser: Bool { didSet { configuration.defaults.set(browser, forKey: "youtube.browser") } }
+    var browser: Bool { didSet { Log.youTube.info("browser", metadata: ["on": "\(browser)"]); configuration.defaults.set(browser, forKey: "youtube.browser") } }
     var corner: Corner {
         didSet {
             configuration.defaults.set(corner.rawValue, forKey: "youtube.corner")

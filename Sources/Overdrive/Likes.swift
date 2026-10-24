@@ -46,6 +46,7 @@ final class Likes {
 
         storedPaths = stored.map { StoredPath.decode($0, relativeTo: folderPath) }.filter { seen.insert($0).inserted }
         liked = Set(storedPaths.map { StoredPath.decode($0, relativeTo: folderPath) })
+        Log.likes.info("load", metadata: ["file": "\(file().path)", "songs": "\(storedPaths.count)"])
     }
 
     func contains(_ track: Track) -> Bool {

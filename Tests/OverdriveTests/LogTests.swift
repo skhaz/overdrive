@@ -52,6 +52,23 @@ struct LogTests {
         #expect(lines.map { (try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["message"] as? String } == ["one", "two"])
     }
 
+    @Test func aTornRecordIsDroppedSoEveryRecordIsWholeOrAbsent() throws {
+        let directory = folder()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var old = record("whole", 10)
+        old.append(Data("{\"message\":\"to".utf8))
+        try old.write(to: directory.appending(path: "1970-01-01T00.log"))
+
+        let sink = Sink(directory: directory)
+        sink.write(record("next", 20), at: Date(timeIntervalSince1970: 20))
+        sink.flush()
+
+        let lines = try String(contentsOf: directory.appending(path: "1970-01-01T00.log"), encoding: .utf8).split(separator: "\n")
+        #expect(lines.map { (try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["message"] as? String } == ["whole", "next"], "a power loss must not leave half a record")
+    }
+
     @Test func theFilesRotateEveryHourAndStayOneDay() {
         let directory = folder()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -87,6 +104,7 @@ struct LogTests {
             #expect(!source.contains("print("), "\(name): use Log")
             #expect(!source.contains("NSLog("), "\(name): use Log")
             #expect(!source.contains("Logger(subsystem"), "\(name): use Log")
+            #expect(source.range(of: #"Log\.(info|debug|error|fault|write)\(""#, options: .regularExpression) == nil, "\(name): every log is structured: a fixed event and metadata")
         }
     }
 
