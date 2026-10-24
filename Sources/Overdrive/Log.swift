@@ -5,6 +5,7 @@ import os
 nonisolated enum Log {
     static let directory = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Overdrive")
     static let sink: Sink? = Bundle.main.bundleIdentifier == "org.delduca.Overdrive" ? Sink(directory: directory) : nil
+    nonisolated(unsafe) static var tap: (@Sendable (Data) -> Void)?
 
     private static let bootstrapped: Void = LoggingSystem.bootstrap { label in Handler(label: label, sink: sink) }
 
@@ -76,7 +77,8 @@ nonisolated struct Handler: LogHandler {
 
         let record = Sink.record(Date(), event.level, label, event.message.description, fields, (event.file as NSString).lastPathComponent, event.line)
         os.Logger(subsystem: "org.delduca.Overdrive", category: label).log(level: Self.type(event.level), "\(String(decoding: record, as: UTF8.self), privacy: .public)")
-        sink?.write(record, at: Date(), sync: event.level >= .error)
+        sink?.write(record, at: Date())
+        Log.tap?(record)
     }
 
     static func type(_ level: Logging.Logger.Level) -> OSLogType {
@@ -145,15 +147,15 @@ nonisolated final class Sink: @unchecked Sendable {
         }
     }
 
-    func write(_ record: Data, at date: Date, sync: Bool = false) {
-        queue.async { [self] in
+    func write(_ record: Data, at date: Date) {
+        queue.sync { [self] in
             rotate(Int((date.timeIntervalSince1970 / Self.interval).rounded(.down)))
             guard file >= 0 else { return }
 
             record.withUnsafeBytes { bytes in
                 _ = Darwin.write(file, bytes.baseAddress, bytes.count)
             }
-            if sync { fsync(file) }
+            fsync(file)
         }
     }
 

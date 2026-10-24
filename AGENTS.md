@@ -62,8 +62,9 @@ Commit each change when it is complete. Do not ask before you commit.
 - Every log is a structured log through `swift-log` (`Logging`, pinned to an exact version). Use the loggers in `Log` (`Log.player`, `Log.library`, ...). The message is a short, fixed event name; every value goes in `metadata`. Never put values in the message. Never use `print`, `NSLog`, `os_log`, or `os.Logger` directly.
 - Log everything that helps to debug: user actions, player state changes, navigation, keys (key code and flags only, never the typed characters), scans, cache and file writes, network requests and responses, errors with their cause. Never log a password, a session key, or an API secret.
 - The handler (`Handler`) writes each record as one JSON line (`time` in UTC, `level`, `label`, `message`, `source`, `metadata`) to `~/Library/Logs/Overdrive/<UTC hour>.log` (`Sink`), and the same record to the unified log (subsystem `org.delduca.Overdrive`).
-- A new file starts every hour. Files older than one day (24 files) are deleted. A record is one `write(2)` with `O_APPEND`; errors and crashes call `fsync`. Each record is whole or absent: when a file opens, a torn last record (no final newline, after a power loss) is cut off (`Sink.repair`). A crash signal or an uncaught exception writes a last record.
-- Only the app bundle (`org.delduca.Overdrive`) writes the file. Tests never write it (`Log.sink` is nil).
+- A new file starts every hour. Files older than one day (24 files) are deleted. Like every file write, a log write is synchronous and atomic: `Sink.write` returns only after one `write(2)` with `O_APPEND` and `fsync` (a serial queue keeps the order across threads). Each record is whole or absent: when a file opens, a torn last record (no final newline, after a power loss) is cut off (`Sink.repair`). A crash signal or an uncaught exception writes a last record.
+- Only the app bundle (`org.delduca.Overdrive`) writes the file. Tests never write it (`Log.sink` is nil); they read the records through `Log.tap`.
+- `LogTests` runs the components and checks their records, and checks that every public action of `Player`, `YouTube`, and the navigation logs.
 - The log files are the only app files that are not binary plists or `Cache.sqlite`.
 
 ## Data files

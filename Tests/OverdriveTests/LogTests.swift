@@ -116,3 +116,114 @@ struct LogTests {
         #expect(source.contains("Log.flush()"), "quit must flush the log")
     }
 }
+
+private final class Records: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [[String: Any]] = []
+
+    func add(_ data: Data) {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        lock.withLock { items.append(object) }
+    }
+
+    func find(_ label: String, _ message: String, _ key: String? = nil, _ value: String? = nil) -> Bool {
+        lock.withLock {
+            items.contains { item in
+                guard item["label"] as? String == label, item["message"] as? String == message else { return false }
+                guard let key else { return true }
+                let field = (item["metadata"] as? [String: Any])?[key]
+                return value.map { value in (field as? String)?.contains(value) == true || (field as? [String])?.contains { $0.contains(value) } == true } ?? (field != nil)
+            }
+        }
+    }
+}
+
+@Suite(.serialized) struct LogCoverageTests {
+    private let fixtures = Bundle.module.resourceURL!.appending(path: "Fixtures")
+
+    private func body(_ source: String, _ signature: String) -> String {
+        guard let start = source.range(of: signature) else { return "" }
+        let rest = source[start.upperBound...]
+        return String(rest[..<(rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex)])
+    }
+
+    private func source(_ name: String) throws -> String {
+        try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/\(name)"), encoding: .utf8)
+    }
+
+    @Test func everyActionLogs() throws {
+        let player = try source("Player.swift")
+        for name in ["toggleMute", "play", "insert", "jump", "move", "clear", "remove", "restore", "resume", "pause", "next", "previous", "seek", "perform", "stop", "load", "finished", "failed", "begin"] {
+            #expect(body(player, "func \(name)(").contains("Log.player."), "Player.\(name) must log")
+        }
+
+        let youTube = try source("YouTube.swift")
+        for name in ["watch", "close", "signOut", "load", "show", "stop", "failed", "search", "webViewWebContentProcessDidTerminate"] {
+            #expect(body(youTube, "func \(name)(").contains("Log.youTube."), "YouTube.\(name) must log")
+        }
+
+        let views = try source("Views.swift")
+        for signature in ["func goBack(", "func goForward(", "func press(", "func reveal(_ track", "func navigate("] {
+            #expect(body(views, signature).contains("Log."), "\(signature) must log")
+        }
+        #expect(views.contains(".environment(\\.go, GoAction { destination in\n            Log.navigation.info(\"go\""))
+        #expect(views.contains("Log.navigation.info(\"place\""), "every screen change logs the full path")
+        #expect(views.contains("Log.navigation.info(\"query\""), "every query change logs")
+    }
+
+    @Test @MainActor func theComponentsWriteStructuredRecords() async throws {
+        let records = Records()
+        Log.tap = { records.add($0) }
+        defer { Log.tap = nil }
+
+        let folder = FileManager.default.temporaryDirectory.appending(path: "LogCoverage-\(UUID().uuidString)")
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder.appending(path: "A"), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: fixtures.appending(path: "cbr.mp3"), to: folder.appending(path: "A/one.mp3"))
+        let real = folder.resolvingSymlinksInPath()
+
+        let result = await Library.load([folder], [:])
+        let track = try #require(result.albums.first?.tracks.first)
+        #expect(records.find("library", "load", "folders", folder.lastPathComponent))
+        #expect(records.find("library", "walk", "read", "1"))
+        #expect(records.find("cache", "saved", "changes", "1"))
+
+        let file = folder.appending(path: "x.plist")
+        Persist.write(Data([1]), to: file)
+        Persist.move(file, to: folder.appending(path: "y.plist"))
+        Persist.remove(folder.appending(path: "y.plist"))
+        Persist.remove(folder.appending(path: "missing.plist"))
+        #expect(records.find("persist", "write", "path", "x.plist"))
+        #expect(records.find("persist", "move", "to", "y.plist"))
+        #expect(records.find("persist", "remove", "result", "ok"))
+        #expect(records.find("persist", "remove", "result", "No such file"), "a failed write logs the system error")
+
+        let likes = Likes(file: real.appending(path: "Likes.plist"), folder: real)
+        likes.add([track])
+        likes.remove([track])
+        #expect(records.find("likes", "add", "paths", "one.mp3"))
+        #expect(records.find("likes", "remove", "paths", "one.mp3"))
+
+        let playlists = Playlists(directory: real.appending(path: "Playlists"), folder: real)
+        _ = playlists.create("Mix", [track.url])
+        playlists.add([track.url], to: "Mix")
+        playlists.reorder([0], in: "Mix")
+        playlists.remove([0], from: "Mix")
+        playlists.delete("Mix")
+        for event in ["create", "add", "reorder", "remove", "delete"] {
+            #expect(records.find("playlists", event, "name", "Mix"), "playlists \(event)")
+        }
+
+        try Data("[00:01.00]line".utf8).write(to: track.url.deletingPathExtension().appendingPathExtension("lrc"))
+        let lyrics = Lyrics(cache: real.appending(path: "Lyrics"))
+        lyrics.show(track)
+        lyrics.save("[00:02.00]new", for: track)
+        #expect(records.find("lyrics", "show", "path", "one.mp3"))
+        #expect(records.find("lyrics", "local", "path", "one.lrc"))
+        #expect(records.find("lyrics", "save", "characters", "13"))
+
+        let loudness = Loudness(folders: [real])
+        await loudness.measure(track, album: false)
+        #expect(records.find("loudness", "measured", "lufs"))
+    }
+}
