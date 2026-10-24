@@ -64,9 +64,16 @@ nonisolated enum Log {
 nonisolated struct Handler: LogHandler {
     let label: String
     let sink: Sink?
+    private let system: os.Logger
     var logLevel = Logging.Logger.Level.trace
     var metadata: Logging.Logger.Metadata = [:]
     var metadataProvider: Logging.Logger.MetadataProvider?
+
+    init(label: String, sink: Sink?) {
+        self.label = label
+        self.sink = sink
+        system = os.Logger(subsystem: "org.delduca.Overdrive", category: label)
+    }
 
     subscript(metadataKey key: String) -> Logging.Logger.Metadata.Value? {
         get { metadata[key] }
@@ -79,9 +86,10 @@ nonisolated struct Handler: LogHandler {
         if let extra = event.metadata { fields.merge(extra) { $1 } }
         if let error = event.error { fields["error"] = "\(error)" }
 
-        let record = Sink.record(Date(), event.level, label, event.message.description, fields, (event.file as NSString).lastPathComponent, event.line)
-        os.Logger(subsystem: "org.delduca.Overdrive", category: label).log(level: Self.type(event.level), "\(String(decoding: record, as: UTF8.self), privacy: .public)")
-        sink?.write(record, at: Date())
+        let date = Date()
+        let record = Sink.record(date, event.level, label, event.message.description, fields, (event.file as NSString).lastPathComponent, event.line)
+        system.log(level: Self.type(event.level), "\(String(decoding: record, as: UTF8.self), privacy: .public)")
+        sink?.write(record, at: date, now: event.level >= .error)
         Log.tap?(record)
     }
 
@@ -98,6 +106,7 @@ nonisolated struct Handler: LogHandler {
 
 nonisolated final class Sink: @unchecked Sendable {
     static let interval = 3600.0
+    static let batch = 0.1
     static let kept = 24
     static let signals = [SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP, SIGSYS]
     nonisolated(unsafe) private static var descriptor: Int32 = -1
@@ -107,6 +116,7 @@ nonisolated final class Sink: @unchecked Sendable {
     private let queue = DispatchQueue(label: "Log", qos: .utility)
     private var file: Int32 = -1
     private var hour = Int.min
+    private var waiting = false
 
     init(directory: URL) {
         self.directory = directory
@@ -151,7 +161,7 @@ nonisolated final class Sink: @unchecked Sendable {
         }
     }
 
-    func write(_ record: Data, at date: Date) {
+    func write(_ record: Data, at date: Date, now: Bool = false) {
         queue.async { [self] in
             rotate(Int((date.timeIntervalSince1970 / Self.interval).rounded(.down)))
             guard file >= 0 else { return }
@@ -159,7 +169,18 @@ nonisolated final class Sink: @unchecked Sendable {
             record.withUnsafeBytes { bytes in
                 _ = Darwin.write(file, bytes.baseAddress, bytes.count)
             }
-            fsync(file)
+            if now {
+                fsync(file)
+                waiting = false
+            } else if !waiting {
+                waiting = true
+                queue.asyncAfter(deadline: .now() + Self.batch) { [self] in
+                    guard waiting else { return }
+
+                    waiting = false
+                    if file >= 0 { fsync(file) }
+                }
+            }
         }
     }
 

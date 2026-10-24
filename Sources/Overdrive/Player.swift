@@ -33,7 +33,8 @@ final class Player {
     private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
     static let saved = Persist.read(Session.self, from: session)
 
-    private(set) var queue: [Track] = []
+    private(set) var queue: [Track] = [] { didSet { revision += 1 } }
+    @ObservationIgnored private(set) var revision = 0
     private(set) var index = 0
     private(set) var added: [Bool] = []
     var lyrics = Player.saved?.lyrics ?? true { didSet { if lyrics != oldValue { save() } } }
@@ -100,6 +101,8 @@ final class Player {
     @ObservationIgnored private var status: NSKeyValueObservation?
     @ObservationIgnored private var item: AVPlayerItem?
     @ObservationIgnored private var upcoming: AVPlayerItem?
+    @ObservationIgnored private var saving: Task<Void, Never>?
+    nonisolated static let delay = Duration.seconds(1)
 
     init(lastFM: LastFM, loudness: Loudness) {
         self.lastFM = lastFM
@@ -112,7 +115,7 @@ final class Player {
         }
 
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.save() }
+            MainActor.assumeIsolated { self?.write() }
         }
 
         NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] notification in
@@ -170,7 +173,9 @@ final class Player {
     }
 
     func insert(_ tracks: [Track], next: Bool) {
-        Log.player.info("insert", metadata: ["next": "\(next)", "paths": Log.list(tracks.map(\.url.path))])
+        var metadata = Log.paths(tracks.map(\.url.path))
+        metadata["next"] = "\(next)"
+        Log.player.info("insert", metadata: metadata)
         guard let track = current, item != nil else { return play(tracks) }
 
         let tracks = tracks.filter { $0 != track }
@@ -218,7 +223,7 @@ final class Player {
     }
 
     func move(_ positions: Set<Int>, to target: Int) {
-        Log.player.info("move", metadata: ["positions": Log.list(positions.sorted()), "target": "\(target)"])
+        Log.player.info("move", metadata: ["count": "\(positions.count)", "positions": Log.list(positions.sorted().prefix(20)), "target": "\(target)"])
         let moved = Player.moved(queue.count, positions, to: target)
         guard moved != Array(queue.indices) else { return }
 
@@ -255,7 +260,7 @@ final class Player {
     }
 
     func remove(_ positions: Set<Int>) {
-        Log.player.info("remove", metadata: ["positions": Log.list(positions.sorted()), "index": "\(index)", "count": "\(queue.count)"])
+        Log.player.info("remove", metadata: ["removed": "\(positions.count)", "positions": Log.list(positions.sorted().prefix(20)), "index": "\(index)", "count": "\(queue.count)"])
         if Player.clears(queue.count, positions, from: index) { return clear() }
 
         let (kept, current) = Player.removing(queue.count, positions, keeping: index)
@@ -267,8 +272,12 @@ final class Player {
         index = current
 
         if shuffle {
-            for track in gone {
-                if let position = order.firstIndex(of: track) { order.remove(at: position) }
+            var left = Dictionary(gone.map { ($0, 1) }, uniquingKeysWith: +)
+            order.removeAll { track in
+                guard let count = left[track], count > 0 else { return false }
+
+                left[track] = count - 1
+                return true
             }
         } else {
             order = queue
@@ -530,6 +539,17 @@ final class Player {
     }
 
     func save() {
+        saving?.cancel()
+        saving = Task {
+            guard (try? await Task.sleep(for: Player.delay)) != nil else { return }
+
+            write()
+        }
+    }
+
+    func write() {
+        saving?.cancel()
+        saving = nil
         let session = Session(queue: queue.map { StoredPath.encode($0.url.path) }, order: order.map { StoredPath.encode($0.url.path) }, index: index, position: position,
                               shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
                               started: started.timeIntervalSince1970, scrobbled: scrobbled,

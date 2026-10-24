@@ -29,10 +29,7 @@ final class Lyrics {
     var selected = false
     var enabled: Bool { didSet { if !enabled, oldValue { stop() } } }
     private(set) var remote = false
-    var hasLocalLyrics: Bool {
-        guard let track else { return false }
-        return (Self.read(file(track)) ?? "").isEmpty == false
-    }
+    private(set) var hasLocalLyrics = false
     var pendingReplace: Bool = false
     var pendingLyrics: String = ""
 
@@ -63,6 +60,7 @@ final class Lyrics {
     }
 
     private func stop() {
+        hasLocalLyrics = false
         Log.lyrics.info("stop")
         flush()
         lookupTask?.cancel()
@@ -176,6 +174,7 @@ final class Lyrics {
         original = value
         remote = false
         loading = false
+        hasLocalLyrics = !value.isEmpty
     }
 
     func persist() {
@@ -190,9 +189,11 @@ final class Lyrics {
 
     private func open(_ track: Track) {
         self.track = track
+        hasLocalLyrics = false
 
         if let lyrics = Self.read(file(track)), !lyrics.isEmpty {
             Log.lyrics.info("local", metadata: ["path": "\(file(track).path)"])
+            hasLocalLyrics = true
             saved = lyrics
             original = saved
             text = saved

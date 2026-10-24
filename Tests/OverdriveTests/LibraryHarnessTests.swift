@@ -418,7 +418,7 @@ struct LibraryHarnessTests {
         try put(folder, "Album/stays.mp3")
         let library = library([folder])
         await settle(library, [folder])
-        try? await Task.sleep(for: .seconds(3))
+        try? await Task.sleep(for: .seconds(5))
 
         let likes = Likes(file: { Likes.file(in: folder) }, folder: { folder })
         let track = library.albums.flatMap(\.tracks).first!
@@ -429,7 +429,7 @@ struct LibraryHarnessTests {
         likes.add([track])
         likes.remove([track])
 
-        try? await Task.sleep(for: .seconds(3))
+        try? await Task.sleep(for: .seconds(5))
         #expect(scans.value == 0)
         #expect(!library.scanning)
     }
@@ -440,7 +440,7 @@ struct LibraryHarnessTests {
         try put(folder, "Album/stays.mp3")
         let library = library([folder])
         await settle(library, [folder])
-        try? await Task.sleep(for: .seconds(3))
+        try? await Task.sleep(for: .seconds(5))
 
         let scans = Counter()
         library.loaded = { scans.value += 1 }
@@ -449,7 +449,7 @@ struct LibraryHarnessTests {
         try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lrc.tmp"))
         try? FileManager.default.removeItem(at: folder.appending(path: "Album/stays.lrc.tmp"))
 
-        try? await Task.sleep(for: .seconds(3))
+        try? await Task.sleep(for: .seconds(5))
         #expect(scans.value == 0)
         #expect(!library.scanning)
     }

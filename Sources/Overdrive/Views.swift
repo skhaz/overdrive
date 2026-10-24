@@ -30,6 +30,15 @@ enum Destination {
     case artist(String)
     case search(String)
     case playing(Track)
+
+    var key: String {
+        switch self {
+        case .album(let album): "album:" + album.id
+        case .artist(let name): "artist:" + name
+        case .search(let text): "search:" + text
+        case .playing(let track): "playing:" + track.url.path
+        }
+    }
 }
 
 struct GoAction: Equatable {
@@ -61,6 +70,8 @@ extension FocusedValues {
 }
 
 struct Selected: ViewModifier {
+    static let delay = Duration.milliseconds(150)
+
     let tracks: [Track]
     var album: Album?
     var playlist: String?
@@ -74,7 +85,11 @@ struct Selected: ViewModifier {
         let picked = album == nil && tracks.count == 1 ? tracks[0] : nil
 
         content.focusedSceneValue(\.selection, active && !tracks.isEmpty ? Selection(tracks: tracks, album: album, playlist: playlist, remove: remove, go: go) : nil)
-            .onChange(of: picked) { follow(picked) }
+            .task(id: picked) {
+                guard (try? await Task.sleep(for: Selected.delay)) != nil else { return }
+
+                follow(picked)
+            }
             .onChange(of: active, initial: true) { follow(picked) }
     }
 
@@ -264,6 +279,8 @@ struct TrackMenu: View {
 }
 
 struct FileMenu: View {
+    static let mp3tag = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "app.mp3tag.Mp3tag")
+
     let urls: [URL]
 
     var body: some View {
@@ -275,11 +292,19 @@ struct FileMenu: View {
             }
         }
 
-        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "app.mp3tag.Mp3tag") {
-            Button("Open in Mp3tag") { NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: .init()) }
+        if let app = Self.mp3tag {
+            Button("Open in Mp3tag") {
+                Log.app.info("open in mp3tag", metadata: Log.paths(urls.map(\.path)))
+                NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: .init()) { _, error in
+                    if let error { Log.app.error("open in mp3tag failed", metadata: ["error": "\(error)"]) }
+                }
+            }
         }
 
-        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+        Button("Show in Finder") {
+            Log.app.info("show in finder", metadata: Log.paths(urls.map(\.path)))
+            NSWorkspace.shared.activateFileViewerSelecting(urls)
+        }
             .keyboardShortcut("r", modifiers: [.command, .shift])
     }
 }
@@ -545,6 +570,7 @@ struct Marquee: View {
     @State private var width: CGFloat = 0
     @State private var visible: CGFloat = 0
     @State private var start = Date.now
+    @Environment(\.controlActiveState) private var state
 
     var body: some View {
         let overflow = width > visible
@@ -556,7 +582,7 @@ struct Marquee: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { visible = $0 }
             .overlay(alignment: .leading) {
-                TimelineView(.animation(paused: !overflow)) { context in
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !overflow || state == .inactive)) { context in
                     let phase = context.date.timeIntervalSince(start).truncatingRemainder(dividingBy: Marquee.pause + cycle / Marquee.speed)
                     let offset = overflow ? -max(phase - Marquee.pause, 0) * Marquee.speed : 0
 
@@ -787,6 +813,20 @@ extension EnvironmentValues {
     @Entry var active = true
     @Entry var restore = Position()
     @Entry var tracker = Tracker()
+}
+
+final class Memo<Value> {
+    private var token: AnyHashable?
+    private var stored: Value?
+
+    func value(_ token: AnyHashable, _ make: () -> Value) -> Value {
+        if token == self.token, let stored { return stored }
+
+        let value = make()
+        self.token = token
+        stored = value
+        return value
+    }
 }
 
 final class Tracker {
@@ -1099,11 +1139,11 @@ struct GoMenu: View {
     @Environment(\.go) private var go
 
     var body: some View {
-        if let album = library.albums.first(where: { $0.id == track.albumID }) {
+        if let album = library.album(track.albumID) {
             Button("Go to Album") { go(.album(album)) }
         }
 
-        if library.albums.contains(where: { $0.artist == track.artist }) {
+        if !library.albums(by: track.artist).isEmpty {
             Button("Go to Artist") { go(.artist(track.artist)) }
         }
 
@@ -1137,6 +1177,7 @@ struct Cell: View {
 
 struct SongTable: View {
     let tracks: [Track]
+    @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
@@ -1148,7 +1189,7 @@ struct SongTable: View {
 
     var body: some View {
         let now = youTube.showing ?? player.current
-        let tracks = sorted.apply(sort, self.tracks)
+        let tracks = sorted.apply(sort, token: library.scans) { self.tracks }
 
         ScrollViewReader { proxy in
             Table(tracks, selection: $selection, sortOrder: order($sort, "songs")) {
@@ -1187,7 +1228,7 @@ struct SongTable: View {
                 selection.insert(tracks[index].id)
                 proxy.scrollTo(tracks[index].id)
             }, selectAll: { selection = Set(tracks.map(\.id)) }))
-            .modifier(Selected(tracks: tracks.filter { selection.contains($0.id) }))
+            .modifier(Selected(tracks: selection.count == 1 ? selection.compactMap { library.track($0.path) } : tracks.filter { selection.contains($0.id) }))
 
         }
     }
@@ -1230,7 +1271,7 @@ struct QueueView: View {
     @Environment(\.active) private var active
 
     var body: some View {
-        let rows = sorted.apply(sort, player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) })
+        let rows = sorted.apply(sort, token: [player.revision, player.index]) { player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) } }
         let now = youTube.showing == nil ? player.index : nil
 
         if rows.isEmpty {
@@ -1489,11 +1530,29 @@ struct LikedView: View {
     }
 }
 
+struct TimeBar: View {
+    @Environment(Player.self) private var player
+    @State private var scrub: Double?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text((scrub ?? player.position).time).monospacedDigit().foregroundStyle(.secondary)
+            Slider(value: Binding { scrub ?? player.position } set: { scrub = $0 }, in: 0...max(player.duration, 1)) { editing in
+                if !editing, let scrub {
+                    player.seek(scrub)
+                    self.scrub = nil
+                }
+            }
+            .frame(minWidth: 120, maxWidth: .infinity)
+            Text(player.duration.time).monospacedDigit().foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct Controls: View {
     let open: (Track) -> Void
     @Environment(Player.self) private var player
     @Environment(Likes.self) private var likes
-    @State private var scrub: Double?
 
     var body: some View {
         @Bindable var player = player
@@ -1552,19 +1611,9 @@ struct Controls: View {
             .buttonStyle(.plain)
             .disabled(player.current == nil)
 
-            HStack(spacing: 8) {
-                Text((scrub ?? player.position).time).monospacedDigit().foregroundStyle(.secondary)
-                Slider(value: Binding { scrub ?? player.position } set: { scrub = $0 }, in: 0...max(player.duration, 1)) { editing in
-                    if !editing, let scrub {
-                        player.seek(scrub)
-                        self.scrub = nil
-                    }
-                }
-                .frame(minWidth: 120, maxWidth: .infinity)
-                Text(player.duration.time).monospacedDigit().foregroundStyle(.secondary)
-            }
-            .frame(minWidth: 200, maxWidth: .infinity)
-            .disabled(player.current == nil)
+            TimeBar()
+                .frame(minWidth: 200, maxWidth: .infinity)
+                .disabled(player.current == nil)
 
             Image(systemName: player.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 16, weight: .medium))
@@ -1603,6 +1652,7 @@ struct ContentView: View {
     @State private var navigator = Navigator()
     @State private var search = ""
     @State private var panel: LyricsPanel?
+    @State private var memo = Memo<String>()
     @FocusState private var focus: Focus?
 
     var body: some View {
@@ -1743,14 +1793,14 @@ struct ContentView: View {
         }
         .environment(lyrics)
         .environment(\.go, GoAction { destination in
-            Log.navigation.info("go", metadata: ["destination": "\(String(describing: destination))", "page": "\(page.key)", "path": Log.list(path.map(\.key))])
+            Log.navigation.info("go", metadata: ["destination": "\(destination.key)", "page": "\(page.key)", "path": Log.list(path.map(\.key))])
             var value = path
 
             switch destination {
             case .album(let album): value.append(.album(album))
             case .artist(let name): value.append(.artist(name))
             case .playing(let track):
-                guard let album = library.albums.first(where: { $0.id == track.albumID }) else { return }
+                guard let album = library.album(track.albumID) else { return }
 
                 if case .section = page, path.last != .album(album) { tracker.target = track.id }
                 lyrics.settle { navigation.played(album, leaving: tracker.position) }
@@ -1806,7 +1856,7 @@ struct ContentView: View {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
         }
-        .onChange(of: library.version, refreshed)
+        .onChange(of: library.scans, refreshed)
         .onChange(of: library.folders) {
             lyrics.flush()
             lyrics = Lyrics(cache: Lyrics.directory(in: library.folders.first), enabled: player.lyrics)
@@ -1863,9 +1913,19 @@ struct ContentView: View {
     }
 
     private var subtitle: String {
+        let list: Int? = switch page {
+        case .playlist(let name): playlists.paths[name]?.count
+        case .liked: likes.paths.count
+        default: nil
+        }
+        let token: [AnyHashable] = [page.key, path.map(\.key), library.version, player.queue.count, player.index, list]
+        return memo.value(token) { summarize() }
+    }
+
+    private func summarize() -> String {
         switch (path.last, page) {
         case (.album, _): ""
-        case (.artist(let name), _): summary(library.albums.filter { $0.artist == name })
+        case (.artist(let name), _): summary(library.albums(by: name))
         case (nil, .section(.albums)): summary(library.filtered)
         case (nil, .section(.artists)): summary(library.artists.flatMap(\.albums))
         case (nil, .section(.songs)): summary(library.tracks)
@@ -1893,7 +1953,7 @@ struct ContentView: View {
                             AlbumStrip(albums: library.filtered)
                             Divider()
                         }
-                        SongTable(tracks: library.tracks).id(library.query)
+                        SongTable(tracks: library.tracks).id("\(library.query)\u{1F}\(library.members)")
                     }
                 }
             }
@@ -1905,7 +1965,7 @@ struct ContentView: View {
                 screen(top, top ? navigation.place.position : Position()) {
                     switch route {
                     case .album(let album): AlbumView(album: album)
-                    case .artist(let name): AlbumGrid(albums: Library.chronological(library.albums.filter { $0.artist == name }))
+                    case .artist(let name): AlbumGrid(albums: library.albums(by: name))
                     }
                 }
                 .id(route)
@@ -2057,7 +2117,7 @@ struct ContentView: View {
     }
 
     private func reveal(_ track: Track) {
-        guard let album = library.albums.first(where: { $0.id == track.albumID }) else {
+        guard let album = library.album(track.albumID) else {
             Log.navigation.error("reveal without album", metadata: ["album": "\(track.albumID)"])
             return
         }

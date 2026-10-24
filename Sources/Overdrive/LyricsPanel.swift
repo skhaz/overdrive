@@ -63,8 +63,10 @@ struct FloatingLyrics: View {
     @State private var editing = false
 
     var body: some View {
-        let _ = player.position
-        if let track = lyrics.track {
+        if !lyrics.floating {
+            Color.clear
+        } else if let track = lyrics.track {
+            let _ = player.position
             let lines = lyrics.synced
             let live = player.current == track
             let current = live ? LRC.index(at: player.position, in: lines) : nil

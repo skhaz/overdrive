@@ -103,11 +103,24 @@ final class Sorted<T: Sortable> {
     private var sort = Sort()
     private var source: [T] = []
     private var result: [T] = []
+    private var token: AnyHashable?
     private(set) var runs = 0
+
+    func apply(_ sort: Sort, token: AnyHashable, _ build: () -> [T]) -> [T] {
+        if sort == self.sort, token == self.token { return result }
+
+        self.token = token
+        self.sort = sort
+        source = build()
+        result = sort.apply(source)
+        runs += 1
+        return result
+    }
 
     func apply(_ sort: Sort, _ items: [T]) -> [T] {
         if sort == self.sort, items.count == source.count, items.elementsEqual(source, by: { $0.same($1) }) { return result }
 
+        token = nil
         self.sort = sort
         source = items
         result = sort.apply(items)

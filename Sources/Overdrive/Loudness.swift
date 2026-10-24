@@ -38,6 +38,8 @@ final class Loudness {
     var albums: [String: [String]] = [:]
     private var worker: Task<Void, Never>?
 
+    static let interval = Duration.seconds(30)
+
     var folders: [URL] = [] {
         didSet { if folders != oldValue { load() } }
     }
@@ -112,6 +114,7 @@ final class Loudness {
             if entries.count != count { save() }
 
             var measured = 0
+            var saved = ContinuousClock.now
 
             await withTaskGroup(of: (String, Entry?).self) { group in
                 var files = missing.makeIterator()
@@ -132,7 +135,10 @@ final class Loudness {
                     if let entry {
                         entries[path] = entry
                         measured += 1
-                        if measured.isMultiple(of: 100) { save() }
+                        if ContinuousClock.now - saved > Loudness.interval {
+                            saved = .now
+                            save()
+                        }
                     }
                 }
             }
@@ -146,14 +152,17 @@ final class Loudness {
         encoder.outputFormat = .binary
         var stored = Array(repeating: [String: Entry](), count: roots.count)
 
+        let prefixes = roots.map { $0.real + "/" }
+        let lengths = prefixes.map(\.count)
+
         for (path, entry) in entries {
             var best: Int?
-            for index in roots.indices where path.hasPrefix(roots[index].real + "/") && roots[index].real.count > best.map({ roots[$0].real.count }) ?? -1 {
+            for index in roots.indices where lengths[index] > best.map({ lengths[$0] }) ?? -1 && path.hasPrefix(prefixes[index]) {
                 best = index
             }
             guard let best else { continue }
 
-            stored[best][String(path.dropFirst(roots[best].real.count + 1))] = entry
+            stored[best][String(path.dropFirst(lengths[best]))] = entry
         }
 
         for index in roots.indices where !stored[index].isEmpty {

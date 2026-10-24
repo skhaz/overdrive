@@ -18,7 +18,7 @@ struct ViewStructureTests {
     @Test func theSongsTableIsRebuiltWhenTheQueryChanges() throws {
         let source = try source()
 
-        #expect(source.contains("SongTable(tracks: library.tracks).id(library.query)"), "a SwiftUI Table that diffs from a few rows to the whole library hangs the main thread")
+        #expect(source.contains("SongTable(tracks: library.tracks).id(\"\\(library.query)\\u{1F}\\(library.members)\")"), "a SwiftUI Table that diffs from a few rows to the whole library hangs the main thread, also after a scan that adds or removes songs")
         #expect(!source.contains(".id(library.version)"), "a scan must not rebuild the screens")
     }
 

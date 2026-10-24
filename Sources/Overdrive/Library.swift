@@ -2,6 +2,7 @@ import AppKit
 import AudioToolbox
 import AVFoundation
 import CryptoKit
+import Logging
 import CoreServices
 import UniformTypeIdentifiers
 
@@ -98,11 +99,14 @@ nonisolated enum Fuzzy {
 @Observable
 final class Library {
     private static let key = "folders"
+    static let quiet = Duration.milliseconds(1500)
 
     private(set) var albums: [Album] = []
     private(set) var filtered: [Album] = []
     private(set) var tracks: [Track] = []
     private(set) var version = 0
+    private(set) var scans = 0
+    private(set) var members = 0
     @ObservationIgnored private var hits: Set<URL> = []
     @ObservationIgnored private var songMatches: Set<URL> = []
     var scanning = false
@@ -148,7 +152,11 @@ final class Library {
     @ObservationIgnored private var everything: [Track] = []
     @ObservationIgnored private var byYear: [Album] = []
     @ObservationIgnored private var lookup: [String: Track] = [:]
+    @ObservationIgnored private var byID: [String: Album] = [:]
+    @ObservationIgnored private var byArtist: [String: [Album]] = [:]
     @ObservationIgnored private var readers: [Cache] = []
+    @ObservationIgnored private var readerFolders: [URL] = []
+    @ObservationIgnored private var pending: Task<Void, Never>?
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var grouped: (version: Int, artists: [(name: String, albums: [Album])]) = (-1, [])
     @ObservationIgnored private var bytes: [UInt8] = []
@@ -175,7 +183,7 @@ final class Library {
 
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.scan() }
+                MainActor.assumeIsolated { self?.request("volume", [:]) }
             })
         }
     }
@@ -211,14 +219,28 @@ final class Library {
         folders = folders.filter { folder in !new.contains { folder.path.hasPrefix($0.path + "/") } } + new
     }
 
-    func scan() {
+    func request(_ reason: String, _ metadata: Logging.Logger.Metadata) {
+        var metadata = metadata
+        metadata["reason"] = "\(reason)"
+        Log.library.info("scan requested", metadata: metadata)
+        pending?.cancel()
+        pending = Task {
+            guard (try? await Task.sleep(for: Library.quiet)) != nil else { return }
+
+            scan(reason)
+        }
+    }
+
+    func scan(_ reason: String = "direct") {
+        pending?.cancel()
+        pending = nil
         generation += 1
         let generation = generation
         let folders = folders
         let covers = Artwork.covers
 
         scanning = true
-        Log.library.info("scan", metadata: ["generation": "\(generation)", "folders": Log.list(folders.map(\.path))])
+        Log.library.info("scan", metadata: ["generation": "\(generation)", "reason": "\(reason)", "folders": Log.list(folders.map(\.path))])
 
         let previous = running
         running = Task {
@@ -251,12 +273,30 @@ final class Library {
     private func show(_ snapshot: Snapshot, _ folders: [URL]) {
         Artwork.covers = snapshot.covers
         index = snapshot.index
-        everything = snapshot.albums.flatMap(\.tracks)
+        let tracks = snapshot.albums.flatMap(\.tracks)
+        if !tracks.elementsEqual(everything, by: { $0.url == $1.url }) { members += 1 }
+        everything = tracks
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
-        readers = folders.compactMap { Cache($0) }
+        if readerFolders != folders {
+            readers = folders.compactMap { folder in
+                Cache(folder) ?? { Log.library.warning("reader unavailable", metadata: ["folder": "\(folder.path)"]); return nil }()
+            }
+            readerFolders = folders
+        }
         albums = snapshot.albums
         byYear = Library.chronological(snapshot.albums)
+        byID = Dictionary(snapshot.albums.map { ($0.id, $0) }) { first, _ in first }
+        byArtist = Dictionary(grouping: byYear, by: \.artist)
+        scans += 1
         search()
+    }
+
+    func album(_ id: String) -> Album? {
+        byID[id]
+    }
+
+    func albums(by artist: String) -> [Album] {
+        byArtist[artist] ?? []
     }
 
     func track(_ path: String) -> Track? {
@@ -268,6 +308,7 @@ final class Library {
     }
 
     func rows(_ paths: [String]) -> [Row] {
+        _ = scans
         let hits = query.isEmpty ? nil : hits
 
         return paths.indices.compactMap { position in
@@ -369,8 +410,14 @@ final class Library {
         guard !exact.isEmpty else { return }
 
         let order = Dictionary(exact.enumerated().map { ($1, $0) }) { first, _ in first }
-        let first = tracks.filter { order[$0.url.path] != nil }.sorted { order[$0.url.path]! < order[$1.url.path]! }
-        tracks = first + tracks.filter { order[$0.url.path] == nil }
+        var first: [(rank: Int, track: Track)] = []
+        var rest: [Track] = []
+        rest.reserveCapacity(tracks.count)
+        for track in tracks {
+            if let rank = order[track.url.path] { first.append((rank, track)) } else { rest.append(track) }
+        }
+        first.sort { $0.rank < $1.rank }
+        tracks = first.map(\.track) + rest
     }
 
     private func rank(_ hits: [(score: Int32, item: Int32)], _ limit: Int) {
@@ -411,13 +458,11 @@ final class Library {
         let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
             let paths = unsafeBitCast(paths, to: NSArray.self)
             let events = (0..<count).map { (path: paths[$0] as! String, flags: flags[$0]) }
-            Log.library.trace("file events", metadata: ["events": .dictionary(Dictionary(events.map { ($0.path, .string(String($0.flags, radix: 16))) }) { $1 })])
+            Log.library.trace("file events", metadata: ["count": "\(events.count)", "events": .dictionary(Dictionary(events.prefix(50).map { ($0.path, .string(String($0.flags, radix: 16))) }) { $1 })])
             guard Library.relevant(events) else { return }
 
-            Log.library.info("change starts a scan", metadata: ["paths": Log.list(events.map(\.path))])
-
             MainActor.assumeIsolated {
-                Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().scan()
+                Unmanaged<Library>.fromOpaque(info!).takeUnretainedValue().request("files", Log.paths(events.map(\.path)))
             }
         }
 
@@ -518,7 +563,7 @@ final class Library {
             }
         }
 
-        Log.library.info("walk", metadata: ["files": "\(slots.count)", "read": "\(pending.count)", "removed": Log.list(removed.flatMap(\.self))])
+        Log.library.info("walk", metadata: ["files": "\(slots.count)", "read": "\(pending.count)", "removed": "\(removed.reduce(0) { $0 + $1.count })", "paths": Log.list(removed.lazy.flatMap(\.self).prefix(20))])
         if !pending.isEmpty || removed.contains(where: { !$0.isEmpty }) {
             for (number, cache) in caches.enumerated() where !removed[number].isEmpty {
                 cache?.save([], removed: removed[number], covers: [:])
@@ -561,7 +606,7 @@ final class Library {
                 }
             }
 
-            Log.library.info("batch", metadata: ["start": "\(start)", "end": "\(part.endIndex)", "total": "\(work.count)", "unreadable": Log.list(failed.flatMap(\.self))])
+            Log.library.info("batch", metadata: ["start": "\(start)", "end": "\(part.endIndex)", "total": "\(work.count)", "unreadable": "\(failed.reduce(0) { $0 + $1.count })", "paths": Log.list(failed.lazy.flatMap(\.self).prefix(20))])
             for (number, cache) in caches.enumerated() where !changes[number].isEmpty || !failed[number].isEmpty {
                 cache?.save(changes[number], removed: failed[number], covers: [:])
             }
@@ -724,7 +769,7 @@ enum Artwork {
 
     private static let cache = {
         let cache = NSCache<NSString, NSImage>()
-        cache.countLimit = 120
+        cache.countLimit = 500
         return cache
     }()
 

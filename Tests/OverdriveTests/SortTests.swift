@@ -103,6 +103,7 @@ struct SortTests {
         #expect(source.contains("byYear = Library.chronological(snapshot.albums)"), "all the albums sort once per scan, not once per key")
         #expect(source.contains("filtered = byYear\n"), "an empty search uses the sorted albums")
         #expect(source.components(separatedBy: "Library.chronological(").count - 1 == 2, "only the found albums sort on a key")
+        #expect(source.contains("byArtist = Dictionary(grouping: byYear, by: \\.artist)"), "the albums of each artist come from the sorted list")
     }
 
     @Test func albumsGoFromTheOldestToTheNewest() {
@@ -119,7 +120,7 @@ struct SortTests {
         #expect(source.matches(of: tables).count == source.components(separatedBy: "sortOrder: order($sort").count - 1, "every table sorts")
         #expect(source.components(separatedBy: "TableColumn(\"").count == source.components(separatedBy: "\", value: \\.").count, "every column sorts")
         #expect(source.components(separatedBy: "guard sort.column == nil else { return }").count - 1 == 2, "a drag reorders the queue and a playlist only in their own order")
-        #expect(source.contains("AlbumGrid(albums: Library.chronological("), "the albums of an artist go by year")
+        #expect(source.contains("AlbumGrid(albums: library.albums(by: name))"), "the albums of an artist go by year")
         #expect(source.components(separatedBy: "@State private var sort = Sort()").count - 1 == 4, "the sort is not saved")
         #expect(source.components(separatedBy: ".onChange(of: active) { if !active { sort = Sort() } }").count - 1 == 4, "a list that leaves goes back to its own order")
         #expect(!source.contains("@AppStorage(\"sort."), "the sort is not saved")
