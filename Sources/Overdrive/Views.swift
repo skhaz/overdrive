@@ -1660,7 +1660,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 NavigationSplitView {
-                    List(selection: Binding<Page?> { page } set: { value in if let value { lyrics.settle { navigation.open(value, leaving: tracker.position) } } }) {
+                    List(selection: sidebar) {
+                        row("About", "info.circle", .about)
+
                         ForEach(Section.allCases) { section in
                             row(section.rawValue, section.symbol, .section(section))
                         }
@@ -1688,7 +1690,6 @@ struct ContentView: View {
                         }
                     }
                     .navigationSplitViewColumnWidth(180)
-                    .modifier(AboutFooter(selected: page == .about) { lyrics.settle { navigation.open(.about, leaving: tracker.position) } })
                     .focused($focus, equals: .sidebar)
                     .onDeleteCommand {
                         if case .playlist(let name) = page { deleting = name }
@@ -1801,11 +1802,11 @@ struct ContentView: View {
         .environment(lyrics)
         .environment(\.go, GoAction { destination in
             Log.navigation.info("go", metadata: ["destination": "\(destination.key)", "page": "\(page.key)", "path": Log.list(path.map(\.key))])
-            var value = path
+            let route: Route
 
             switch destination {
-            case .album(let album): value.append(.album(album))
-            case .artist(let name): value.append(.artist(name))
+            case .album(let album): route = .album(album)
+            case .artist(let name): route = .artist(name)
             case .playing(let track):
                 guard let album = library.album(track.albumID) else { return }
 
@@ -1820,7 +1821,10 @@ struct ContentView: View {
                 return
             }
 
-            navigate(value)
+            guard path.last != route else { return Log.navigation.debug("open ignored", metadata: ["route": "\(route.key)", "reason": "already open"]) }
+
+            Log.navigation.info("navigate", metadata: ["page": "\(page.key)", "from": Log.list(path.map(\.key)), "to": "\(route.key)"])
+            lyrics.settle { navigation.push(route, leaving: tracker.position) }
         })
         .modifier(ClearQueue(clearing: $clearing))
         .modifier(Find { window in focusSearch(window, selecting: true) })
@@ -1898,6 +1902,10 @@ struct ContentView: View {
         .environment(\.tracker, tracker)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .frame(minWidth: 820, minHeight: 520)
+    }
+
+    private var sidebar: Binding<Page?> {
+        Binding { page } set: { value in if let value { lyrics.settle { navigation.open(value, leaving: tracker.position) } } }
     }
 
     private func row(_ title: String, _ symbol: String, _ value: Page) -> some View {

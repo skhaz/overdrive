@@ -161,7 +161,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 
 ## Good to know
 
-- Click **About** at the bottom of the sidebar to see the version of the app and to open its page on GitHub, report a problem, or see the releases.
+- Click **About** at the top of the sidebar to see the version of the app and to open its page on GitHub, report a problem, or see the releases.
 
 - The app never changes your songs. It only saves the lyrics that you save.
 - Your liked songs, playlists, and lyrics live with your music. Back up your music folder and you back up all of them.
@@ -179,6 +179,5 @@ The Song menu at the top of the screen has the same actions as the right-click m
 - Scrobbles: [Last.fm](https://www.last.fm).
 - Music videos: [YouTube](https://www.youtube.com).
 - GitHub mark on the About page: [Primer Octicons](https://github.com/primer/octicons) (MIT). GitHub and the GitHub logo are trademarks of GitHub, Inc.
-- Logs: [swift-log](https://github.com/apple/swift-log) (Apache 2.0).
 
 The About page in the app shows the same credits, with the same links.

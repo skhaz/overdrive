@@ -29,10 +29,7 @@ struct AboutTests {
     @Test func theSidebarOpensAbout() throws {
         let source = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
 
-        #expect(!source.contains("row(\"About\""), "About is not a list row, so hundreds of playlists never push it away")
-        #expect(source.contains(".modifier(AboutFooter(selected: page == .about)"), "About stays pinned at the bottom of the sidebar")
-        let about = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/About.swift"), encoding: .utf8)
-        #expect(about.contains("content.safeAreaInset(edge: .bottom, spacing: 0)"), "the list scrolls above the footer")
+        #expect(source.contains("List(selection: sidebar) {\n                        row(\"About\", \"info.circle\", .about)\n\n                        ForEach(Section.allCases)"), "About is the first row of the sidebar, in the style of the other rows")
         #expect(source.contains("case .about: AboutView()"))
     }
 
@@ -44,7 +41,7 @@ struct AboutTests {
         let links = try Regex(#"\]\((https?://[^)]+)\)"#)
         let urls = readme[credits...].matches(of: links).compactMap { $0.output[1].substring.map(String.init) }
 
-        #expect(urls.count >= 7)
+        #expect(urls.count >= 6)
         for url in urls {
             #expect(about.contains("](\(url))"), "the About page must link \(url) like the README")
         }

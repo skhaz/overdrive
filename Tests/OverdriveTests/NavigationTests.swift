@@ -639,4 +639,21 @@ struct NavigationTests {
         navigation.searched(from: "", to: "Artist")
         #expect(navigation.place == Place(page: albums, path: []))
     }
+
+    @Test func openingTheOpenAlbumAgainAddsNothing() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+
+        let opened = navigation.push(.album(one))
+        #expect(opened)
+        let again = navigation.push(.album(one))
+        #expect(!again, "the second click of a double-click must not stack the same album")
+        #expect(navigation.path == [.album(one)])
+        #expect(navigation.back == [Place(page: albums, path: [])], "one Back closes the album")
+
+        let artist = navigation.push(.artist("Artist"))
+        let twice = navigation.push(.artist("Artist"))
+        #expect(artist && !twice)
+        #expect(navigation.path == [.album(one), .artist("Artist")])
+    }
 }

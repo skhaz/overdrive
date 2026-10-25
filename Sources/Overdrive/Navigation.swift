@@ -167,6 +167,14 @@ nonisolated struct Navigation {
         visit(Place(page: place.page, path: path), leaving: position)
     }
 
+    @discardableResult
+    mutating func push(_ route: Route, leaving position: Position = Position()) -> Bool {
+        guard place.path.last != route else { return false }
+
+        show(place.path + [route], leaving: position)
+        return true
+    }
+
     mutating func played(_ album: Album, leaving position: Position = Position()) {
         guard case .section = place.page else { return }
 

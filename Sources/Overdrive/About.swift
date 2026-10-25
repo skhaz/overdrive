@@ -14,8 +14,7 @@ enum About {
     Lyrics from [LRCLIB](https://lrclib.net) and [lyrics.ovh](https://lyrics.ovh). \
     Scrobbles with [Last.fm](https://www.last.fm). Music videos from [YouTube](https://www.youtube.com). \
     App icon “[iPod Orange](https://macosicons.com/icon/ipod-orange-siHDxmuV8f)” by p_bluealt. \
-    GitHub mark from [Primer Octicons](https://github.com/primer/octicons). \
-    Logs with [swift-log](https://github.com/apple/swift-log).
+    GitHub mark from [Primer Octicons](https://github.com/primer/octicons).
     """
 
     static let github = """
@@ -27,30 +26,6 @@ enum About {
         image.isTemplate = true
         return image
     }()
-}
-
-struct AboutFooter: ViewModifier {
-    let selected: Bool
-    let action: () -> Void
-
-    func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                Button(action: action) {
-                    Label("About", systemImage: "info.circle")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(SidebarButtonStyle())
-                .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.1) : Color.clear))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-            .background(.bar)
-        }
-    }
 }
 
 struct AboutView: View {
