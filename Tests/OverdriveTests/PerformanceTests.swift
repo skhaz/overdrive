@@ -69,4 +69,15 @@ struct PerformanceTests {
         #expect(log.contains("queue.asyncAfter(deadline: .now() + Self.batch)"), "one fsync for a burst of records")
         #expect(try source("Views.swift").contains("\"destination\": \"\\(destination.key)\""), "a log must not dump a whole album")
     }
+
+    @Test func thePeriodicSyncIsCheap() throws {
+        let library = try source("Library.swift")
+        let sync = region(library, "private func sync() {")
+
+        #expect(Library.period == .seconds(600))
+        #expect(sync.contains("scanning || info.isLowPowerModeEnabled || info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue"), "no sync while a scan runs, on low power, or when the Mac is hot")
+        #expect(sync.contains("ContinuousClock.now - last >= Library.period"), "no sync right after another scan")
+        #expect(library.contains("if persistent { sync() }"), "only the app syncs, never a test library")
+        #expect(try source("Overdrive.swift").contains("Button(\"Sync Library\")"), "the menu syncs at once")
+    }
 }

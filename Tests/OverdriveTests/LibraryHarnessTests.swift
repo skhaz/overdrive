@@ -412,6 +412,28 @@ struct LibraryHarnessTests {
         #expect(box.first == [folder.path + "/Album/cached.mp3", folder.path + "/Album/deleted.mp3"])
     }
 
+    @Test func aSyncWithoutChangesDrawsNothing() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        try put(folder, "Album/one.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+        while library.scanning { try? await Task.sleep(for: .milliseconds(50)) }
+        let scans = library.scans
+        let loads = Counter()
+        library.loaded = { loads.value += 1 }
+
+        library.scan("menu")
+        while library.scanning { try? await Task.sleep(for: .milliseconds(50)) }
+        #expect(loads.value == 1, "the sync ran")
+        #expect(library.scans == scans, "a sync that finds no change must not redraw the library")
+
+        try put(folder, "Album/two.mp3", "vbr.mp3")
+        library.scan("menu")
+        await settle(library, [folder])
+        #expect(library.scans > scans, "a sync that finds a change shows it")
+    }
+
     @Test func anUnlikeInTheLibraryFolderDoesNotScan() async throws {
         let folder = try folder()
         defer { clean(folder) }

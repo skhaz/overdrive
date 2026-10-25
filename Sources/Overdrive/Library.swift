@@ -100,6 +100,7 @@ nonisolated enum Fuzzy {
 final class Library {
     private static let key = "folders"
     static let quiet = Duration.milliseconds(1500)
+    static let period = Duration.seconds(600)
 
     private(set) var albums: [Album] = []
     private(set) var filtered: [Album] = []
@@ -158,6 +159,9 @@ final class Library {
     @ObservationIgnored private var readerFolders: [URL] = []
     @ObservationIgnored private var pending: Task<Void, Never>?
     @ObservationIgnored private var reported: Set<[Int]> = []
+    @ObservationIgnored private var shownFolders: [URL]?
+    @ObservationIgnored private var last = ContinuousClock.now
+    @ObservationIgnored private var syncing: Task<Void, Never>?
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var grouped: (version: Int, artists: [(name: String, albums: [Album])]) = (-1, [])
     @ObservationIgnored private var bytes: [UInt8] = []
@@ -181,6 +185,7 @@ final class Library {
         loudness.folders = self.folders
         watch()
         scan()
+        if persistent { sync() }
 
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -220,6 +225,23 @@ final class Library {
         folders = folders.filter { folder in !new.contains { folder.path.hasPrefix($0.path + "/") } } + new
     }
 
+    private func sync() {
+        syncing = Task { [weak self] in
+            while (try? await Task.sleep(for: Library.period)) != nil {
+                guard let self else { return }
+
+                let info = ProcessInfo.processInfo
+                let busy = scanning || info.isLowPowerModeEnabled || info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+                guard !busy, ContinuousClock.now - last >= Library.period else {
+                    Log.library.debug("sync skipped", metadata: ["scanning": "\(scanning)", "low power": "\(info.isLowPowerModeEnabled)", "thermal": "\(info.thermalState.rawValue)"])
+                    continue
+                }
+
+                scan("periodic")
+            }
+        }
+    }
+
     func request(_ reason: String, _ metadata: Logging.Logger.Metadata) {
         var metadata = metadata
         metadata["reason"] = "\(reason)"
@@ -239,9 +261,11 @@ final class Library {
         let generation = generation
         let folders = folders
         let covers = Artwork.covers
+        let first = folders != shownFolders
+        last = .now
 
         scanning = true
-        Log.library.info("scan", metadata: ["generation": "\(generation)", "reason": "\(reason)", "folders": Log.list(folders.map(\.path))])
+        Log.library.info("scan", metadata: ["generation": "\(generation)", "reason": "\(reason)", "first": "\(first)", "folders": Log.list(folders.map(\.path))])
 
         let previous = running
         running = Task {
@@ -249,7 +273,7 @@ final class Library {
             guard generation == self.generation else { return }
 
             var shown = false
-            let result = await Library.load(folders, covers) { snapshot in
+            let result = await Library.load(folders, covers, cached: first) { snapshot in
                 await MainActor.run {
                     guard generation == self.generation else { return false }
 
@@ -263,9 +287,15 @@ final class Library {
             }
             guard generation == self.generation else { return Log.library.info("scan replaced", metadata: ["generation": "\(generation)"]) }
 
+            scanning = false
+            guard first || shown else {
+                Log.library.info("scan unchanged", metadata: ["generation": "\(generation)", "reason": "\(reason)"])
+                loaded?()
+                return
+            }
+
             Log.library.info("scan done", metadata: ["generation": "\(generation)", "albums": "\(result.albums.count)"])
             show(result, folders)
-            scanning = false
             loudness.update(result.albums)
             if !shown { loaded?() }
         }
@@ -316,6 +346,7 @@ final class Library {
         byYear = Library.chronological(snapshot.albums)
         byID = Dictionary(snapshot.albums.map { ($0.id, $0) }) { first, _ in first }
         byArtist = Dictionary(grouping: byYear, by: \.artist)
+        shownFolders = folders
         scans += 1
         search()
     }
@@ -505,7 +536,7 @@ final class Library {
             }
         }
 
-        guard let stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)) else {
+        guard let stream = FSEventStreamCreate(nil, callback, &context, folders.map(\.path) as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagWatchRoot)) else {
             return Log.library.error("watch failed", metadata: ["folders": Log.list(folders.map(\.path))])
         }
 
@@ -515,8 +546,15 @@ final class Library {
         Log.library.log(level: started ? .info : .error, "watch", metadata: ["folders": Log.list(folders.map(\.path)), "started": "\(started)"])
     }
 
+    nonisolated static let lost = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagRootChanged)
+
     nonisolated static func relevant(_ events: [(path: String, flags: FSEventStreamEventFlags)]) -> Bool {
         events.contains { path, flags in
+            if flags & lost != 0 {
+                Log.library.warning("events lost", metadata: ["path": "\(path)", "flags": "\(String(flags, radix: 16))"])
+                return true
+            }
+
             if Cache.ignored(path) {
                 let main = (path as NSString).lastPathComponent == Cache.name
                 let gone = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0
@@ -539,7 +577,7 @@ final class Library {
     nonisolated static let playable = Set(types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() })
 
     @concurrent
-    nonisolated static func load(_ folders: [URL], _ previous: [String: Data], progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
+    nonisolated static func load(_ folders: [URL], _ previous: [String: Data], cached emit: Bool = true, progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
         let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
         let caches = folders.map { Cache($0) }
         var stored = previous
@@ -555,7 +593,7 @@ final class Library {
 
         let cached = knowns.flatMap { $0.values.map(\.track) }
         Log.library.info("load", metadata: ["folders": Log.list(folders.map(\.path)), "cached": "\(cached.count)", "caches": Log.list(caches.map { $0 != nil })])
-        if !cached.isEmpty {
+        if emit, !cached.isEmpty {
             let (albums, index) = assemble(cached)
             guard await progress((albums, index, stored)) else { return (albums, index, stored) }
         }

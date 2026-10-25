@@ -163,7 +163,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 
 - The app never changes your songs. It only saves the lyrics that you save.
 - Your liked songs, playlists, and lyrics live with your music. Back up your music folder and you back up all of them.
-- The app keeps a file named `Cache.sqlite` in each music folder. With it, the app opens faster. You can delete it at any time: the app makes it again. If you change the tags of a song with an app that keeps the file date, choose File > Rebuild Library Cache: the app reads all your songs again. Until it finishes, you see the library as it was.
+- The app keeps a file named `Cache.sqlite` in each music folder. With it, the app opens faster. You can delete it at any time: the app makes it again. The app checks your music folders by itself when they change and every 10 minutes. To check them at once, choose File > Sync Library (Command-R). If you change the tags of a song with an app that keeps the file date, choose File > Rebuild Library Cache: the app reads all your songs again. Until it finishes, you see the library as it was.
 - When you play an album in order, the quiet and loud songs of the album stay as the artist made them.
 - No Last.fm play is lost. If there is no internet, the app sends them later.
 - The video window opens at once, and you stay signed in to YouTube.

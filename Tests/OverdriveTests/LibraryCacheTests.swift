@@ -709,3 +709,26 @@ extension LibraryCacheTests {
         #expect(stored(folder) == before)
     }
 }
+
+extension LibraryCacheTests {
+    @Test func lostEventsStartAScan() {
+        for flag in [kFSEventStreamEventFlagMustScanSubDirs, kFSEventStreamEventFlagUserDropped, kFSEventStreamEventFlagKernelDropped, kFSEventStreamEventFlagRootChanged] {
+            #expect(Library.relevant([("/Music/Library", FSEventStreamEventFlags(flag))]), "when FSEvents drops events, only a scan finds the changes")
+        }
+    }
+
+    @Test func aLaterScanSkipsTheCachedSnapshot() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "A/one.mp3")
+        _ = await Library.load([folder], [:])
+
+        let steps = Steps()
+        let result = await Library.load([folder], [:], cached: false) { snapshot in
+            steps.counts.append(snapshot.albums.count)
+            return true
+        }
+        #expect(steps.counts.isEmpty, "no change, no snapshot")
+        #expect(result.albums.flatMap(\.tracks).count == 1)
+    }
+}

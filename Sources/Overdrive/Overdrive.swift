@@ -147,7 +147,7 @@ struct Overdrive: App {
                 }
                 .keyboardShortcut("n")
 
-                Button("Rescan Library") {
+                Button("Sync Library") {
                     library.scan("menu")
                     playlists.load()
                     likes.load()
