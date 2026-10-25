@@ -162,6 +162,7 @@ final class Library {
     @ObservationIgnored private var shownFolders: [URL]?
     @ObservationIgnored private var last = ContinuousClock.now
     @ObservationIgnored private var syncing: Task<Void, Never>?
+    @ObservationIgnored private var stamps: (folders: [URL], files: [[String: Cache.Stamp]])?
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var grouped: (version: Int, artists: [(name: String, albums: [Album])]) = (-1, [])
     @ObservationIgnored private var bytes: [UInt8] = []
@@ -237,9 +238,76 @@ final class Library {
                     continue
                 }
 
+                guard let stamps, stamps.folders == folders else {
+                    scan("periodic")
+                    continue
+                }
+
+                let folders = folders
+                let change = await Library.changed(folders, stamps.files)
+                guard let change else {
+                    Log.library.debug("sync clean", metadata: ["files": "\(stamps.files.reduce(0) { $0 + $1.count })"])
+                    last = .now
+                    continue
+                }
+
+                Log.library.info("sync found a change", metadata: ["change": "\(change)"])
                 scan("periodic")
             }
         }
+    }
+
+    private func remember(_ folders: [URL]) {
+        let generation = generation
+        Task {
+            let files = await Library.stamps(folders)
+            guard generation == self.generation, folders == self.folders else { return }
+
+            stamps = files.map { (folders, $0) }
+        }
+    }
+
+    @concurrent
+    nonisolated static func stamps(_ folders: [URL]) async -> [[String: Cache.Stamp]]? {
+        var result: [[String: Cache.Stamp]] = []
+        for folder in folders {
+            guard let cache = Cache(folder) else { return nil }
+
+            result.append(cache.stamps())
+        }
+        return result
+    }
+
+    @concurrent
+    nonisolated static func changed(_ folders: [URL], _ stamps: [[String: Cache.Stamp]]) async -> String? {
+        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+
+        for (number, folder) in folders.enumerated() {
+            guard let cache = Cache(folder), stamps.indices.contains(number) else { return "no cache for \(folder.path)" }
+
+            let known = stamps[number]
+            var seen = 0
+            var failed = false
+            guard let enumerator = FileManager.default.enumerator(at: URL(filePath: cache.root), includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, _ in
+                failed = true
+                return true
+            }) else { return "unreadable \(folder.path)" }
+
+            while let url = enumerator.nextObject() as? URL {
+                guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+
+                let path = cache.relative(url)
+                guard let stamp = known[path] else { return "new \(path)" }
+                guard stamp.modified == values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0, stamp.size == values.fileSize ?? 0 else { return "modified \(path)" }
+
+                seen += 1
+            }
+
+            if failed { return "walk error in \(folder.path)" }
+            if seen != known.count { return "gone in \(folder.path)" }
+        }
+
+        return nil
     }
 
     func request(_ reason: String, _ metadata: Logging.Logger.Metadata) {
@@ -288,6 +356,7 @@ final class Library {
             guard generation == self.generation else { return Log.library.info("scan replaced", metadata: ["generation": "\(generation)"]) }
 
             scanning = false
+            remember(folders)
             guard first || shown else {
                 Log.library.info("scan unchanged", metadata: ["generation": "\(generation)", "reason": "\(reason)"])
                 loaded?()
@@ -323,6 +392,7 @@ final class Library {
             guard generation == self.generation else { return Log.library.info("rebuild replaced", metadata: ["generation": "\(generation)"]) }
 
             Log.library.info("rebuild done", metadata: ["generation": "\(generation)", "albums": "\(result.albums.count)"])
+            remember(folders)
             show(result, folders)
             scanning = false
             loudness.update(result.albums)

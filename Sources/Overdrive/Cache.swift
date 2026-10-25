@@ -5,6 +5,11 @@ import SQLite3
 nonisolated final class Cache {
     static let name = "Cache.sqlite"
 
+    struct Stamp: Equatable, Sendable {
+        let modified: Double
+        let size: Int
+    }
+
     struct Entry {
         let modified: Double
         let size: Int
@@ -86,6 +91,14 @@ nonisolated final class Cache {
             return String(url.path.dropFirst(base.count + 1))
         }
         return url.path
+    }
+
+    func stamps() -> [String: Stamp] {
+        var result: [String: Stamp] = [:]
+        query("SELECT path, modified, size FROM tracks") { row in
+            result[Self.text(row, 0)] = Stamp(modified: sqlite3_column_double(row, 1), size: Int(sqlite3_column_int64(row, 2)))
+        }
+        return result
     }
 
     func entries() -> [String: Entry] {

@@ -732,3 +732,40 @@ extension LibraryCacheTests {
         #expect(result.albums.flatMap(\.tracks).count == 1)
     }
 }
+
+extension LibraryCacheTests {
+    @Test func theQuickSyncComparesTheDiskWithTheCache() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "A/one.mp3")
+        try add("vbr.mp3", to: folder, as: "A/two.mp3")
+        try Data("x".utf8).write(to: folder.appending(path: "A/cover.jpg"))
+        _ = await Library.load([folder], [:])
+
+        var stamps = try #require(await Library.stamps([folder]))
+        #expect(await Library.changed([folder], stamps) == nil, "no change, no scan")
+
+        try Data("y".utf8).write(to: folder.appending(path: "A/notes.txt"))
+        #expect(await Library.changed([folder], stamps) == nil, "a file the player does not play changes nothing")
+
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000_000)], ofItemAtPath: folder.appending(path: "A/one.mp3").path)
+        #expect(await Library.changed([folder], stamps)?.hasPrefix("modified") == true, "a new date starts a scan")
+
+        _ = await Library.load([folder], [:])
+        stamps = try #require(await Library.stamps([folder]))
+        #expect(await Library.changed([folder], stamps) == nil, "after the scan the cache and the disk agree again")
+
+        try add("abr.mp3", to: folder, as: "B/three.mp3")
+        #expect(await Library.changed([folder], stamps)?.hasPrefix("new") == true)
+
+        _ = await Library.load([folder], [:])
+        stamps = try #require(await Library.stamps([folder]))
+        try FileManager.default.removeItem(at: folder.appending(path: "A/two.mp3"))
+        #expect(await Library.changed([folder], stamps)?.hasPrefix("gone") == true)
+
+        _ = await Library.load([folder], [:])
+        stamps = try #require(await Library.stamps([folder]))
+        #expect(await Library.changed([folder], stamps) == nil)
+        #expect(stored(folder) == audio(folder), "the cache never drifts from the disk")
+    }
+}
