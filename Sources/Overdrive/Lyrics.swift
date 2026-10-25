@@ -5,6 +5,7 @@ final class Lyrics {
     nonisolated enum Failure: Error {
         case offline
         case busy
+        case cancelled
         case status(Int)
     }
 
@@ -118,6 +119,7 @@ final class Lyrics {
     @concurrent
     private nonisolated static func forceLookup(_ track: Track) async -> Result<String, Failure> {
         let result = await fetch(track)
+        if case .failure(.cancelled) = result { return result }
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
             return .success(lyrics)
@@ -278,6 +280,7 @@ final class Lyrics {
         }
 
         let result = await fetch(track)
+        if case .failure(.cancelled) = result { return result }
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
             Log.lyrics.info("source", metadata: ["path": "\(track.url.path)", "source": "lrclib"])
@@ -310,11 +313,15 @@ final class Lyrics {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(agent, forHTTPHeaderField: "User-Agent")
         for attempt in 0..<attempts {
-            if attempt > 0 { try? await Task.sleep(for: .seconds(Double.random(in: retryDelay))) }
+            if attempt > 0, (try? await Task.sleep(for: .seconds(Double.random(in: retryDelay)))) == nil { return nil }
             let (data, response): (Data, URLResponse)
             do {
                 (data, response) = try await URLSession.shared.data(for: request)
             } catch {
+                if Self.cancelled(error) {
+                    Log.lyrics.debug("request cancelled", metadata: ["url": "\(url.absoluteString)"])
+                    return nil
+                }
                 Log.lyrics.warning("request failed", metadata: ["url": "\(url.absoluteString)", "error": "\(error)"])
                 continue
             }
@@ -373,16 +380,24 @@ final class Lyrics {
         return request
     }
 
+    nonisolated static func cancelled(_ error: any Error) -> Bool {
+        Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
     private nonisolated static func load(_ request: URLRequest) async -> Result<Any, Failure> {
         var failure = Failure.busy
 
         for retry in 0..<attempts {
-            if retry > 0 { try? await Task.sleep(for: .seconds(Double.random(in: retryDelay))) }
+            if retry > 0, (try? await Task.sleep(for: .seconds(Double.random(in: retryDelay)))) == nil { return .failure(.cancelled) }
 
             let (data, response): (Data, URLResponse)
             do {
                 (data, response) = try await URLSession.shared.data(for: request)
             } catch {
+                if Self.cancelled(error) {
+                    Log.lyrics.debug("request cancelled", metadata: ["url": "\(request.url?.absoluteString ?? "")"])
+                    return .failure(.cancelled)
+                }
                 Log.lyrics.warning("request failed", metadata: ["url": "\(request.url?.absoluteString ?? "")", "error": "\(error)"])
                 failure = .offline
                 continue

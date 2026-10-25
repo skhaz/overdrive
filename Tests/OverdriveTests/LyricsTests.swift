@@ -261,4 +261,28 @@ import Testing
         #expect(try fallback.get() == "from ovh")
         #expect(read(file) == "from ovh")
     }
+
+    @Test func aCancelledLookupStopsAtOnce() async throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        let file = Lyrics.key(track)
+        try Data("old".utf8).write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-40 * 86400)], ofItemAtPath: file.path)
+
+        let result = await Lyrics.lookup(track, fetch: { _ in .failure(.cancelled) }, ovh: { _ in Issue.record("a cancelled lookup must not try another site"); return "x" })
+        Persist.flush()
+
+        guard case .failure(.cancelled) = result else {
+            Issue.record("expected cancelled, got \(result)")
+            return
+        }
+        #expect(read(file) == "old")
+    }
+
+    @Test func aCancelledRequestIsNotAFailure() {
+        #expect(Lyrics.cancelled(URLError(.cancelled)))
+        #expect(Lyrics.cancelled(CancellationError()))
+        #expect(!Lyrics.cancelled(URLError(.notConnectedToInternet)), "offline still retries")
+    }
 }
