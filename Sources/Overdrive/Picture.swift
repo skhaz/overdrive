@@ -6,12 +6,79 @@ import UniformTypeIdentifiers
 nonisolated enum Picture {
     private static let names: Set<String> = ["cover", "folder", "front", "album"]
 
+    typealias Run = ([URL], Int) -> (received: Set<Int>, covers: [Int: Data], clean: Bool)
+
     static func generate(_ urls: [URL]) -> [Data?] {
+        collect(urls, run)
+    }
+
+    static func collect(_ urls: [URL], _ run: Run) -> [Data?] {
+        var covers = [Data?](repeating: nil, count: urls.count)
+        var left = Array(urls.indices)
+        var workers = 4
+
+        while !left.isEmpty {
+            let result = run(left.map { urls[$0] }, workers)
+            var missing: [Int] = []
+            for (offset, index) in left.enumerated() {
+                if result.received.contains(offset) { covers[index] = result.covers[offset] } else { missing.append(index) }
+            }
+            if missing.isEmpty { break }
+
+            if result.clean {
+                Log.cache.error("covers missing", metadata: ["count": "\(missing.count)"])
+                break
+            }
+            if workers > 1 {
+                Log.cache.warning("covers crashed", metadata: ["missing": "\(missing.count)", "retry": "one at a time"])
+                workers = 1
+                left = missing
+                continue
+            }
+
+            Log.cache.error("cover crashed", metadata: ["path": "\(urls[missing[0]].path)"])
+            left = Array(missing.dropFirst())
+        }
+
+        Log.cache.info("covers", metadata: ["requested": "\(urls.count)", "found": "\(covers.count { $0 != nil })"])
+        return covers
+    }
+
+    static func record(_ index: Int, _ cover: Data?) -> Data {
+        var data = Data(capacity: 8 + (cover?.count ?? 0))
+        withUnsafeBytes(of: UInt32(index).littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(cover?.count ?? 0).littleEndian) { data.append(contentsOf: $0) }
+        if let cover { data.append(cover) }
+        return data
+    }
+
+    static func records(_ data: Data) -> (received: Set<Int>, covers: [Int: Data]) {
+        var received = Set<Int>()
+        var covers: [Int: Data] = [:]
+        var offset = data.startIndex
+
+        func number(_ at: Int) -> Int {
+            Int(data[at..<(at + 4)].withUnsafeBytes { UInt32(littleEndian: $0.loadUnaligned(as: UInt32.self)) })
+        }
+
+        while offset + 8 <= data.endIndex {
+            let index = number(offset)
+            let count = number(offset + 4)
+            guard offset + 8 + count <= data.endIndex else { break }
+
+            received.insert(index)
+            if count > 0 { covers[index] = data[(offset + 8)..<(offset + 8 + count)] }
+            offset += 8 + count
+        }
+        return (received, covers)
+    }
+
+    private static func run(_ urls: [URL], _ workers: Int) -> (received: Set<Int>, covers: [Int: Data], clean: Bool) {
         let process = Process()
         let input = Pipe()
         let output = Pipe()
         process.executableURL = Bundle.main.executableURL
-        process.arguments = ["covers"]
+        process.arguments = ["covers", String(workers)]
         process.standardInput = input
         process.standardOutput = output
 
@@ -19,11 +86,10 @@ nonisolated enum Picture {
             try process.run()
         } catch {
             Log.cache.error("covers process failed", metadata: ["albums": "\(urls.count)", "error": "\(error)"])
-            return [Data?](repeating: nil, count: urls.count)
+            return ([], [:], true)
         }
 
         let paths = Data(urls.map(\.path).joined(separator: "\0").utf8)
-
         _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
 
         DispatchQueue.global().async {
@@ -31,71 +97,35 @@ nonisolated enum Picture {
             try? input.fileHandleForWriting.close()
         }
 
-        let descriptor = output.fileHandleForReading.fileDescriptor
-
-        func fill(_ buffer: UnsafeMutableRawBufferPointer) {
-            var done = 0
-
-            while done < buffer.count {
-                let count = Darwin.read(descriptor, buffer.baseAddress! + done, buffer.count - done)
-                guard count > 0 else { return }
-                done += count
-            }
-        }
-
-        var size = UInt64(0)
-        withUnsafeMutableBytes(of: &size) { fill($0) }
-
-        var data = Data(count: Int(UInt64(littleEndian: size)))
-        data.withUnsafeMutableBytes { fill($0) }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
-        var covers: [Data?] = []
-        covers.reserveCapacity(urls.count)
-        var offset = data.startIndex
-
-        while offset + 4 <= data.endIndex {
-            let count = Int(data[offset..<(offset + 4)].withUnsafeBytes { UInt32(littleEndian: $0.loadUnaligned(as: UInt32.self)) })
-            offset += 4
-            covers.append(count > 0 ? data[offset..<(offset + count)] : nil)
-            offset += count
-        }
-
-        Log.cache.log(level: process.terminationStatus == 0 && covers.count == urls.count ? .info : .error, "covers", metadata: [
-            "requested": "\(urls.count)", "returned": "\(covers.count)", "found": "\(covers.count { $0 != nil })", "bytes": "\(data.count)", "exit": "\(process.terminationStatus)",
+        let clean = process.terminationReason == .exit && process.terminationStatus == 0
+        let result = records(data)
+        Log.cache.log(level: clean ? .debug : .error, "covers run", metadata: [
+            "requested": "\(urls.count)", "received": "\(result.received.count)", "workers": "\(workers)", "bytes": "\(data.count)",
+            "exit": "\(process.terminationStatus)", "signal": "\(process.terminationReason == .uncaughtSignal)",
         ])
-        return covers
+        return (result.received, result.covers, clean)
     }
 
-    static func serve() {
+    static func serve(workers: Int) {
         let input = FileHandle.standardInput.readDataToEndOfFile()
         let urls = input.split(separator: 0).map { URL(filePath: String(decoding: $0, as: UTF8.self)) }
         let next = Atomic(0)
-        nonisolated(unsafe) let results = UnsafeMutableBufferPointer<Data?>.allocate(capacity: urls.count)
-        results.initialize(repeating: nil)
+        let writing = Mutex(())
 
-        DispatchQueue.concurrentPerform(iterations: 4) { _ in
+        DispatchQueue.concurrentPerform(iterations: max(1, min(workers, 8))) { _ in
             while true {
                 let index = next.add(1, ordering: .relaxed).oldValue
                 guard index < urls.count else { return }
 
                 autoreleasepool {
-                    results[index] = thumbnail(urls[index])
+                    let data = record(index, thumbnail(urls[index]))
+                    writing.withLock { _ in FileHandle.standardOutput.write(data) }
                 }
             }
         }
-
-        var output = Data()
-        let size = results.reduce(0) { $0 + 4 + ($1?.count ?? 0) }
-        output.reserveCapacity(8 + size)
-        withUnsafeBytes(of: UInt64(size).littleEndian) { output.append(contentsOf: $0) }
-
-        for result in results {
-            withUnsafeBytes(of: UInt32(result?.count ?? 0).littleEndian) { output.append(contentsOf: $0) }
-            if let result { output.append(result) }
-        }
-
-        FileHandle.standardOutput.write(output)
     }
 
     static func thumbnail(_ url: URL) -> Data? {

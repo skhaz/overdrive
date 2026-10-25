@@ -20,8 +20,12 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
 
     var id: URL { url }
 
+    static func albumID(_ url: URL, _ album: String) -> String {
+        StoredPath.encode(url.deletingLastPathComponent().path) + "\n" + album
+    }
+
     func at(_ url: URL) -> Track {
-        Track(url: url, title: title, artist: artist, album: album, number: number, disc: disc, albumArtist: albumArtist, year: year, duration: duration, albumID: albumID)
+        Track(url: url, title: title, artist: artist, album: album, number: number, disc: disc, albumArtist: albumArtist, year: year, duration: duration, albumID: Track.albumID(url, album))
     }
 
     static func == (lhs: Track, rhs: Track) -> Bool {
@@ -30,6 +34,23 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(url)
+    }
+}
+
+nonisolated final class Unreadable: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stamps: [String: Cache.Stamp] = [:]
+
+    func add(_ path: String, _ stamp: Cache.Stamp) {
+        lock.withLock { stamps[path] = stamp }
+    }
+
+    func remove(_ path: String) {
+        lock.withLock { _ = stamps.removeValue(forKey: path) }
+    }
+
+    func same(_ path: String, _ stamp: Cache.Stamp) -> Bool {
+        lock.withLock { stamps[path] == stamp }
     }
 }
 
@@ -163,6 +184,7 @@ final class Library {
     @ObservationIgnored private var last = ContinuousClock.now
     @ObservationIgnored private var syncing: Task<Void, Never>?
     @ObservationIgnored private var stamps: (folders: [URL], files: [[String: Cache.Stamp]])?
+    @ObservationIgnored private let unreadable = Unreadable()
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var grouped: (version: Int, artists: [(name: String, albums: [Album])]) = (-1, [])
     @ObservationIgnored private var bytes: [UInt8] = []
@@ -260,7 +282,7 @@ final class Library {
                 }
 
                 let folders = folders
-                let change = await Library.changed(folders, stamps.files)
+                let change = await Library.changed(folders, stamps.files, unreadable: unreadable)
                 guard let change else {
                     Log.library.debug("sync clean", metadata: ["files": "\(stamps.files.reduce(0) { $0 + $1.count })"])
                     last = .now
@@ -295,7 +317,7 @@ final class Library {
     }
 
     @concurrent
-    nonisolated static func changed(_ folders: [URL], _ stamps: [[String: Cache.Stamp]]) async -> String? {
+    nonisolated static func changed(_ folders: [URL], _ stamps: [[String: Cache.Stamp]], unreadable: Unreadable? = nil) async -> String? {
         let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
 
         for (number, folder) in folders.enumerated() {
@@ -313,7 +335,11 @@ final class Library {
                 guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
 
                 let path = cache.relative(url)
-                guard let stamp = known[path] else { return "new \(path)" }
+                let modified = values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
+                guard let stamp = known[path] else {
+                    if unreadable?.same(url.path, Cache.Stamp(modified: modified, size: values.fileSize ?? 0)) == true { continue }
+                    return "new \(path)"
+                }
                 guard stamp.modified == values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0, stamp.size == values.fileSize ?? 0 else { return "modified \(path)" }
 
                 seen += 1
@@ -366,7 +392,7 @@ final class Library {
             guard generation == self.generation else { return }
 
             var shown = false
-            let result = await Library.load(folders, covers, cached: first) { snapshot in
+            let result = await Library.load(folders, covers, cached: first, unreadable: unreadable) { snapshot in
                 await MainActor.run {
                     guard generation == self.generation else { return false }
 
@@ -680,7 +706,7 @@ final class Library {
     nonisolated static let playable = Set(types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() })
 
     @concurrent
-    nonisolated static func load(_ folders: [URL], _ previous: [String: Data], cached emit: Bool = true, progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
+    nonisolated static func load(_ folders: [URL], _ previous: [String: Data], cached emit: Bool = true, unreadable: Unreadable? = nil, progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
         let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
         let caches = folders.map { Cache($0) }
         var stored = previous
@@ -694,7 +720,7 @@ final class Library {
             knowns.append(cache?.entries() ?? [:])
         }
 
-        let cached = knowns.flatMap { $0.values.map(\.track) }
+        let cached = knowns.flatMap { $0.values.map { $0.track.at($0.track.url) } }
         Log.library.info("load", metadata: ["folders": Log.list(folders.map(\.path)), "cached": "\(cached.count)", "caches": Log.list(caches.map { $0 != nil })])
         if emit, !cached.isEmpty {
             let (albums, index) = assemble(cached)
@@ -704,6 +730,7 @@ final class Library {
         var slots: [Track?] = []
         var pending: [(slot: Int, url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int, old: Cache.Entry?)] = []
         var removed: [[String]] = []
+        var relabel = Array(repeating: [Cache.Change](), count: folders.count)
 
         for (number, folder) in folders.enumerated() {
             let cache = caches[number]
@@ -727,7 +754,11 @@ final class Library {
                     let entry = known.removeValue(forKey: path)
 
                     if let entry, entry.modified == modified, entry.size == size {
-                        slots.append(entry.track.at(url))
+                        let track = entry.track.at(url)
+                        slots.append(track)
+                        if track.albumID != entry.track.albumID {
+                            relabel[number].append(Cache.Change(path: path, modified: modified, size: size, hash: entry.hash, track: track))
+                        }
                     } else {
                         pending.append((slots.count, url, type.conforms(to: .mpeg4Audio), number, path, modified, size, entry))
                         slots.append(entry?.track.at(url))
@@ -745,9 +776,10 @@ final class Library {
         }
 
         Log.library.info("walk", metadata: ["files": "\(slots.count)", "read": "\(pending.count)", "removed": "\(removed.reduce(0) { $0 + $1.count })", "paths": Log.list(removed.lazy.flatMap(\.self).prefix(20))])
-        if !pending.isEmpty || removed.contains(where: { !$0.isEmpty }) {
-            for (number, cache) in caches.enumerated() where !removed[number].isEmpty {
-                guard cache?.save([], removed: removed[number], covers: [:]) == false else { continue }
+        if !relabel.allSatisfy(\.isEmpty) { Log.library.info("album ids moved", metadata: ["songs": "\(relabel.reduce(0) { $0 + $1.count })"]) }
+        if !pending.isEmpty || removed.contains(where: { !$0.isEmpty }) || relabel.contains(where: { !$0.isEmpty }) {
+            for (number, cache) in caches.enumerated() where !removed[number].isEmpty || !relabel[number].isEmpty {
+                guard cache?.save(relabel[number], removed: removed[number], covers: [:]) == false else { continue }
 
                 Log.library.error("removal not saved", metadata: ["folder": "\(folders[number].path)", "kept": "\(removed[number].count)"])
                 for path in removed[number] {
@@ -784,6 +816,12 @@ final class Library {
 
             for (offset, item) in part.enumerated() {
                 slots[item.slot] = read[offset].track
+
+                if read[offset].track == nil {
+                    unreadable?.add(item.url.path, Cache.Stamp(modified: item.modified, size: item.size))
+                } else {
+                    unreadable?.remove(item.url.path)
+                }
 
                 if let track = read[offset].track {
                     changes[item.folder].append(Cache.Change(path: item.path, modified: item.modified, size: item.size, hash: read[offset].hash, track: track))
@@ -1017,7 +1055,7 @@ final class Library {
             albumArtist: tags.albumArtist,
             year: original > 0 ? original : Int(tags.year.prefix(4)) ?? 0,
             duration: tags.duration,
-            albumID: StoredPath.encode(directory.path) + "\n" + album
+            albumID: Track.albumID(url, album)
         )
     }
 }

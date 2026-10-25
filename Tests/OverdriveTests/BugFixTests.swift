@@ -272,3 +272,131 @@ struct LibraryBugTests {
         #expect(source.contains("if !FileManager.default.fileExists(atPath: folder.appending(path: Cache.name).path) { reopen = true }"), "a deleted cache closes the search connections before the rebuild")
     }
 }
+
+struct MovedFolderTests {
+    @Test func aMovedFolderKeepsEachAlbumWhole() async throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "Moved-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let old = base.appending(path: "Old"), new = base.appending(path: "New")
+        try FileManager.default.createDirectory(at: old.appending(path: "Album"), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: bugFixtures.appending(path: "cbr.mp3"), to: old.appending(path: "Album/one.mp3"))
+        try FileManager.default.copyItem(at: bugFixtures.appending(path: "vbr.mp3"), to: old.appending(path: "Album/two.mp3"))
+        let first = await Library.load([old], [:])
+        #expect(first.albums.count == Set(first.albums.flatMap(\.tracks).map(\.album)).count)
+
+        try FileManager.default.moveItem(at: old, to: new)
+        let handle = try FileHandle(forWritingTo: new.appending(path: "Album/one.mp3"))
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(repeating: 0, count: 16))
+        try handle.close()
+
+        let moved = await Library.load([new], [:])
+        let real = Library.real(new)
+        for album in moved.albums {
+            #expect(album.id.hasPrefix(StoredPath.encode(real)), "an album id follows the folder where the songs are now")
+        }
+        #expect(moved.albums.count == first.albums.count, "a song read again and a song from the cache stay in one album")
+
+        var db: OpaquePointer?
+        sqlite3_open(new.appending(path: Cache.name).path, &db)
+        defer { sqlite3_close(db) }
+        var statement: OpaquePointer?
+        sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM tracks WHERE album_id NOT LIKE ?", -1, &statement, nil)
+        sqlite3_bind_text(statement, 1, StoredPath.encode(real) + "%", -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_step(statement)
+        #expect(sqlite3_column_int(statement, 0) == 0, "the cache keeps the new album ids, so covers stay with their albums")
+        sqlite3_finalize(statement)
+    }
+}
+
+struct UnreadableSongTests {
+    @Test func anUnreadableSongDoesNotWakeTheSyncAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "Unreadable-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appending(path: "A"), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: bugFixtures.appending(path: "cbr.mp3"), to: root.appending(path: "A/good.mp3"))
+        try Data(repeating: 7, count: 64).write(to: root.appending(path: "A/broken.mp3"))
+
+        let unreadable = Unreadable()
+        let result = await Library.load([root], [:], unreadable: unreadable)
+        #expect(result.albums.flatMap(\.tracks).count == 1)
+
+        let stamps = try #require(await Library.stamps([root]))
+        #expect(await Library.changed([root], stamps, unreadable: unreadable) == nil, "a song that cannot be read and did not change must not start a scan every 10 minutes")
+
+        try Data(repeating: 8, count: 80).write(to: root.appending(path: "A/broken.mp3"))
+        #expect(await Library.changed([root], stamps, unreadable: unreadable) != nil, "a new version of the file is checked again")
+    }
+}
+
+struct CoverCrashTests {
+    private let urls = (0..<10).map { URL(filePath: "/m/\($0)/a.mp3") }
+
+    @Test func recordsSurviveACutStream() {
+        var stream = Picture.record(3, Data("abc".utf8)) + Picture.record(5, nil)
+        let cut = Picture.record(7, Data("long data".utf8))
+        stream += cut.prefix(cut.count - 2)
+
+        let read = Picture.records(stream)
+        #expect(read.received == [3, 5], "a record cut by a crash is dropped, the whole ones stay")
+        #expect(read.covers[3] == Data("abc".utf8))
+        #expect(read.covers[5] == nil)
+    }
+
+    @Test func oneBadCoverNeverDropsTheOthers() {
+        let bad = 6
+        var runs = 0
+        let covers = Picture.collect(urls) { batch, workers in
+            runs += 1
+            var received = Set<Int>(), covers: [Int: Data] = [:]
+            for (offset, url) in batch.enumerated() {
+                if url == urls[bad] { return (received, covers, false) }
+                if workers > 1, offset > 0, batch[offset - 1] == urls[bad] { continue }
+                received.insert(offset)
+                covers[offset] = Data(url.path.utf8)
+            }
+            return (received, covers, true)
+        }
+
+        for index in urls.indices where index != bad {
+            #expect(covers[index] == Data(urls[index].path.utf8), "album \(index) keeps its cover")
+        }
+        #expect(covers[bad] == nil, "only the album that crashes the reader has no cover")
+        #expect(runs <= 4, "a crash costs a few runs, never one run per album")
+    }
+
+    @Test func aCleanRunNeedsNoRetry() {
+        var runs = 0
+        let covers = Picture.collect(urls) { batch, _ in
+            runs += 1
+            return (Set(batch.indices), Dictionary(uniqueKeysWithValues: batch.indices.map { ($0, Data([UInt8($0)])) }), true)
+        }
+        #expect(runs == 1)
+        #expect(covers.allSatisfy { $0 != nil })
+    }
+}
+
+struct ShuffleOriginTests {
+    @Test func turningShuffleOffGoesBackToTheSameCopy() {
+        let order = ["A", "B", "A", "C"]
+        let origin = Player.shuffled(order.count, keeping: 2)
+        let queue = origin.map { order[$0] }
+
+        #expect(origin.first == 2 && Set(origin) == Set(order.indices))
+        #expect(Player.unshuffled(0, origin: origin, queue: queue, order: order) == 2, "the second A plays, so the order goes on from the second A, not the first")
+    }
+
+    @Test func withoutOriginTheSameOccurrenceIsUsed() {
+        let order = ["A", "B", "A", "C"]
+        let queue = ["C", "A", "B", "A"]
+        #expect(Player.unshuffled(3, origin: [], queue: queue, order: order) == 2, "the second A in the queue maps to the second A in the order")
+        #expect(Player.unshuffled(1, origin: [], queue: queue, order: order) == 0)
+        #expect(Player.unshuffled(0, origin: [9, 9, 9, 9], queue: queue, order: order) == 3, "a stale origin falls back")
+    }
+
+    @Test func thePlayerKeepsTheOrigin() throws {
+        let source = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Player.swift"), encoding: .utf8)
+        #expect(source.contains("index = Player.unshuffled(index, origin: origin, queue: queue, order: order)"))
+        #expect(!source.contains("index = order.firstIndex(of: track) ?? 0"))
+    }
+}

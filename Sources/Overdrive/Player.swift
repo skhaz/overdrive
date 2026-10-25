@@ -108,6 +108,7 @@ final class Player {
     @ObservationIgnored private var item: AVPlayerItem?
     @ObservationIgnored private var upcoming: AVPlayerItem?
     @ObservationIgnored private var saving: Task<Void, Never>?
+    @ObservationIgnored private var origin: [Int] = []
     nonisolated static let delay = Duration.seconds(1)
 
     init(lastFM: LastFM, loudness: Loudness) {
@@ -169,10 +170,10 @@ final class Player {
         added = Array(repeating: false, count: tracks.count)
         index = start
 
-        if shuffle {
-            let first = queue.remove(at: start)
-            queue.shuffle()
-            queue.insert(first, at: 0)
+        origin = []
+        if shuffle, tracks.indices.contains(start) {
+            origin = Player.shuffled(tracks.count, keeping: start)
+            queue = origin.map { tracks[$0] }
             index = 0
         }
 
@@ -186,6 +187,7 @@ final class Player {
         guard current != nil else { return play(tracks) }
         let track = queue[index]
 
+        origin = []
         let tracks = tracks.filter { $0 != track }
         let inserted = Player.inserting(queue, added, at: index, tracks, next: next)
         queue = inserted.items
@@ -231,6 +233,7 @@ final class Player {
     }
 
     func move(_ positions: Set<Int>, to target: Int) {
+        origin = []
         Log.player.info("move", metadata: ["count": "\(positions.count)", "positions": Log.list(positions.sorted().prefix(20)), "target": "\(target)"])
         let moved = Player.moved(queue.count, positions, to: target)
         guard moved != Array(queue.indices) else { return }
@@ -245,6 +248,7 @@ final class Player {
     }
 
     func clear() {
+        origin = []
         Log.player.info("clear", metadata: ["count": "\(queue.count)"])
         player.removeAllItems()
         item = nil
@@ -271,6 +275,7 @@ final class Player {
         Log.player.info("remove", metadata: ["removed": "\(positions.count)", "positions": Log.list(positions.sorted().prefix(20)), "index": "\(index)", "count": "\(queue.count)"])
         if Player.clears(queue.count, positions, from: index) { return clear() }
 
+        origin = []
         let (kept, current) = Player.removing(queue.count, positions, keeping: index)
         guard kept.count < queue.count else { return }
 
@@ -327,6 +332,24 @@ final class Player {
             positions.append(position)
         }
         return (tracks, current, positions)
+    }
+
+    nonisolated static func shuffled(_ count: Int, keeping index: Int) -> [Int] {
+        var rest = Array(0..<count)
+        rest.remove(at: index)
+        rest.shuffle()
+        return [index] + rest
+    }
+
+    nonisolated static func unshuffled<T: Equatable>(_ position: Int, origin: [Int], queue: [T], order: [T]) -> Int {
+        guard queue.indices.contains(position) else { return 0 }
+
+        if origin.indices.contains(position), order.indices.contains(origin[position]), order[origin[position]] == queue[position] { return origin[position] }
+
+        let item = queue[position]
+        let occurrence = queue[..<position].count { $0 == item }
+        let matches = order.indices.filter { order[$0] == item }
+        return matches.dropFirst(occurrence).first ?? matches.first ?? 0
     }
 
     nonisolated static func waits(found: Int, saved: Int, complete: Bool) -> Bool {
@@ -643,13 +666,19 @@ final class Player {
 
         Log.player.info("reorder", metadata: ["shuffle": "\(shuffle)", "count": "\(queue.count)"])
         if shuffle {
-            var rest = queue
-            rest.remove(at: index)
-            queue = [track] + rest.shuffled()
+            origin = queue == order ? Player.shuffled(queue.count, keeping: index) : []
+            if origin.isEmpty {
+                var rest = queue
+                rest.remove(at: index)
+                queue = [track] + rest.shuffled()
+            } else {
+                queue = origin.map { order[$0] }
+            }
             index = 0
         } else {
+            index = Player.unshuffled(index, origin: origin, queue: queue, order: order)
             queue = order
-            index = order.firstIndex(of: track) ?? 0
+            origin = []
         }
         added = Array(repeating: false, count: queue.count)
 

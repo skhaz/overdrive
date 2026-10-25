@@ -5,7 +5,7 @@ enum Main {
     static func main() {
         guard CommandLine.arguments.count > 1, CommandLine.arguments[1] == "covers" else { return Overdrive.main() }
 
-        Picture.serve()
+        Picture.serve(workers: CommandLine.arguments.count > 2 ? Int(CommandLine.arguments[2]) ?? 4 : 4)
     }
 }
 
