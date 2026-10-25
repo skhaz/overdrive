@@ -508,10 +508,13 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         let modified = FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
         let removed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved)
         let renamed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed)
+        let directory = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
         let cache = folder.path + "/" + Cache.name
 
         #expect(Library.relevant([(folder.path + "/Album/one.mp3", modified)]))
-        #expect(Library.relevant([(folder.path + "/Album", removed)]))
+        #expect(Library.relevant([(folder.path + "/Album", removed | directory)]), "a moved or removed folder can hold songs")
+        #expect(Library.relevant([(folder.path + "/Album", renamed | directory)]))
+        #expect(!Library.relevant([(folder.path + "/Album", modified | directory)]))
         #expect(!Library.relevant([(folder.path + "/.hidden/one.mp3", modified)]))
         #expect(!Library.relevant([(folder.path + "/Album/one.lrc", modified)]))
         #expect(!Library.relevant([]))
@@ -540,7 +543,11 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(!Library.relevant([(folder.path + "/A/song.cache.lyrics", renamed)]))
         #expect(!Library.relevant([(folder.path + "/A/song.cache.lyrics", removed)]))
         #expect(Library.relevant([(folder.path + "/Lyrics/song.mp3", modified)]))
-        #expect(Library.relevant([(folder.path + "/Album/notes.txt", removed)]))
+        #expect(!Library.relevant([(folder.path + "/Album/notes.txt", removed)]), "only files the player plays start a scan")
+        #expect(!Library.relevant([(folder.path + "/Album/cover.jpg", renamed)]))
+        #expect(!Library.relevant([(folder.path + "/Album/video.mov", modified)]))
+        #expect(Library.relevant([(folder.path + "/Album/one.flac", removed)]))
+        #expect(Library.relevant([(folder.path + "/Album/one.m4a", renamed)]))
         #expect(Library.relevant([(folder.path + "/Album/ONE.MP3", modified)]))
     }
 
@@ -635,5 +642,21 @@ private extension URL {
     func creatingDirectory() throws -> URL {
         try FileManager.default.createDirectory(at: deletingLastPathComponent(), withIntermediateDirectories: true)
         return self
+    }
+}
+
+struct WatcherTypesTests {
+    @Test func theWatcherFollowsTheTypesThePlayerPlays() throws {
+        let removed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved)
+
+        #expect(!Library.playable.isEmpty)
+        for name in Library.playable {
+            #expect(Library.relevant([("/m/a." + name, removed)]), "\(name) plays, so its changes scan")
+            #expect(Library.relevant([("/m/a." + name.uppercased(), removed)]))
+        }
+        #expect(Library.playable == Set(Library.types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() }), "the watcher and the scan use the same types")
+        for name in ["txt", "jpg", "png", "pdf", "lrc", "lyrics", "plist", "sqlite", "cue", "log", "nfo"] where !Library.playable.contains(name) {
+            #expect(!Library.relevant([("/m/a." + name, removed)]), "\(name) does not play")
+        }
     }
 }

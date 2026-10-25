@@ -184,8 +184,7 @@ import Testing
         let track = track(folder, "01 Song")
 
         #expect(Lyrics.key(track) == folder.appending(path: "01 Song.cache.lyrics"), "the cache has the name of the song and its own extension")
-        #expect(Lyrics.ignored(folder.appending(path: "01 Song.cache.lyrics").path), "a cache write must never start a scan")
-        #expect(Lyrics.ignored(folder.appending(path: "01 Song.cache.lyrics.tmp").path))
+        #expect(!Library.relevant([(path: folder.appending(path: "01 Song.lyrics.tmp").path, flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed))]), "a lyrics write must never start a scan")
         #expect(!Library.relevant([(path: folder.appending(path: "01 Song.cache.lyrics").path, flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved))]))
     }
 

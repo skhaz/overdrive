@@ -39,11 +39,6 @@ final class Lyrics {
         self.enabled = enabled
     }
 
-    nonisolated static func ignored(_ path: String) -> Bool {
-        let name = (path as NSString).lastPathComponent
-        return name.hasSuffix("." + kept) || name.hasSuffix("." + kept + ".tmp") || name.contains("." + kept + ".sb-") || name.hasSuffix(".lrc") || name.contains(".lrc.sb-")
-    }
-
     func show(_ track: Track) {
         guard enabled, track != self.track else { return }
 

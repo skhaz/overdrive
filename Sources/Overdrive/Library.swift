@@ -495,27 +495,23 @@ final class Library {
                 return main && gone || !FileManager.default.fileExists(atPath: (path as NSString).deletingLastPathComponent + "/" + Cache.name)
             }
 
-            let name = (path as NSString).lastPathComponent
-            if name == ".DS_Store" { return false }
-            if Lyrics.ignored(path) { return false }
-            if name.hasSuffix(".plist") || name.hasSuffix(".plist.tmp") { return false }
             if path.contains("/.") { return false }
+            if playable.contains((path as NSString).pathExtension.lowercased()) { return true }
 
-            if audio.contains((name as NSString).pathExtension.lowercased()) { return true }
-
+            let folder = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0
             let gone = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0
-            return gone
+            return folder && gone
         }
     }
 
     typealias Snapshot = (albums: [Album], index: Index, covers: [String: Data])
 
     private nonisolated static let batch = 256
-    private nonisolated static let audio: Set<String> = ["mp3", "m4a", "m4b", "mp4", "aac", "flac", "ogg", "opus", "wav", "aiff", "aif", "caf"]
+    nonisolated static let types = AVURLAsset.audiovisualContentTypes.filter { $0.conforms(to: .audio) }
+    nonisolated static let playable = Set(types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() })
 
     @concurrent
     nonisolated static func load(_ folders: [URL], _ previous: [String: Data], progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
-        let types = AVURLAsset.audiovisualContentTypes.filter { $0.conforms(to: .audio) }
         let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
         let caches = folders.map { Cache($0) }
         var stored = previous
