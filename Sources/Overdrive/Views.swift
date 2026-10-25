@@ -1686,12 +1686,9 @@ struct ContentView: View {
                                     .buttonStyle(ToolbarButtonStyle())
                             }
                         }
-
-                        SwiftUI.Section {
-                            row("About", "info.circle", .about)
-                        }
                     }
                     .navigationSplitViewColumnWidth(180)
+                    .modifier(AboutFooter(selected: page == .about) { lyrics.settle { navigation.open(.about, leaving: tracker.position) } })
                     .focused($focus, equals: .sidebar)
                     .onDeleteCommand {
                         if case .playlist(let name) = page { deleting = name }

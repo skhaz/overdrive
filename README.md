@@ -174,8 +174,11 @@ The Song menu at the top of the screen has the same actions as the right-click m
 
 ## Credits
 
-The app icon is "iPod Orange" by p_bluealt, from [macOSicons](https://macosicons.com/icon/ipod-orange-siHDxmuV8f). The MIT license does not apply to the icon.
+- App icon: “[iPod Orange](https://macosicons.com/icon/ipod-orange-siHDxmuV8f)” by p_bluealt, from macOSicons. The MIT license does not apply to the icon.
+- Lyrics: [LRCLIB](https://lrclib.net) and [lyrics.ovh](https://lyrics.ovh).
+- Scrobbles: [Last.fm](https://www.last.fm).
+- Music videos: [YouTube](https://www.youtube.com).
+- GitHub mark on the About page: [Primer Octicons](https://github.com/primer/octicons) (MIT). GitHub and the GitHub logo are trademarks of GitHub, Inc.
+- Logs: [swift-log](https://github.com/apple/swift-log) (Apache 2.0).
 
-The lyrics come from [LRCLIB](https://lrclib.net) and [lyrics.ovh](https://lyrics.ovh).
-
-The GitHub mark on the About page comes from [Primer Octicons](https://github.com/primer/octicons) (MIT). GitHub and the GitHub logo are trademarks of GitHub, Inc.
+The About page in the app shows the same credits, with the same links.
