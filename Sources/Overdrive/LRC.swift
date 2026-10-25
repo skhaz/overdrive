@@ -18,7 +18,8 @@ nonisolated enum LRC {
                 if let time = stamp(tag) {
                     times.append(time)
                 } else if tag.hasPrefix("offset:") {
-                    offset = -(Double(tag.dropFirst(7).trimmingCharacters(in: .whitespaces)) ?? 0) / 1000
+                    let value = -(Double(tag.dropFirst(7).trimmingCharacters(in: .whitespaces)) ?? 0) / 1000
+                    offset = value.isFinite ? value : 0
                 } else if !tag.contains(":") {
                     plain = false
                     break
@@ -27,7 +28,7 @@ nonisolated enum LRC {
             }
             let words = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard plain, !times.isEmpty, !words.isEmpty else { continue }
-            for time in times { lines.append(SyncedLine(time: max(time + offset, 0), text: words)) }
+            for time in times where (time + offset).isFinite { lines.append(SyncedLine(time: max(time + offset, 0), text: words)) }
         }
         return lines.sorted { $0.time < $1.time }
     }

@@ -2030,6 +2030,8 @@ struct ContentView: View {
     }
 
     private func refreshed() {
+        likes.load()
+        playlists.load()
         navigation.refresh(library.albums)
         guard let saved, !library.albums.isEmpty else { return }
 

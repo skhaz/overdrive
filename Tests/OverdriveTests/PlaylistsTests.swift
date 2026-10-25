@@ -87,18 +87,18 @@ import Testing
 
         let folder1 = directory.appending(path: "Music/Library")
         let folder2 = directory.appending(path: "Documents/Music")
-        let folderPath1 = resolvedFolderPath(folder1)
-        let folderPath2 = resolvedFolderPath(folder2)
         try FileManager.default.createDirectory(at: folder1, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: folder2, withIntermediateDirectories: true)
+        let folderPath1 = Library.real(folder1)
+        let folderPath2 = Library.real(folder2)
 
         let playlists1 = Playlists(directory: directory, folderPath: folderPath1)
-        let url1 = folder1.appending(path: "Artist/Album/Song.flac").resolvingSymlinksInPath()
+        let url1 = URL(filePath: folderPath1 + "/Artist/Album/Song.flac")
         _ = playlists1.create("MyPlaylist", [url1])
         Persist.flush()
 
         let playlists2 = Playlists(directory: directory, folderPath: folderPath2)
-        let url2 = folder2.appending(path: "Artist/Album/Song.flac").resolvingSymlinksInPath()
+        let url2 = URL(filePath: folderPath2 + "/Artist/Album/Song.flac")
         #expect(playlists2.paths["MyPlaylist"] == [url2.path])
     }
 }

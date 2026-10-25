@@ -15,7 +15,7 @@ final class LastFM {
     }
 
     private nonisolated struct Queue: Codable {
-        var pending: [[String: String]] = []
+    var pending: [[String: String]] = []
         var rejected: [[String: String]] = []
     }
 
@@ -33,6 +33,7 @@ final class LastFM {
 
     var session: String { didSet { save() } }
     var user: String { didSet { save() } }
+    @ObservationIgnored private var limited: Date?
     var pending: [[String: String]] { didSet { persist() } }
     var rejected: [[String: String]] { didSet { persist() } }
     var status = ""
@@ -66,7 +67,7 @@ final class LastFM {
             while true {
                 try? await Task.sleep(for: retry)
                 guard let self else { return }
-                if !pending.isEmpty { await flush() }
+                if !pending.isEmpty, limited.map({ Date() >= $0 }) ?? true { await flush() }
             }
         }
     }
@@ -143,6 +144,10 @@ final class LastFM {
         Task { await flush() }
     }
 
+    nonisolated static func resume(after date: Date) -> Date {
+        Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 86400).rounded(.down) * 86400 + 86400)
+    }
+
     func flush() async {
         guard !session.isEmpty, !flushing else { return }
 
@@ -182,7 +187,8 @@ final class LastFM {
                 status = ""
 
                 guard limited.isEmpty else {
-                    Log.lastFM.warning("flush stopped", metadata: ["action": "daily limit", "kept": "\(limited.count)"])
+                    self.limited = LastFM.resume(after: Date())
+                    Log.lastFM.warning("flush stopped", metadata: ["action": "daily limit", "kept": "\(limited.count)", "retry": "\(self.limited.map { "\($0)" } ?? "")"])
                     status = "Last.fm daily scrobble limit reached. The app will send the rest later."
                     return
                 }

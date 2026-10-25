@@ -81,7 +81,7 @@ struct Overdrive: App {
         let library = Library(loudness: loudness)
         let player = Player(lastFM: lastFM, loudness: loudness)
         let youTube = YouTube(player: player)
-        library.loaded = { [unowned library] in player.restore { library.track($0) } }
+        library.loaded = { [unowned library] complete in player.restore(complete: complete) { library.track($0) } }
 
         Task { await lastFM.flush() }
         AppleMusic.block()
@@ -100,7 +100,7 @@ struct Overdrive: App {
                 }
 
                 let point = table.convert(location, from: nil)
-                guard table.headerView != nil, !table.isHiddenOrHasHiddenAncestor, table.visibleRect.contains(point) else { continue }
+                guard table.headerView != nil, !table.isHiddenOrHasHiddenAncestor, table.visibleRect.contains(point), reachable(table, in: content) else { continue }
 
                 let row = table.row(at: point)
                 guard row >= 0 else { break }

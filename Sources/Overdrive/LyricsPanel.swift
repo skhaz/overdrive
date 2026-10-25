@@ -3,6 +3,7 @@ import SwiftUI
 
 final class LyricsPanel {
     private let window: NSPanel
+    private var showing = 0
 
     init(lyrics: Lyrics, player: Player, open: @escaping () -> Void) {
         let width: CGFloat = 340
@@ -33,6 +34,7 @@ final class LyricsPanel {
     }
 
     func show() {
+        showing += 1
         Log.lyrics.info("panel shown")
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
@@ -50,9 +52,12 @@ final class LyricsPanel {
             window.animator().alphaValue = 0.0
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            self.window.orderOut(nil)
-            self.window.alphaValue = 1.0
+        let shown = showing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [self] in
+            guard showing == shown else { return }
+
+            window.orderOut(nil)
+            window.alphaValue = 1.0
         }
     }
 }

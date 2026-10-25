@@ -31,7 +31,7 @@ final class Likes {
         load()
     }
 
-    private var folderPath: String { folder()?.path ?? "" }
+    private var folderPath: String { folder().map(Library.real) ?? "" }
 
     func load() {
         let base = folderPath
@@ -79,6 +79,10 @@ final class Likes {
     }
 
     private func save() {
+        guard let folder = folder(), FileManager.default.fileExists(atPath: folder.path) else {
+            return Log.likes.error("save skipped", metadata: ["reason": "folder missing", "folder": "\(folder()?.path ?? "")"])
+        }
+
         let base = folderPath
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary

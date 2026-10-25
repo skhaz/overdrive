@@ -383,9 +383,10 @@ struct NavigationTests {
         navigation.searched(from: "", to: "a")
         navigation.open(.liked)
         #expect(!navigation.searching)
+        navigation.searched(from: "a", to: "")
 
         navigation.goBack()
-        #expect(!navigation.searching)
+        #expect(navigation.searching, "the old screen had the query a, so going back keeps it")
 
         navigation.searched(from: "", to: "a")
         navigation.remove(.liked, fallback: albums)
@@ -655,5 +656,21 @@ struct NavigationTests {
         let twice = navigation.push(.artist("Artist"))
         #expect(artist && !twice)
         #expect(navigation.path == [.album(one), .artist("Artist")])
+    }
+
+    @Test func backAfterAnArtistLinkWithTheSameQueryKeepsTheSearch() {
+        let one = Self.album("one")
+        var navigation = Navigation(page: albums)
+        navigation.searched(from: "", to: "Artist")
+        navigation.show([.album(one)])
+        navigation.filter(albums, to: "Artist")
+        #expect(navigation.page == albums)
+
+        navigation.goBack()
+        #expect(navigation.place == Place(page: songs, path: [.album(one)]))
+        #expect(navigation.searching, "the page changes back to Songs with the same query; it must not clear it")
+
+        navigation.goForward()
+        #expect(navigation.searching)
     }
 }

@@ -177,7 +177,7 @@ final class Library {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let loudness: Loudness
     @ObservationIgnored private let persistent: Bool
-    @ObservationIgnored var loaded: (() -> Void)?
+    @ObservationIgnored var loaded: ((_ complete: Bool) -> Void)?
 
     init(loudness: Loudness, folders: [URL]? = nil) {
         self.loudness = loudness
@@ -218,12 +218,28 @@ final class Library {
         add(panel.urls)
     }
 
-    func add(_ urls: [URL]) {
-        let new = urls.filter { url in !folders.contains { url.path.hasPrefix($0.path + "/") || url.path == $0.path } }
-        Log.library.info("add folders", metadata: ["folders": Log.list(urls.map(\.path)), "new": Log.list(new.map(\.path))])
-        guard !new.isEmpty else { return }
+    nonisolated static func real(_ url: URL) -> String {
+        url.path.withCString { path in realpath(path, nil).map { defer { free($0) }; return String(cString: $0) } } ?? url.path
+    }
 
-        folders = folders.filter { folder in !new.contains { folder.path.hasPrefix($0.path + "/") } } + new
+    nonisolated static func inside(_ path: String, _ folder: String) -> Bool {
+        path == folder || path.hasPrefix(folder + "/")
+    }
+
+    func add(_ urls: [URL]) {
+        let current = folders.map(Library.real)
+        var picked: [(url: URL, real: String)] = []
+        for url in urls {
+            let real = Library.real(url)
+            guard !current.contains(where: { Library.inside(real, $0) }), !picked.contains(where: { Library.inside(real, $0.real) }) else { continue }
+
+            picked.removeAll { Library.inside($0.real, real) }
+            picked.append((url, real))
+        }
+        Log.library.info("add folders", metadata: ["folders": Log.list(urls.map(\.path)), "new": Log.list(picked.map(\.url.path))])
+        guard !picked.isEmpty else { return }
+
+        folders = folders.filter { folder in !picked.contains { Library.inside(Library.real(folder), $0.real) } } + picked.map(\.url)
     }
 
     private func sync() {
@@ -331,6 +347,15 @@ final class Library {
         let covers = Artwork.covers
         let first = folders != shownFolders
         last = .now
+        var reopen = false
+        for folder in folders {
+            if !FileManager.default.fileExists(atPath: folder.appending(path: Cache.name).path) { reopen = true }
+        }
+        if reopen {
+            Log.library.warning("cache missing", metadata: ["folders": Log.list(folders.map(\.path))])
+            readers = []
+            readerFolders = []
+        }
 
         scanning = true
         Log.library.info("scan", metadata: ["generation": "\(generation)", "reason": "\(reason)", "first": "\(first)", "folders": Log.list(folders.map(\.path))])
@@ -348,25 +373,28 @@ final class Library {
                     self.show(snapshot, folders)
                     if !shown {
                         shown = true
-                        self.loaded?()
+                        self.loaded?(false)
                     }
                     return true
                 }
             }
-            guard generation == self.generation else { return Log.library.info("scan replaced", metadata: ["generation": "\(generation)"]) }
+            guard generation == self.generation else {
+                shownFolders = nil
+                return Log.library.info("scan replaced", metadata: ["generation": "\(generation)"])
+            }
 
             scanning = false
             remember(folders)
             guard first || shown else {
                 Log.library.info("scan unchanged", metadata: ["generation": "\(generation)", "reason": "\(reason)"])
-                loaded?()
+                loaded?(true)
                 return
             }
 
             Log.library.info("scan done", metadata: ["generation": "\(generation)", "albums": "\(result.albums.count)"])
             show(result, folders)
             loudness.update(result.albums)
-            if !shown { loaded?() }
+            loaded?(true)
         }
     }
 
@@ -386,15 +414,20 @@ final class Library {
 
             guard let result = await Library.rebuild(folders) else {
                 Log.library.error("rebuild failed", metadata: ["generation": "\(generation)"])
+                shownFolders = nil
                 if generation == self.generation { scanning = false }
                 return
             }
-            guard generation == self.generation else { return Log.library.info("rebuild replaced", metadata: ["generation": "\(generation)"]) }
+            guard generation == self.generation else {
+                shownFolders = nil
+                return Log.library.info("rebuild replaced", metadata: ["generation": "\(generation)"])
+            }
 
             Log.library.info("rebuild done", metadata: ["generation": "\(generation)", "albums": "\(result.albums.count)"])
             remember(folders)
             show(result, folders)
             scanning = false
+            loaded?(true)
             loudness.update(result.albums)
         }
     }
@@ -714,7 +747,12 @@ final class Library {
         Log.library.info("walk", metadata: ["files": "\(slots.count)", "read": "\(pending.count)", "removed": "\(removed.reduce(0) { $0 + $1.count })", "paths": Log.list(removed.lazy.flatMap(\.self).prefix(20))])
         if !pending.isEmpty || removed.contains(where: { !$0.isEmpty }) {
             for (number, cache) in caches.enumerated() where !removed[number].isEmpty {
-                cache?.save([], removed: removed[number], covers: [:])
+                guard cache?.save([], removed: removed[number], covers: [:]) == false else { continue }
+
+                Log.library.error("removal not saved", metadata: ["folder": "\(folders[number].path)", "kept": "\(removed[number].count)"])
+                for path in removed[number] {
+                    if let entry = knowns[number][path] { slots.append(entry.track) }
+                }
             }
 
             let (albums, index) = assemble(slots.compactMap(\.self))
@@ -756,7 +794,12 @@ final class Library {
 
             Log.library.info("batch", metadata: ["start": "\(start)", "end": "\(part.endIndex)", "total": "\(work.count)", "unreadable": "\(failed.reduce(0) { $0 + $1.count })", "paths": Log.list(failed.lazy.flatMap(\.self).prefix(20))])
             for (number, cache) in caches.enumerated() where !changes[number].isEmpty || !failed[number].isEmpty {
-                cache?.save(changes[number], removed: failed[number], covers: [:])
+                guard cache?.save(changes[number], removed: failed[number], covers: [:]) == false else { continue }
+
+                Log.library.error("batch not saved", metadata: ["folder": "\(folders[number].path)", "songs": "\(changes[number].count + failed[number].count)"])
+                for item in part where item.folder == number {
+                    slots[item.slot] = item.old?.track.at(item.url)
+                }
             }
 
             if part.endIndex < work.count {

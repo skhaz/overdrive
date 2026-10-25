@@ -33,7 +33,7 @@ final class Playlists {
         load()
     }
 
-    private var folderPath: String { folder()?.path ?? "" }
+    private var folderPath: String { folder().map(Library.real) ?? "" }
 
     func load() {
         let base = folderPath
@@ -65,6 +65,7 @@ final class Playlists {
 
         return !name.isEmpty && !name.hasPrefix(".") && !name.hasSuffix(".backup") && !name.contains("/") && !name.contains(":")
             && !names.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+            && !FileManager.default.fileExists(atPath: file(name).path)
     }
 
     @discardableResult
@@ -146,6 +147,9 @@ final class Playlists {
 
     private func save(_ name: String, _ list: [String]) {
         paths[name] = list
+        guard let folder = folder(), FileManager.default.fileExists(atPath: folder.path) else {
+            return Log.playlists.error("save skipped", metadata: ["reason": "folder missing", "folder": "\(folder()?.path ?? "")"])
+        }
 
         let base = folderPath
         let encoder = PropertyListEncoder()

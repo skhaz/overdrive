@@ -34,7 +34,7 @@ final class Player {
     static let saved = Persist.read(Session.self, from: session)
 
     private(set) var queue: [Track] = [] { didSet { revision += 1 } }
-    @ObservationIgnored private(set) var revision = 0
+    private(set) var revision = 0
     private(set) var index = 0
     private(set) var added: [Bool] = []
     var lyrics = Player.saved?.lyrics ?? true { didSet { if lyrics != oldValue { save() } } }
@@ -45,7 +45,7 @@ final class Player {
     var shuffle = false { didSet { if shuffle != oldValue { Log.player.info("shuffle", metadata: ["on": "\(shuffle)"]); reorder() } } }
     var repeatMode = Repeat.off {
         didSet {
-            if repeatMode != oldValue { Log.player.info("repeat", metadata: ["mode": "\(repeatMode)"]) }
+            if repeatMode != oldValue { Log.player.info("repeat", metadata: ["mode": "\(repeatMode)"]); save() }
             requeue()
         }
     }
@@ -162,6 +162,7 @@ final class Player {
     }
 
     func play(_ tracks: [Track], at start: Int = 0) {
+        restored = true
         Log.player.info("play", metadata: ["songs": "\(tracks.count)", "start": "\(start)", "shuffle": "\(shuffle)", "path": "\(tracks.indices.contains(start) ? tracks[start].url.path : "")"])
         order = tracks
         queue = tracks
@@ -182,7 +183,8 @@ final class Player {
         var metadata = Log.paths(tracks.map(\.url.path))
         metadata["next"] = "\(next)"
         Log.player.info("insert", metadata: metadata)
-        guard let track = current, item != nil else { return play(tracks) }
+        guard current != nil else { return play(tracks) }
+        let track = queue[index]
 
         let tracks = tracks.filter { $0 != track }
         let inserted = Player.inserting(queue, added, at: index, tracks, next: next)
@@ -312,24 +314,45 @@ final class Player {
         return (kept, kept.firstIndex(of: index) ?? 0)
     }
 
-    func restore(_ lookup: (String) -> Track?) {
+    nonisolated static func located(_ saved: [String], index: Int, _ lookup: (String) -> Track?) -> (tracks: [Track], index: Int?, positions: [Int]) {
+        var tracks: [Track] = []
+        var positions: [Int] = []
+        var current: Int?
+        tracks.reserveCapacity(saved.count)
+        for (position, stored) in saved.enumerated() {
+            guard let track = lookup(StoredPath.decode(stored)) else { continue }
+
+            if position == index { current = tracks.count }
+            tracks.append(track)
+            positions.append(position)
+        }
+        return (tracks, current, positions)
+    }
+
+    nonisolated static func waits(found: Int, saved: Int, complete: Bool) -> Bool {
+        found == 0 || !complete && found < saved
+    }
+
+    func restore(complete: Bool, _ lookup: (String) -> Track?) {
         guard !restored else { return }
+        guard item == nil, let session = Player.saved else {
+            restored = true
+            return Log.player.info("restore without session")
+        }
+
+        let located = Player.located(session.queue, index: session.index, lookup)
+        let tracks = located.tracks
+        Log.player.info("restore", metadata: ["found": "\(tracks.count)", "saved": "\(session.queue.count)", "index": "\(session.index)", "position": "\(session.position)", "complete": "\(complete)"])
+        guard !Player.waits(found: tracks.count, saved: session.queue.count, complete: complete) else { return }
+
         restored = true
-
-        guard item == nil, let session = Player.saved else { return Log.player.info("restore without session") }
-
-        let tracks = session.queue.compactMap { lookup(StoredPath.decode($0)) }
-        Log.player.info("restore", metadata: ["found": "\(tracks.count)", "saved": "\(session.queue.count)", "index": "\(session.index)", "position": "\(session.position)"])
-        guard !tracks.isEmpty else { return }
-
-        let path = session.queue.indices.contains(session.index) ? StoredPath.decode(session.queue[session.index]) : nil
-        let found = tracks.firstIndex { $0.url.path == path }
+        let found = located.index
 
         shuffle = session.shuffle
         repeatMode = Repeat(rawValue: session.repeatMode) ?? .off
         queue = tracks
         let marks = Set(session.added ?? [])
-        added = tracks.count == session.queue.count ? tracks.indices.map(marks.contains) : Array(repeating: false, count: tracks.count)
+        added = located.positions.map(marks.contains)
         order = session.order.compactMap { lookup(StoredPath.decode($0)) }
         let reset = order.count != queue.count
         if reset { order = queue }
@@ -446,7 +469,12 @@ final class Player {
         playing = false
         position = 0
         index = 0
+        played = 0
+        scrobbled = false
+        announced = false
+        started = .now
         update()
+        save()
     }
 
     private func following(_ index: Int, manual: Bool = false) -> Int? {
@@ -577,6 +605,9 @@ final class Player {
     func write() {
         saving?.cancel()
         saving = nil
+        guard restored || Player.saved == nil else {
+            return Log.player.info("write skipped", metadata: ["reason": "saved session not restored yet"])
+        }
         let session = Session(queue: queue.map { StoredPath.encode($0.url.path) }, order: order.map { StoredPath.encode($0.url.path) }, index: index, position: position,
                               shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
                               started: started.timeIntervalSince1970, scrobbled: scrobbled,
@@ -623,6 +654,7 @@ final class Player {
         added = Array(repeating: false, count: queue.count)
 
         requeue()
+        save()
     }
 
     private func requeue() {

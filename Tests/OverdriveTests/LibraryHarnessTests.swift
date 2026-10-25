@@ -401,7 +401,7 @@ struct LibraryHarnessTests {
         let start = clock.now
         let library = library([folder])
         let created = clock.now - start
-        library.loaded = { [unowned library] in
+        library.loaded = { [unowned library] _ in
             if box.first == nil { box.first = Set(library.albums.flatMap(\.tracks).map(\.url.path)) }
         }
 
@@ -421,7 +421,7 @@ struct LibraryHarnessTests {
         while library.scanning { try? await Task.sleep(for: .milliseconds(50)) }
         let scans = library.scans
         let loads = Counter()
-        library.loaded = { loads.value += 1 }
+        library.loaded = { _ in loads.value += 1 }
 
         library.scan("menu")
         while library.scanning { try? await Task.sleep(for: .milliseconds(50)) }
@@ -446,7 +446,7 @@ struct LibraryHarnessTests {
         let track = library.albums.flatMap(\.tracks).first!
 
         let scans = Counter()
-        library.loaded = { scans.value += 1 }
+        library.loaded = { _ in scans.value += 1 }
 
         likes.add([track])
         likes.remove([track])
@@ -465,7 +465,7 @@ struct LibraryHarnessTests {
         try? await Task.sleep(for: .seconds(5))
 
         let scans = Counter()
-        library.loaded = { scans.value += 1 }
+        library.loaded = { _ in scans.value += 1 }
 
         try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lyrics"))
         try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lyrics.tmp"))

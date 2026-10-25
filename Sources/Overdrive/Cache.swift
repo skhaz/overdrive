@@ -74,6 +74,12 @@ nonisolated final class Cache {
         self.folder = folder
         root = folder.path.withCString { path in realpath(path, nil).map { defer { free($0) }; return String(cString: $0) } } ?? folder.path
         let file = file ?? folder.appending(path: Self.name)
+        if !FileManager.default.fileExists(atPath: file.path) {
+            for suffix in ["-wal", "-shm"] where FileManager.default.fileExists(atPath: file.path + suffix) {
+                Log.cache.warning("old journal", metadata: ["file": "\(file.path + suffix)"])
+                Persist.remove(URL(filePath: file.path + suffix))
+            }
+        }
 
         guard open(file) || (Self.discard(file) && open(file)) else { return nil }
     }

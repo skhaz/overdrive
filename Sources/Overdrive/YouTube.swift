@@ -72,6 +72,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             place()
         }
     }
+    @ObservationIgnored private var closing = 0
     var searching = false
     private(set) var showing: Track?
 
@@ -262,9 +263,13 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
                 panel.animator().alphaValue = 0.0
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                self.panel.close()
-                self.panel.alphaValue = 1.0
+            closing += 1
+            let current = closing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [self] in
+                guard closing == current else { return }
+
+                panel.close()
+                panel.alphaValue = 1.0
             }
         }
     }
@@ -280,6 +285,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 
     private func show(_ mode: Mode) {
+        closing += 1
         Log.youTube.info("show", metadata: ["mode": "\(mode)"])
         self.mode = mode
         handle.isHidden = mode != .video

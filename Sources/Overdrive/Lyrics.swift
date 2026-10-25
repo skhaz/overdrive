@@ -30,6 +30,8 @@ final class Lyrics {
     var pendingReplace: Bool = false
     var pendingLyrics: String = ""
 
+    @ObservationIgnored var source: @Sendable (Track) async -> Result<String, Failure> = { await Lyrics.lookup($0) }
+    @ObservationIgnored var refresher: @Sendable (Track) async -> Result<String, Failure> = { await Lyrics.forceLookup($0) }
     @ObservationIgnored private var saver: Task<Void, Never>?
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
 
@@ -89,14 +91,15 @@ final class Lyrics {
     }
 
     func refresh() {
+        flush()
         guard let track = self.track else { return }
 
         Log.lyrics.info("refresh", metadata: ["path": "\(track.url.path)"])
         loading = true
         lookupTask?.cancel()
         lookupTask = Task {
-            let result = await Self.forceLookup(track)
-            guard !Task.isCancelled else { return }
+            let result = await refresher(track)
+            guard !Task.isCancelled, track == self.track else { return Log.lyrics.debug("refresh dropped", metadata: ["path": "\(track.url.path)"]) }
             if case .success(let lyrics) = result, !lyrics.isEmpty {
                 Persist.write(Data(lyrics.utf8), to: Self.key(track))
                 let local = !(Self.read(file(track)) ?? "").isEmpty
@@ -185,6 +188,11 @@ final class Lyrics {
     }
 
     private func open(_ track: Track) {
+        lookupTask?.cancel()
+        lookupTask = nil
+        loading = false
+        pendingReplace = false
+        pendingLyrics = ""
         self.track = track
         hasLocalLyrics = false
 
@@ -214,7 +222,7 @@ final class Lyrics {
 
         lookupTask?.cancel()
         lookupTask = Task {
-            let result = await Self.lookup(track)
+            let result = await source(track)
             guard !Task.isCancelled else { return Log.lyrics.debug("lookup cancelled", metadata: ["path": "\(track.url.path)"]) }
 
             Log.lyrics.info("lookup", metadata: ["path": "\(track.url.path)", "result": "\((try? result.get()).map { "\($0.count) characters" } ?? String(describing: result))"])

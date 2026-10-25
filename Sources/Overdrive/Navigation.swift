@@ -270,10 +270,8 @@ nonisolated struct Navigation {
     }
 
     private mutating func arrive() {
-        guard place.query != query else { return }
-
-        quiet = true
-        searching = true
+        if !place.query.isEmpty || place.query != query { searching = true }
+        if place.query != query { quiet = true }
     }
 
     private mutating func move(to new: Place) {
