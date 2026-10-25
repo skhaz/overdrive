@@ -161,7 +161,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 
 ## Good to know
 
-- Click **About** at the top of the sidebar to see the version of the app and to open its page on GitHub, report a problem, or see the releases.
+- Click **About** at the top of the sidebar to see the version of the app and to open its page on GitHub, report a problem, or see the releases. The page also checks GitHub for a new version and shows a link when there is one. If GitHub does not answer, the page shows nothing more.
 
 - The app never changes your songs. It only saves the lyrics that you save.
 - Your liked songs, playlists, and lyrics live with your music. Back up your music folder and you back up all of them.

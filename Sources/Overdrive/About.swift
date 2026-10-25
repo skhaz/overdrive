@@ -41,7 +41,9 @@ struct AboutView: View {
 }
 
 struct AboutCard: View {
+    var check = true
     @Environment(\.openURL) private var openURL
+    @State private var update = Update.State.checking
 
     var body: some View {
             VStack(spacing: 16) {
@@ -52,7 +54,16 @@ struct AboutCard: View {
 
                 VStack(spacing: 4) {
                     Text("Overdrive").font(.largeTitle.bold())
-                    Text("Version \(About.version)").foregroundStyle(.secondary).textSelection(.enabled)
+                    HStack(spacing: 6) {
+                        Text("Version \(About.version)").foregroundStyle(.secondary).textSelection(.enabled)
+                        UpdateBadge(state: update) { open($0) }
+                    }
+                    .frame(height: 20)
+                }
+                .task {
+                    guard check else { return update = .unknown }
+
+                    update = await Update.check(current: About.version)
                 }
 
                 Text("A music player for the music that is already on your Mac.")
@@ -92,5 +103,28 @@ struct AboutCard: View {
     private func open(_ url: URL) {
         Log.app.info("open link", metadata: ["url": "\(url.absoluteString)"])
         openURL(url)
+    }
+}
+
+struct UpdateBadge: View {
+    let state: Update.State
+    let open: (URL) -> Void
+
+    var body: some View {
+        switch state {
+        case .checking:
+            ProgressView().controlSize(.mini).help("Looking for a new version")
+        case .current:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.secondary).help("This is the latest version")
+        case .available(let release):
+            Text("[Version \(release.version) is available](\(release.url.absoluteString))")
+                .tint(.blue)
+                .environment(\.openURL, OpenURLAction { url in
+                    open(url)
+                    return .handled
+                })
+        case .unknown:
+            EmptyView()
+        }
     }
 }
