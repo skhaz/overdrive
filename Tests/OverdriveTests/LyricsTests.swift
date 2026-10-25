@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import Testing
 @testable import Overdrive
@@ -16,7 +17,7 @@ import Testing
     }
 
     private func lyrics(_ folder: URL) -> Lyrics {
-        Lyrics(cache: folder.appending(path: "cache"))
+        Lyrics()
     }
 
     private func read(_ url: URL) -> String? {
@@ -27,7 +28,7 @@ import Testing
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
-        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
         let lyrics = lyrics(folder)
         lyrics.show(track)
@@ -42,22 +43,22 @@ import Testing
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
-        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
-        let lyrics = Lyrics(cache: folder.appending(path: "cache"), enabled: false)
+        let lyrics = Lyrics(enabled: false)
         lyrics.show(track)
 
         #expect(lyrics.track == nil, "hidden lyrics must not read the disk or the internet")
         #expect(lyrics.text.isEmpty)
         #expect(lyrics.loading == false)
-        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "cache").path), "hidden lyrics must not create the cache folder")
+        #expect(!FileManager.default.fileExists(atPath: Lyrics.key(track).path), "hidden lyrics must not write a cache file")
     }
 
     @Test func hidingSavesThePendingEditAndStops() throws {
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
-        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
         let lyrics = lyrics(folder)
         lyrics.show(track)
@@ -66,7 +67,7 @@ import Testing
         lyrics.enabled = false
         Persist.flush()
 
-        #expect(read(folder.appending(path: "Song.lrc")) == "[00:02.00]Changed")
+        #expect(read(folder.appending(path: "Song.lyrics")) == "[00:02.00]Changed")
         #expect(lyrics.track == nil)
         #expect(lyrics.text.isEmpty)
         #expect(lyrics.floating == false)
@@ -80,7 +81,7 @@ import Testing
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
-        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
         let lyrics = lyrics(folder)
         lyrics.show(track)
@@ -89,15 +90,15 @@ import Testing
         try await Task.sleep(for: .seconds(1.5))
         Persist.flush()
 
-        #expect(read(folder.appending(path: "Song.lrc")) == "[00:02.00]Changed")
-        #expect(read(lyrics.key(track)) == "[00:02.00]Changed")
+        #expect(read(folder.appending(path: "Song.lyrics")) == "[00:02.00]Changed")
+        #expect(read(Lyrics.key(track)) == "[00:02.00]Changed")
     }
 
     @Test func flushSavesAtOnce() throws {
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
-        try Data("old".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("old".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
         let lyrics = lyrics(folder)
         lyrics.show(track)
@@ -105,14 +106,14 @@ import Testing
         lyrics.flush()
         Persist.flush()
 
-        #expect(read(folder.appending(path: "Song.lrc")) == "new")
+        #expect(read(folder.appending(path: "Song.lyrics")) == "new")
     }
 
     @Test func settleSavesBeforeTheAction() throws {
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
-        try Data("old".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("old".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
         let lyrics = lyrics(folder)
         lyrics.show(track)
@@ -120,7 +121,7 @@ import Testing
 
         lyrics.settle {
             Persist.flush()
-            #expect(read(folder.appending(path: "Song.lrc")) == "new")
+            #expect(read(folder.appending(path: "Song.lyrics")) == "new")
         }
     }
 
@@ -128,7 +129,7 @@ import Testing
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
-        try Data("old".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("old".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
         let lyrics = lyrics(folder)
         lyrics.show(track)
@@ -136,8 +137,8 @@ import Testing
         lyrics.flush()
         Persist.flush()
 
-        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "Song.lrc").path))
-        #expect(!FileManager.default.fileExists(atPath: lyrics.key(track).path))
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "Song.lyrics").path))
+        #expect(!FileManager.default.fileExists(atPath: Lyrics.key(track).path))
     }
 
     @Test func aCachedLyricIsRemoteAndPersistSavesItNextToTheSong() throws {
@@ -145,8 +146,7 @@ import Testing
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
         let lyrics = lyrics(folder)
-        try FileManager.default.createDirectory(at: lyrics.key(track).deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("downloaded".utf8).write(to: lyrics.key(track))
+        try Data("downloaded".utf8).write(to: Lyrics.key(track))
 
         lyrics.show(track)
 
@@ -157,7 +157,7 @@ import Testing
         lyrics.persist()
         Persist.flush()
 
-        #expect(read(folder.appending(path: "Song.lrc")) == "downloaded")
+        #expect(read(folder.appending(path: "Song.lyrics")) == "downloaded")
         #expect(lyrics.remote == false)
     }
 
@@ -166,16 +166,100 @@ import Testing
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let first = track(folder, "First")
         let second = track(folder, "Second")
-        try Data("first-old".utf8).write(to: folder.appending(path: "First.lrc"))
-        try Data("second-old".utf8).write(to: folder.appending(path: "Second.lrc"))
+        try Data("first-old".utf8).write(to: folder.appending(path: "First.lyrics"))
+        try Data("second-old".utf8).write(to: folder.appending(path: "Second.lyrics"))
 
         let lyrics = lyrics(folder)
         lyrics.show(first)
         lyrics.edit("first-new")
         lyrics.show(second)
 
-        #expect(read(folder.appending(path: "First.lrc")) == "first-new")
+        #expect(read(folder.appending(path: "First.lyrics")) == "first-new")
         #expect(lyrics.text == "second-old")
-        #expect(read(folder.appending(path: "Second.lrc")) == "second-old")
+        #expect(read(folder.appending(path: "Second.lyrics")) == "second-old")
+    }
+
+    @Test func theCacheLivesNextToTheSong() throws {
+        let folder = try folder()
+        let track = track(folder, "01 Song")
+
+        #expect(Lyrics.key(track) == folder.appending(path: "01 Song.cache.lyrics"), "the cache has the name of the song and its own extension")
+        #expect(Lyrics.ignored(folder.appending(path: "01 Song.cache.lyrics").path), "a cache write must never start a scan")
+        #expect(Lyrics.ignored(folder.appending(path: "01 Song.cache.lyrics.tmp").path))
+        #expect(!Library.relevant([(path: folder.appending(path: "01 Song.cache.lyrics").path, flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved))]))
+    }
+
+    @Test func keptLyricsUseTheLyricsExtension() throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        try Data("old format".utf8).write(to: folder.appending(path: "Song.lrc"))
+        try Data("cached".utf8).write(to: Lyrics.key(track))
+
+        let lyrics = lyrics(folder)
+        lyrics.show(track)
+        #expect(lyrics.text == "cached", "the app reads the .lyrics files, never an old .lrc")
+
+        lyrics.save("kept", for: track)
+        Persist.flush()
+        #expect(read(folder.appending(path: "Song.lyrics")) == "kept", "lyrics the user keeps go to <song>.lyrics")
+        #expect(read(folder.appending(path: "Song.lrc")) == "old format", "the app never touches an old .lrc")
+    }
+
+    @Test func theCacheIsValidForOneMonth() throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "Song.cache.lyrics")
+        try Data("cached".utf8).write(to: file)
+        let now = Date()
+
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-29 * 86400)], ofItemAtPath: file.path)
+        #expect(!Lyrics.isCacheStale(file, at: now))
+
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-31 * 86400)], ofItemAtPath: file.path)
+        #expect(Lyrics.isCacheStale(file, at: now))
+    }
+
+    @Test func aFreshCacheNeverAsksTheInternet() async throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        try Data("cached".utf8).write(to: Lyrics.key(track))
+
+        let result = await Lyrics.lookup(track, fetch: { _ in Issue.record("no request for a fresh cache"); return .success("new") }, ovh: { _ in nil })
+        #expect(try result.get() == "cached")
+    }
+
+    @Test func anExpiredCacheIsUpdatedOnlyByANewLyric() async throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        let file = Lyrics.key(track)
+        let old = Date().addingTimeInterval(-40 * 86400)
+
+        try Data("old".utf8).write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: file.path)
+        let empty = await Lyrics.lookup(track, fetch: { _ in .success("") }, ovh: { _ in nil })
+        Persist.flush()
+        #expect(try empty.get() == "old", "an empty answer keeps the old lyric")
+        #expect(read(file) == "old")
+
+        let failed = await Lyrics.lookup(track, fetch: { _ in .failure(.offline) }, ovh: { _ in nil })
+        Persist.flush()
+        #expect(try failed.get() == "old", "a failed refresh keeps the old lyric")
+        #expect(read(file) == "old")
+        #expect(Lyrics.isCacheStale(file), "the old lyric stays expired, so the next show tries again")
+
+        let fresh = await Lyrics.lookup(track, fetch: { _ in .success("new") }, ovh: { _ in nil })
+        Persist.flush()
+        #expect(try fresh.get() == "new")
+        #expect(read(file) == "new", "a new lyric replaces the file")
+        #expect(!Lyrics.isCacheStale(file), "the new lyric is valid for one more month")
+
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: file.path)
+        let fallback = await Lyrics.lookup(track, fetch: { _ in .success("") }, ovh: { _ in "from ovh" })
+        Persist.flush()
+        #expect(try fallback.get() == "from ovh")
+        #expect(read(file) == "from ovh")
     }
 }

@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 @Observable
@@ -13,12 +12,9 @@ final class Lyrics {
     private nonisolated static let timeout: TimeInterval = 10
     private nonisolated static let attempts = 3
     private nonisolated static let retryDelay: ClosedRange<Double> = 1...3
-    private nonisolated static let maxCacheAge: TimeInterval = 30 * 24 * 60 * 60
-
-    nonisolated static func directory(in folder: URL?) -> URL {
-        (folder ?? URL.homeDirectory.appending(path: "Music/Library", directoryHint: .isDirectory))
-            .appending(path: "Lyrics", directoryHint: .isDirectory)
-    }
+    nonisolated static let validity: TimeInterval = 30 * 24 * 60 * 60
+    nonisolated static let kept = "lyrics"
+    nonisolated static let cached = "cache.lyrics"
 
     private(set) var track: Track?
     private(set) var loading = false
@@ -33,22 +29,19 @@ final class Lyrics {
     var pendingReplace: Bool = false
     var pendingLyrics: String = ""
 
-    @ObservationIgnored private let cache: URL
     @ObservationIgnored private var saver: Task<Void, Never>?
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
 
     var modified: Bool { text != original }
     private(set) var synced: [SyncedLine] = []
 
-    init(cache: URL, enabled: Bool = true) {
-        self.cache = cache
+    init(enabled: Bool = true) {
         self.enabled = enabled
     }
 
     nonisolated static func ignored(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent
-        let cached = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent == "Lyrics" && (name.hasSuffix(".txt") || name.hasSuffix(".txt.tmp"))
-        return cached || name.hasSuffix(".lrc") || name.hasSuffix(".lrc.tmp") || name.contains(".lrc.sb-")
+        return name.hasSuffix("." + kept) || name.hasSuffix("." + kept + ".tmp") || name.contains("." + kept + ".sb-") || name.hasSuffix(".lrc") || name.contains(".lrc.sb-")
     }
 
     func show(_ track: Track) {
@@ -106,10 +99,10 @@ final class Lyrics {
         loading = true
         lookupTask?.cancel()
         lookupTask = Task {
-            let result = await Self.forceLookup(track, cache: cache)
+            let result = await Self.forceLookup(track)
             guard !Task.isCancelled else { return }
             if case .success(let lyrics) = result, !lyrics.isEmpty {
-                Persist.write(Data(lyrics.utf8), to: key(track))
+                Persist.write(Data(lyrics.utf8), to: Self.key(track))
                 let local = !(Self.read(file(track)) ?? "").isEmpty
                 Log.lyrics.info("refresh result", metadata: ["path": "\(track.url.path)", "characters": "\(lyrics.count)", "pending": "\(local)"])
                 if !local {
@@ -128,7 +121,7 @@ final class Lyrics {
     }
 
     @concurrent
-    private nonisolated static func forceLookup(_ track: Track, cache: URL) async -> Result<String, Failure> {
+    private nonisolated static func forceLookup(_ track: Track) async -> Result<String, Failure> {
         let result = await fetch(track)
 
         if case .success(let lyrics) = result, !lyrics.isEmpty {
@@ -168,11 +161,11 @@ final class Lyrics {
         if !value.isEmpty {
             guard Persist.write(Data(value.utf8), to: url) else { return }
 
-            Persist.write(Data(value.utf8), to: key(track))
+            Persist.write(Data(value.utf8), to: Self.key(track))
         } else {
             if FileManager.default.fileExists(atPath: url.path) { Persist.remove(url) }
 
-            Persist.remove(key(track))
+            if FileManager.default.fileExists(atPath: Self.key(track).path) { Persist.remove(Self.key(track)) }
         }
 
         guard track == self.track else { return }
@@ -224,7 +217,7 @@ final class Lyrics {
 
         lookupTask?.cancel()
         lookupTask = Task {
-            let result = await Self.lookup(track, cache: cache)
+            let result = await Self.lookup(track)
             guard !Task.isCancelled else { return Log.lyrics.debug("lookup cancelled", metadata: ["path": "\(track.url.path)"]) }
 
             Log.lyrics.info("lookup", metadata: ["path": "\(track.url.path)", "result": "\((try? result.get()).map { "\($0.count) characters" } ?? String(describing: result))"])
@@ -244,41 +237,27 @@ final class Lyrics {
     }
 
     private func file(_ track: Track) -> URL {
-        track.url.deletingPathExtension().appendingPathExtension("lrc")
+        track.url.deletingPathExtension().appendingPathExtension(Self.kept)
     }
 
-    func key(_ track: Track) -> URL {
-        Self.key(track, cache: cache)
-    }
-
-    private nonisolated static func key(_ track: Track, cache: URL) -> URL {
-        let digest = SHA256.hash(data: Data("\(track.artist)\n\(track.title)\n\(track.album)\n\(Int(track.duration.rounded()))".utf8))
-        let hash = digest.map { String(format: "%02x", $0) }.joined()
-        let name = "\(safe(track.artist)) - \(safe(track.album)) - \(safe(track.title)) - \(Int(track.duration.rounded()))s-\(hash.prefix(8)).txt"
-        return cache.appending(path: name)
-    }
-
-    private nonisolated static func safe(_ text: String, _ limit: Int = 40) -> String {
-        var name = text.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-        name = name.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        while name.hasSuffix(".") { name.removeLast() }
-        if name.isEmpty { name = "unknown" }
-        return String(name.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
+    nonisolated static func key(_ track: Track) -> URL {
+        track.url.deletingPathExtension().appendingPathExtension(cached)
     }
 
     private func cached(_ track: Track) -> String? {
-        let keyURL = key(track)
+        let keyURL = Self.key(track)
         guard let lyrics = Self.read(keyURL), !lyrics.isEmpty else { return nil }
         if Self.isCacheStale(keyURL) {
+            Log.lyrics.info("cache expired", metadata: ["path": "\(keyURL.path)"])
             return nil
         }
         return lyrics
     }
 
-    private nonisolated static func isCacheStale(_ url: URL) -> Bool {
+    nonisolated static func isCacheStale(_ url: URL, at now: Date = Date()) -> Bool {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let modDate = attrs[.modificationDate] as? Date else { return true }
-        return Date().timeIntervalSince(modDate) > maxCacheAge
+        return now.timeIntervalSince(modDate) > validity
     }
 
     private nonisolated static func read(_ url: URL) -> String? {
@@ -290,8 +269,12 @@ final class Lyrics {
     }
 
     @concurrent
-    private nonisolated static func lookup(_ track: Track, cache: URL) async -> Result<String, Failure> {
-        let keyURL = key(track, cache: cache)
+    nonisolated static func lookup(
+        _ track: Track,
+        fetch: @Sendable (Track) async -> Result<String, Failure> = { await Lyrics.fetch($0) },
+        ovh: @Sendable (Track) async -> String? = { await Lyrics.ovh(artist: $0.artist, title: $0.title) }
+    ) async -> Result<String, Failure> {
+        let keyURL = key(track)
         let staleLyrics = read(keyURL)
 
         if let lyrics = staleLyrics, !lyrics.isEmpty, !isCacheStale(keyURL) {
@@ -307,7 +290,7 @@ final class Lyrics {
             return .success(lyrics)
         }
 
-        if let fallback = await ovh(artist: track.artist, title: track.title), !fallback.isEmpty {
+        if let fallback = await ovh(track), !fallback.isEmpty {
             Log.lyrics.info("source", metadata: ["path": "\(track.url.path)", "source": "lyrics.ovh"])
             Persist.write(Data(fallback.utf8), to: keyURL)
             return .success(fallback)

@@ -240,12 +240,12 @@ final class Records: @unchecked Sendable {
             #expect(records.find("playlists", event, "name", "Mix"), "playlists \(event)")
         }
 
-        try Data("[00:01.00]line".utf8).write(to: track.url.deletingPathExtension().appendingPathExtension("lrc"))
-        let lyrics = Lyrics(cache: real.appending(path: "Lyrics"))
+        try Data("[00:01.00]line".utf8).write(to: track.url.deletingPathExtension().appendingPathExtension("lyrics"))
+        let lyrics = Lyrics()
         lyrics.show(track)
         lyrics.save("[00:02.00]new", for: track)
         #expect(records.find("lyrics", "show", "path", "one.mp3"))
-        #expect(records.find("lyrics", "local", "path", "one.lrc"))
+        #expect(records.find("lyrics", "local", "path", "one.lyrics"))
         #expect(records.find("lyrics", "save", "characters", "13"))
 
         let loudness = Loudness(folders: [real])

@@ -1641,7 +1641,7 @@ struct ContentView: View {
     @Environment(Likes.self) private var likes
     @Environment(YouTube.self) private var youTube
     @Environment(\.openWindow) private var openWindow
-    @State private var lyrics = Lyrics(cache: Lyrics.directory(in: nil), enabled: Player.saved?.lyrics ?? true)
+    @State private var lyrics = Lyrics(enabled: Player.saved?.lyrics ?? true)
     @State private var navigation = Navigation(page: Page(key: Player.saved?.page ?? "") ?? .section(.albums), query: Player.saved?.query ?? "")
     @State private var tracker = Tracker()
     @State private var name = ""
@@ -1866,7 +1866,6 @@ struct ContentView: View {
         .onChange(of: library.scans, refreshed)
         .onChange(of: library.folders) {
             lyrics.flush()
-            lyrics = Lyrics(cache: Lyrics.directory(in: library.folders.first), enabled: player.lyrics)
             playlists.load()
             likes.load()
         }

@@ -445,9 +445,9 @@ struct LibraryHarnessTests {
         let scans = Counter()
         library.loaded = { scans.value += 1 }
 
-        try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lrc"))
-        try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lrc.tmp"))
-        try? FileManager.default.removeItem(at: folder.appending(path: "Album/stays.lrc.tmp"))
+        try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lyrics"))
+        try Data("lyrics".utf8).write(to: folder.appending(path: "Album/stays.lyrics.tmp"))
+        try? FileManager.default.removeItem(at: folder.appending(path: "Album/stays.lyrics.tmp"))
 
         try? await Task.sleep(for: .seconds(5))
         #expect(scans.value == 0)
