@@ -140,13 +140,13 @@ nonisolated final class Cache {
     }
 
     @discardableResult
-    func save(_ changes: [Change], removed: [String], covers: [String: Data]) -> Bool {
+    func save(_ changes: [Change], removed: [String], covers: [String: Data], replacing: Bool = false) -> Bool {
         guard exec("BEGIN IMMEDIATE") else {
             Log.cache.error("begin failed", metadata: ["root": "\(root)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"])
             return false
         }
 
-        let saved = run("""
+        let saved = (!replacing || exec("DELETE FROM covers") && exec("DELETE FROM tracks")) && run("""
             INSERT INTO tracks (path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, hash)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
@@ -184,7 +184,7 @@ nonisolated final class Cache {
             return false
         }
 
-        Log.cache.info("saved", metadata: ["root": "\(root)", "changes": "\(changes.count)", "removed": "\(removed.count)", "covers": "\(covers.count)"])
+        Log.cache.info("saved", metadata: ["root": "\(root)", "changes": "\(changes.count)", "removed": "\(removed.count)", "covers": "\(covers.count)", "replacing": "\(replacing)"])
         return true
     }
 

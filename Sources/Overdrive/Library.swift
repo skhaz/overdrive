@@ -271,6 +271,34 @@ final class Library {
         }
     }
 
+    func rebuild() {
+        pending?.cancel()
+        pending = nil
+        generation += 1
+        let generation = generation
+        let folders = folders
+
+        scanning = true
+        Log.library.info("rebuild", metadata: ["generation": "\(generation)", "folders": Log.list(folders.map(\.path))])
+
+        let previous = running
+        running = Task {
+            await previous?.value
+
+            guard let result = await Library.rebuild(folders) else {
+                Log.library.error("rebuild failed", metadata: ["generation": "\(generation)"])
+                if generation == self.generation { scanning = false }
+                return
+            }
+            guard generation == self.generation else { return Log.library.info("rebuild replaced", metadata: ["generation": "\(generation)"]) }
+
+            Log.library.info("rebuild done", metadata: ["generation": "\(generation)", "albums": "\(result.albums.count)"])
+            show(result, folders)
+            scanning = false
+            loudness.update(result.albums)
+        }
+    }
+
     private func show(_ snapshot: Snapshot, _ folders: [URL]) {
         Artwork.covers = snapshot.covers
         index = snapshot.index
@@ -642,6 +670,73 @@ final class Library {
 
         for (number, cache) in caches.enumerated() where !fresh[number].isEmpty {
             cache?.save([], removed: [], covers: fresh[number])
+        }
+
+        return (albums, index, covers)
+    }
+
+    @concurrent
+    nonisolated static func rebuild(_ folders: [URL]) async -> Snapshot? {
+        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        let caches = folders.map { Cache($0) }
+        var files: [(url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int)] = []
+
+        for (number, folder) in folders.enumerated() {
+            let cache = caches[number]
+            let root = cache.map { URL(filePath: $0.root) } ?? folder
+            let failures = Failures()
+            let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants]) { url, error in
+                failures.add(url, error)
+                return true
+            }
+            guard let enumerator, cache != nil else {
+                Log.library.error("rebuild unreadable", metadata: ["folder": "\(root.path)", "cache": "\(cache != nil)"])
+                return nil
+            }
+
+            while let url = enumerator.nextObject() as? URL {
+                guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+
+                files.append((url, type.conforms(to: .mpeg4Audio), number, cache?.relative(url) ?? url.path, values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0, values.fileSize ?? 0))
+            }
+
+            guard failures.items.isEmpty else {
+                Log.library.error("rebuild unreadable", metadata: ["folder": "\(root.path)", "errors": Log.list(failures.items.prefix(20))])
+                return nil
+            }
+        }
+
+        nonisolated(unsafe) let read = UnsafeMutableBufferPointer<Track?>.allocate(capacity: files.count)
+        read.initialize(repeating: nil)
+        defer { read.deinitialize().deallocate() }
+
+        DispatchQueue.concurrentPerform(iterations: files.count) { offset in
+            read[offset] = Library.read(files[offset].url, files[offset].mp4)
+        }
+
+        var changes = Array(repeating: [Cache.Change](), count: folders.count)
+        var tracks: [Track] = []
+        tracks.reserveCapacity(files.count)
+        for (offset, file) in files.enumerated() {
+            guard let track = read[offset] else { continue }
+
+            tracks.append(track)
+            changes[file.folder].append(Cache.Change(path: file.path, modified: file.modified, size: file.size, hash: nil, track: track))
+        }
+
+        let (albums, index) = assemble(tracks)
+        let covers = covers(albums, [:])
+        var stored = Array(repeating: [String: Data](), count: folders.count)
+        for album in albums {
+            let url = album.tracks[0].url
+            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), let cover = covers[album.id] else { continue }
+
+            stored[number][album.id] = cover
+        }
+
+        Log.library.info("rebuild read", metadata: ["files": "\(files.count)", "songs": "\(tracks.count)", "albums": "\(albums.count)", "covers": "\(covers.count)"])
+        for (number, cache) in caches.enumerated() {
+            guard cache?.save(changes[number], removed: [], covers: stored[number], replacing: true) == true else { return nil }
         }
 
         return (albums, index, covers)

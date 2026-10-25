@@ -660,3 +660,52 @@ struct WatcherTypesTests {
         }
     }
 }
+
+extension LibraryCacheTests {
+    @Test func aRebuildReadsEveryFileAgain() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "A/one.mp3")
+        try add("vbr.mp3", to: folder, as: "B/two.mp3")
+        let path = folder.appending(path: "A/one.mp3").path
+        let real = title(await Library.load([folder], [:]), path)
+
+        execute(folder, "UPDATE tracks SET title = 'stale' WHERE path = 'A/one.mp3'")
+        #expect(title(await Library.load([folder], [:]), path) == "stale", "same date and size keep the cached tags, as when an editor keeps the date")
+
+        let rebuilt = try #require(await Library.rebuild([folder]))
+        #expect(title(rebuilt, path) == real, "a rebuild reads the tags of every file again")
+        #expect(title(await Library.load([folder], [:]), path) == real, "the new tags are in the cache")
+        #expect(stored(folder) == audio(folder))
+        #expect(consistent(folder), "the search index follows the rebuilt cache")
+    }
+
+    @Test func aRebuildDropsWhatIsGone() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try add("cbr.mp3", to: folder, as: "A/one.mp3")
+        _ = await Library.load([folder], [:])
+        execute(folder, "INSERT INTO tracks (path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id) VALUES ('ghost.mp3', 0, 0, 'Ghost', 'A', 'B', 1, 1, '', 0, 1, 'x')")
+
+        _ = try #require(await Library.rebuild([folder]))
+        #expect(stored(folder) == audio(folder), "the rebuild deletes every old row")
+        #expect(consistent(folder))
+    }
+
+    @Test func anUnreadableFolderLeavesTheCacheAsItWas() async throws {
+        let folder = try folder()
+        let locked = folder.appending(path: "A")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        try add("cbr.mp3", to: folder, as: "A/one.mp3")
+        try add("vbr.mp3", to: folder, as: "two.mp3")
+        _ = await Library.load([folder], [:])
+        let before = stored(folder)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+        #expect(await Library.rebuild([folder]) == nil, "a rebuild that cannot see every file does not start")
+        #expect(stored(folder) == before)
+    }
+}

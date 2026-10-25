@@ -153,6 +153,13 @@ struct Overdrive: App {
                     likes.load()
                 }
                 .keyboardShortcut("r")
+
+                Button("Rebuild Library Cache") {
+                    library.rebuild()
+                    playlists.load()
+                    likes.load()
+                }
+                .disabled(library.scanning)
             }
 
             CommandGroup(after: .textEditing) {
