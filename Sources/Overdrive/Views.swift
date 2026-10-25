@@ -1686,6 +1686,10 @@ struct ContentView: View {
                                     .buttonStyle(ToolbarButtonStyle())
                             }
                         }
+
+                        SwiftUI.Section {
+                            row("About", "info.circle", .about)
+                        }
                     }
                     .navigationSplitViewColumnWidth(180)
                     .focused($focus, equals: .sidebar)
@@ -1938,6 +1942,7 @@ struct ContentView: View {
         case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
         case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
         case (nil, .queue): summary(player.queue.dropFirst(player.index))
+        case (nil, .about): ""
         }
     }
 
@@ -1953,6 +1958,7 @@ struct ContentView: View {
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
                 case .queue: QueueView()
+                case .about: AboutView()
                 case .section(.songs):
                     VStack(spacing: 0) {
                         if !library.query.isEmpty, !library.filtered.isEmpty {

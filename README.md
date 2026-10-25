@@ -161,6 +161,8 @@ The Song menu at the top of the screen has the same actions as the right-click m
 
 ## Good to know
 
+- Click **About** at the bottom of the sidebar to see the version of the app and to open its page on GitHub, report a problem, or see the releases.
+
 - The app never changes your songs. It only saves the lyrics that you save.
 - Your liked songs, playlists, and lyrics live with your music. Back up your music folder and you back up all of them.
 - The app keeps a file named `Cache.sqlite` in each music folder. With it, the app opens faster. You can delete it at any time: the app makes it again. The app checks your music folders by itself when they change and every 10 minutes. To check them at once, choose File > Sync Library (Command-R). If you change the tags of a song with an app that keeps the file date, choose File > Rebuild Library Cache: the app reads all your songs again. Until it finishes, you see the library as it was.
@@ -175,3 +177,5 @@ The Song menu at the top of the screen has the same actions as the right-click m
 The app icon is "iPod Orange" by p_bluealt, from [macOSicons](https://macosicons.com/icon/ipod-orange-siHDxmuV8f). The MIT license does not apply to the icon.
 
 The lyrics come from [LRCLIB](https://lrclib.net) and [lyrics.ovh](https://lyrics.ovh).
+
+The GitHub mark on the About page comes from [Primer Octicons](https://github.com/primer/octicons) (MIT). GitHub and the GitHub logo are trademarks of GitHub, Inc.
