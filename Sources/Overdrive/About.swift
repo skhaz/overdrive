@@ -113,9 +113,12 @@ struct UpdateBadge: View {
     var body: some View {
         switch state {
         case .checking:
-            ProgressView().controlSize(.mini).help("Looking for a new version")
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .foregroundStyle(.blue)
+                .symbolEffect(.rotate, options: .repeat(.continuous))
+                .help("Looking for a new version")
         case .current:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.secondary).help("This is the latest version")
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("This is the latest version")
         case .available(let release):
             Text("[Version \(release.version) is available](\(release.url.absoluteString))")
                 .tint(.blue)

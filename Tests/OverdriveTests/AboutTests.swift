@@ -46,4 +46,11 @@ struct AboutTests {
             #expect(about.contains("](\(url))"), "the About page must link \(url) like the README")
         }
     }
+
+    @Test func theUpdateStateStandsOut() throws {
+        let about = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/About.swift"), encoding: .utf8)
+
+        #expect(about.contains(".foregroundStyle(.blue)\n                .symbolEffect(.rotate, options: .repeat(.continuous))"), "the check shows a blue spinning symbol")
+        #expect(about.contains("Image(systemName: \"checkmark.circle.fill\").foregroundStyle(.green)"), "the latest version shows a green check")
+    }
 }
