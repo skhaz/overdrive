@@ -1541,8 +1541,10 @@ struct SpectrumBar: View {
     static let width: CGFloat = 4
     static let gap: CGFloat = 2
     static let height: CGFloat = 26
+    static let interval = 1.0 / 60
 
     @Environment(Player.self) private var player
+    @Environment(\.appearsActive) private var shown
     @State private var analyzer = Analyzer()
     @State private var fading = false
 
@@ -1561,10 +1563,14 @@ struct SpectrumBar: View {
         context.fill(path, with: .linearGradient(Gradient(colors: [.accentColor, .accentColor.opacity(0.35)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
     }
 
+    static func running(shown: Bool, active: Bool, fading: Bool) -> Bool {
+        shown && (active || fading)
+    }
+
     var body: some View {
         let active = player.playing && !player.isMuted
 
-        TimelineView(.animation(paused: !active && !fading)) { timeline in
+        TimelineView(.animation(minimumInterval: Self.interval, paused: !Self.running(shown: shown, active: active, fading: fading))) { timeline in
             Canvas { context, size in
                 let levels = analyzer.update(player.spectrum, count: Self.count(size.width), active: active, time: timeline.date.timeIntervalSinceReferenceDate)
                 Self.draw(levels, in: &context, size: size)
@@ -1574,6 +1580,10 @@ struct SpectrumBar: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .accessibilityHidden(true)
+        .onChange(of: shown, initial: true) {
+            Log.player.debug("spectrum", metadata: ["shown": "\(shown)"])
+            player.spectrum.listening = shown
+        }
         .task(id: active) {
             guard !active else { return fading = false }
 

@@ -13,8 +13,29 @@ nonisolated final class Spectrum: Sendable {
     }
 
     private let ring = Mutex(Ring())
+    private let open = Atomic(true)
 
-    var rate: Double { ring.withLock { $0.rate } }
+    init() {
+        let list = AudioBufferList.allocate(maximumBuffers: 2)
+        let silence = UnsafeMutablePointer<Float>.allocate(capacity: 2)
+        defer {
+            silence.deallocate()
+            free(list.unsafeMutablePointer)
+        }
+
+        silence.initialize(repeating: 0, count: 2)
+        for count in 1...2 {
+            list.count = count
+            for index in 0..<count { list[index] = AudioBuffer(mNumberChannels: UInt32(3 - count), mDataByteSize: 8 / UInt32(count), mData: silence) }
+            write(list, frames: 1)
+        }
+        ring.withLock { $0.head = 0 }
+    }
+
+    var listening: Bool {
+        get { open.load(ordering: .relaxed) }
+        set { open.store(newValue, ordering: .relaxed) }
+    }
 
     func prepare(rate: Double) {
         guard rate > 0 else { return }
@@ -23,41 +44,36 @@ nonisolated final class Spectrum: Sendable {
     }
 
     func write(_ list: UnsafeMutableAudioBufferListPointer, frames: Int) {
-        guard frames > 0, !list.isEmpty else { return }
+        guard frames > 0, !list.isEmpty, listening else { return }
 
         ring.withLockIfAvailable { ring in
+            let interleaved = list.count == 1
+            let channels = interleaved ? max(Int(list[0].mNumberChannels), 1) : list.count
+            let stride = interleaved ? channels : 1
+            var count = frames
+            for index in 0..<list.count {
+                guard list[index].mData != nil else { return }
+
+                count = min(count, Int(list[index].mDataByteSize) / (MemoryLayout<Float>.size * stride))
+            }
+
             let size = ring.samples.count
-            var head = ring.head
+            let first = max(count - size, 0)
+            let start = ring.head
+            let scale = 1 / Float(channels)
             ring.samples.withUnsafeMutableBufferPointer { out in
-                if list.count == 1 {
-                    let channels = max(Int(list[0].mNumberChannels), 1)
-                    guard let data = list[0].mData?.assumingMemoryBound(to: Float.self) else { return }
-
-                    let count = min(frames, Int(list[0].mDataByteSize) / (MemoryLayout<Float>.size * channels))
-                    let scale = 1 / Float(channels)
-                    for frame in 0..<count {
-                        var sum: Float = 0
-                        for channel in 0..<channels { sum += data[frame * channels + channel] }
-                        out[head] = sum * scale
-                        head = head + 1 == size ? 0 : head + 1
-                    }
-                } else {
-                    var count = frames
-                    for buffer in list {
-                        guard buffer.mData != nil else { return }
-
-                        count = min(count, Int(buffer.mDataByteSize) / MemoryLayout<Float>.size)
-                    }
-                    let scale = 1 / Float(list.count)
-                    for frame in 0..<count {
-                        var sum: Float = 0
-                        for buffer in list { sum += buffer.mData.unsafelyUnwrapped.assumingMemoryBound(to: Float.self)[frame] }
-                        out[head] = sum * scale
+                for channel in 0..<channels {
+                    let data = list[interleaved ? 0 : channel].mData.unsafelyUnwrapped.assumingMemoryBound(to: Float.self)
+                    let offset = interleaved ? channel : 0
+                    var head = start
+                    for frame in first..<count {
+                        let value = data[frame * stride + offset] * scale
+                        out[head] = channel == 0 ? value : out[head] + value
                         head = head + 1 == size ? 0 : head + 1
                     }
                 }
             }
-            ring.head = head
+            ring.head = (start + count - first) % size
         }
     }
 
@@ -66,7 +82,7 @@ nonisolated final class Spectrum: Sendable {
             let size = ring.samples.count
             let tail = size - ring.head
             ring.samples.withUnsafeBufferPointer { samples in
-                guard let source = samples.baseAddress, let out = target.baseAddress else { return }
+                guard target.count >= size, let source = samples.baseAddress, let out = target.baseAddress else { return }
 
                 out.update(from: source + ring.head, count: tail)
                 (out + tail).update(from: source, count: ring.head)

@@ -99,4 +99,27 @@ struct SpectrumTests {
         #expect(analyzer.update(Spectrum(), count: 10, active: true, time: 0).count == 10)
         #expect(analyzer.update(Spectrum(), count: 3, active: true, time: 0).count == 3)
     }
+
+    @Test func aHiddenWindowSkipsTheSamples() {
+        let spectrum = Spectrum()
+        spectrum.listening = false
+        Self.feed(spectrum) { _ in 1 }
+
+        var out = [Float](repeating: 0, count: Spectrum.size)
+        _ = out.withUnsafeMutableBufferPointer { spectrum.copy(into: $0) }
+        #expect(out.allSatisfy { $0 == 0 }, "the audio thread must not copy samples that nobody sees")
+
+        spectrum.listening = true
+        Self.feed(spectrum) { _ in 1 }
+        _ = out.withUnsafeMutableBufferPointer { spectrum.copy(into: $0) }
+        #expect(out.allSatisfy { $0 == 1 })
+    }
+
+    @Test func theBarsRunOnlyWhileTheWindowShows() {
+        #expect(SpectrumBar.running(shown: true, active: true, fading: false))
+        #expect(SpectrumBar.running(shown: true, active: false, fading: true))
+        #expect(!SpectrumBar.running(shown: true, active: false, fading: false))
+        #expect(!SpectrumBar.running(shown: false, active: true, fading: false), "a window in the background must not draw")
+        #expect(!SpectrumBar.running(shown: false, active: false, fading: true))
+    }
 }
