@@ -136,9 +136,8 @@ nonisolated final class Cache {
         var result: [String: Data] = [:]
 
         query("SELECT album_id, data FROM covers") { row in
-            guard let bytes = sqlite3_column_blob(row, 1) else { return }
-
-            result[Self.text(row, 0)] = Data(bytes: bytes, count: Int(sqlite3_column_bytes(row, 1)))
+            let count = Int(sqlite3_column_bytes(row, 1))
+            result[Self.text(row, 0)] = count > 0 ? sqlite3_column_blob(row, 1).map { Data(bytes: $0, count: count) } ?? Data() : Data()
         }
 
         return result
@@ -159,7 +158,7 @@ nonisolated final class Cache {
     }
 
     @discardableResult
-    func save(_ changes: [Change], removed: [String], covers: [String: Data], replacing: Bool = false) -> Bool {
+    func save(_ changes: [Change], removed: [String], covers: [String: Data], dropping: [String] = [], replacing: Bool = false) -> Bool {
         guard exec("BEGIN IMMEDIATE") else {
             Log.cache.error("begin failed", metadata: ["root": "\(root)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"])
             return false
@@ -195,7 +194,7 @@ nonisolated final class Cache {
                 Self.bind(statement, 1, cover.key)
                 _ = cover.value.withUnsafeBytes { sqlite3_bind_blob(statement, 2, $0.baseAddress, Int32($0.count), Self.transient) }
             }
-            && exec("DELETE FROM covers WHERE album_id NOT IN (SELECT album_id FROM tracks)")
+            && run("DELETE FROM covers WHERE album_id = ?", dropping) { statement, key in Self.bind(statement, 1, key) }
 
         guard saved, exec("COMMIT") else {
             Log.cache.error("save failed", metadata: ["root": "\(root)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"])

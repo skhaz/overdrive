@@ -136,11 +136,11 @@ import Testing
         defer { try? FileManager.default.removeItem(at: folder) }
         let cache = try #require(Cache(folder))
 
-        cache.save([change(folder, "one.mp3", album: "Kept")], removed: [], covers: ["id-Kept": Data([1, 2, 3]), "id-Gone": Data([4])])
-        #expect(cache.covers() == ["id-Kept": Data([1, 2, 3])])
+        cache.save([change(folder, "one.mp3", album: "Kept")], removed: [], covers: ["id-Kept": Data([1, 2, 3]), "id-Gone": Data([4]), "id-None": Data()])
+        #expect(cache.covers() == ["id-Kept": Data([1, 2, 3]), "id-Gone": Data([4]), "id-None": Data()], "an album without cover keeps an empty record")
 
-        cache.save([], removed: ["one.mp3"], covers: [:])
-        #expect(cache.covers().isEmpty)
+        cache.save([], removed: ["one.mp3"], covers: [:], dropping: ["id-Gone", "id-Kept"])
+        #expect(cache.covers() == ["id-None": Data()], "the scan drops the covers that are not current, in the same transaction")
     }
 
     @Test func replacesACover() throws {

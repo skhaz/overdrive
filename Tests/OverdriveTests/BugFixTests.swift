@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import Foundation
 import SQLite3
 import Testing
@@ -487,17 +488,28 @@ struct TagEditTests {
         #expect(Player.refreshed([track("gone", title: "X")]) { fresh[$0] } == nil, "a song that left the library stays as it is")
     }
 
-    @Test func anEditedSongMakesItsAlbumCoverAgain() {
+    @Test func aChangedAlbumMakesItsCoverAgain() {
         let albums = [Album(id: "x", title: "X", artist: "A", year: 0, tracks: [track("a", title: "a", album: "X")]), Album(id: "y", title: "Y", artist: "A", year: 0, tracks: [track("b", title: "b", album: "Y")])]
         var asked: [URL] = []
-        let covers = Library.covers(albums, ["x": Data([1]), "y": Data([2])], touched: ["x"]) { urls in
+        let result = Library.covers(albums, ["x\u{1F}old": Data([1]), "y\u{1F}same": Data([2])], keys: ["x": "x\u{1F}new", "y": "y\u{1F}same"]) { urls in
             asked = urls
             return urls.map { _ in Data([9]) }
         }
 
-        #expect(asked == [albums[0].tracks[0].url], "only the album with a changed song reads its cover again")
-        #expect(covers["x"] == Data([9]))
-        #expect(covers["y"] == Data([2]))
+        #expect(asked == [albums[0].tracks[0].url], "only the album whose files changed reads its cover again")
+        #expect(result.byID["x"] == Data([9]))
+        #expect(result.byID["y"] == Data([2]))
+        #expect(result.generated == ["x\u{1F}new": Data([9])])
+    }
+
+    @Test func anAlbumWithoutCoverIsNotReadAgainAndAgain() {
+        let albums = [Album(id: "x", title: "X", artist: "A", year: 0, tracks: [track("a", title: "a", album: "X")])]
+        var runs = 0
+        let first = Library.covers(albums, [:], keys: ["x": "x\u{1F}1"]) { urls in runs += 1; return urls.map { _ in nil } }
+        #expect(first.generated["x\u{1F}1"] == Data(), "no cover is kept as an empty record")
+        let second = Library.covers(albums, first.generated, keys: ["x": "x\u{1F}1"]) { urls in runs += 1; return urls.map { _ in nil } }
+        #expect(runs == 1)
+        #expect(second.byID["x"] == nil)
     }
 
     @Test func aNewCoverReplacesTheOneInMemory() {
@@ -517,5 +529,61 @@ struct TagEditTests {
         #expect(views.contains(".id(\"\\(route.key)\\u{1F}\\(library.edits)\")"), "an open album shows its new tags and cover")
         #expect(views.components(separatedBy: ".id(\"\\(sort.rawValue)\\u{1F}\\(library.edits)\")").count - 1 == 3, "the queue, playlists, and liked songs show new tags")
         #expect(views.contains("player.refresh { library.track($0) }"), "the queue takes the new tags after a scan")
+    }
+}
+
+
+struct CoverFingerprintTests {
+    @Test func theFingerprintFollowsTheFilesOfTheAlbum() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "Fingerprint-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let song = Track(url: root.appending(path: "one.mp3"), title: "one", artist: "A", album: "B", number: 1, disc: 1, albumArtist: "", year: 0, duration: 1, albumID: "B")
+        let album = Album(id: "B", title: "B", artist: "A", year: 0, tracks: [song])
+        let stamps = [song.url.path: Cache.Stamp(modified: 1, size: 10)]
+
+        let base = Library.fingerprint(album, stamps)
+        #expect(Library.fingerprint(album, stamps) == base, "nothing changed, same fingerprint")
+        #expect(Library.fingerprint(album, [song.url.path: Cache.Stamp(modified: 2, size: 10)]) != base, "a new date (new tags or cover in the file) makes a new cover")
+        #expect(Library.fingerprint(album, [song.url.path: Cache.Stamp(modified: 1, size: 11)]) != base)
+
+        try Data([1]).write(to: root.appending(path: "notes.txt"))
+        #expect(Library.fingerprint(album, stamps) == base, "a text file is not a cover")
+        try Data([1, 2, 3]).write(to: root.appending(path: "cover.jpg"))
+        let withImage = Library.fingerprint(album, stamps)
+        #expect(withImage != base, "a cover image in the folder makes a new cover")
+        try Data([1, 2, 3, 4]).write(to: root.appending(path: "cover.jpg"))
+        #expect(Library.fingerprint(album, stamps) != withImage, "a changed cover image makes a new cover")
+        #expect(Library.coverKey(album, stamps).hasPrefix("B\u{1F}"))
+    }
+
+    @Test func theCacheKeepsOnlyTheCurrentCovers() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "CoverKeys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appending(path: "A"), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: bugFixtures.appending(path: "cbr.mp3"), to: root.appending(path: "A/one.mp3"))
+
+        _ = await Library.load([root], [:])
+        let first = Set(Cache(root)!.covers().keys)
+        #expect(first.count == 1 && first.allSatisfy { $0.contains("\u{1F}") }, "each cover is kept with the fingerprint of its album")
+
+        _ = await Library.load([root], [:])
+        #expect(Set(Cache(root)!.covers().keys) == first, "nothing changed, the cover stays")
+
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 3_000_000)], ofItemAtPath: root.appending(path: "A/one.mp3").path)
+        _ = await Library.load([root], [:])
+        let second = Set(Cache(root)!.covers().keys)
+        #expect(second.count == 1 && second != first, "a changed file replaces the cover and drops the old one")
+    }
+
+    @Test func coverImagesAndAnHourlyScanKeepTheLibraryInSync() throws {
+        let removed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+        #expect(Library.relevant([("/m/A/cover.jpg", removed)]), "a new cover image in a music folder starts a scan")
+        #expect(Library.relevant([("/m/A/folder.png", removed)]))
+        #expect(!Library.relevant([("/m/A/notes.txt", removed)]))
+
+        let source = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Library.swift"), encoding: .utf8)
+        #expect(Library.full == 6, "every hour a full scan runs, also when the quick check sees nothing")
+        #expect(source.contains("if ticks.isMultiple(of: Library.full), !scanning {"))
     }
 }

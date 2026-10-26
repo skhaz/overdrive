@@ -291,12 +291,13 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         try add("cbr.mp3", to: folder, as: "A/one.mp3")
 
         let first = await Library.load([folder], [:])
-        #expect(Set(Cache(folder)!.covers().keys) == Set(first.covers.keys))
+        #expect(Set(Cache(folder)!.covers().keys.map { $0.components(separatedBy: Library.mark)[0] }) == Set(first.albums.map(\.id)), "every album has one cover record")
 
         execute(folder, "UPDATE covers SET data = x'01'")
         let second = await Library.load([folder], [:])
 
-        #expect(second.covers.values.allSatisfy { $0 == Data([1]) })
+        #expect(!second.covers.isEmpty)
+        #expect(second.covers.values.allSatisfy { $0 == Data([1]) }, "an unchanged album reuses its stored cover")
     }
 
     @Test func staysEqualToTheFilesystemAfterRandomChanges() async throws {
@@ -544,7 +545,7 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         #expect(!Library.relevant([(folder.path + "/A/song.cache.lyrics", removed)]))
         #expect(Library.relevant([(folder.path + "/Lyrics/song.mp3", modified)]))
         #expect(!Library.relevant([(folder.path + "/Album/notes.txt", removed)]), "only files the player plays start a scan")
-        #expect(!Library.relevant([(folder.path + "/Album/cover.jpg", renamed)]))
+        #expect(Library.relevant([(folder.path + "/Album/cover.jpg", renamed)]), "a cover image makes its album cover again")
         #expect(!Library.relevant([(folder.path + "/Album/video.mov", modified)]))
         #expect(Library.relevant([(folder.path + "/Album/one.flac", removed)]))
         #expect(Library.relevant([(folder.path + "/Album/one.m4a", renamed)]))
@@ -655,7 +656,7 @@ struct WatcherTypesTests {
             #expect(Library.relevant([("/m/a." + name.uppercased(), removed)]))
         }
         #expect(Library.playable == Set(Library.types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() }), "the watcher and the scan use the same types")
-        for name in ["txt", "jpg", "png", "pdf", "lrc", "lyrics", "plist", "sqlite", "cue", "log", "nfo"] where !Library.playable.contains(name) {
+        for name in ["txt", "pdf", "lrc", "lyrics", "plist", "sqlite", "cue", "log", "nfo"] where !Library.playable.contains(name) {
             #expect(!Library.relevant([("/m/a." + name, removed)]), "\(name) does not play")
         }
     }

@@ -74,6 +74,8 @@ nonisolated enum Picture {
     }
 
     private static func run(_ urls: [URL], _ workers: Int) -> (received: Set<Int>, covers: [Int: Data], clean: Bool) {
+        guard Bundle.main.bundleIdentifier == "org.delduca.Overdrive" else { return ([], [:], true) }
+
         let process = Process()
         let input = Pipe()
         let output = Pipe()

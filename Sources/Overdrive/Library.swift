@@ -2,6 +2,7 @@ import AppKit
 import AudioToolbox
 import AVFoundation
 import CryptoKit
+import ImageIO
 import Logging
 import CoreServices
 import UniformTypeIdentifiers
@@ -127,6 +128,7 @@ final class Library {
     private static let key = "folders"
     static let quiet = Duration.milliseconds(1500)
     static let period = Duration.seconds(600)
+    nonisolated static let full = 6
 
     private(set) var albums: [Album] = []
     private(set) var filtered: [Album] = []
@@ -272,8 +274,16 @@ final class Library {
 
     private func sync() {
         syncing = Task { [weak self] in
+            var ticks = 0
             while (try? await Task.sleep(for: Library.period)) != nil {
                 guard let self else { return }
+
+                ticks += 1
+                if ticks.isMultiple(of: Library.full), !scanning {
+                    Log.library.info("sync full scan", metadata: ["every": "\(Library.period * Library.full)"])
+                    scan("periodic full")
+                    continue
+                }
 
                 let info = ProcessInfo.processInfo
                 let busy = scanning || info.isLowPowerModeEnabled || info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
@@ -706,7 +716,12 @@ final class Library {
             }
 
             if path.contains("/.") { return false }
-            if playable.contains((path as NSString).pathExtension.lowercased()) { return true }
+            let ext = (path as NSString).pathExtension.lowercased()
+            if playable.contains(ext) { return true }
+            if images.contains(ext) {
+                Log.library.info("cover image changed", metadata: ["path": "\(path)", "flags": "\(String(flags, radix: 16))"])
+                return true
+            }
 
             let folder = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0
             let gone = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed) != 0
@@ -719,14 +734,16 @@ final class Library {
     private nonisolated static let batch = 256
     nonisolated static let types = AVURLAsset.audiovisualContentTypes.filter { $0.conforms(to: .audio) }
     nonisolated static let playable = Set(types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() })
+    nonisolated static let images = Set(CGImageSourceCopyTypeIdentifiers() as? [String] ?? []).compactMap { UTType($0) }.filter { $0.conforms(to: .image) }.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() }.reduce(into: Set<String>()) { $0.insert($1) }
 
     @concurrent
     nonisolated static func load(_ folders: [URL], _ previous: [String: Data], cached emit: Bool = true, unreadable: Unreadable? = nil, progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
         let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
         let caches = folders.map { Cache($0) }
-        var stored = previous
+        var stored: [String: Data] = [:]
         var saved: [Set<String>] = []
         var knowns: [[String: Cache.Entry]] = []
+        var stamps: [String: Cache.Stamp] = [:]
 
         for cache in caches {
             let covers = cache?.covers() ?? [:]
@@ -734,19 +751,19 @@ final class Library {
             stored.merge(covers) { current, _ in current }
             knowns.append(cache?.entries() ?? [:])
         }
+        let display = Library.shown(stored, previous)
 
         let cached = knowns.flatMap { $0.values.map { $0.track.at($0.track.url) } }
         Log.library.info("load", metadata: ["folders": Log.list(folders.map(\.path)), "cached": "\(cached.count)", "caches": Log.list(caches.map { $0 != nil })])
         if emit, !cached.isEmpty {
             let (albums, index) = assemble(cached)
-            guard await progress((albums, index, stored)) else { return (albums, index, stored) }
+            guard await progress((albums, index, display)) else { return (albums, index, display) }
         }
 
         var slots: [Track?] = []
         var pending: [(slot: Int, url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int, old: Cache.Entry?)] = []
         var removed: [[String]] = []
         var relabel = Array(repeating: [Cache.Change](), count: folders.count)
-        var touched = Set<String>()
 
         for (number, folder) in folders.enumerated() {
             let cache = caches[number]
@@ -768,6 +785,7 @@ final class Library {
                     let modified = values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
                     let size = values.fileSize ?? 0
                     let entry = known.removeValue(forKey: path)
+                    stamps[url.path] = Cache.Stamp(modified: modified, size: size)
 
                     if let entry, entry.modified == modified, entry.size == size {
                         let track = entry.track.at(url)
@@ -804,7 +822,7 @@ final class Library {
             }
 
             let (albums, index) = assemble(slots.compactMap(\.self))
-            guard await progress((albums, index, stored)) else { return (albums, index, stored) }
+            guard await progress((albums, index, display)) else { return (albums, index, display) }
         }
 
         let work = pending
@@ -829,6 +847,14 @@ final class Library {
 
             var changes = Array(repeating: [Cache.Change](), count: folders.count)
             var failed = Array(repeating: [String](), count: folders.count)
+            var reasons: [String: [String]] = [:]
+            for (offset, item) in part.enumerated() {
+                let reason = item.old == nil ? "new" : item.old?.size != item.size ? "size" : read[offset].hash == item.old?.hash ? "date only" : "content"
+                reasons[reason, default: []].append(item.path)
+            }
+            for (reason, paths) in reasons {
+                Log.library.info("reread", metadata: ["reason": "\(reason)", "count": "\(paths.count)", "paths": Log.list(paths.prefix(20))])
+            }
 
             for (offset, item) in part.enumerated() {
                 slots[item.slot] = read[offset].track
@@ -840,8 +866,6 @@ final class Library {
                 }
 
                 if let track = read[offset].track {
-                    touched.insert(track.albumID)
-                    if let old = item.old { touched.insert(old.track.at(item.url).albumID) }
                     changes[item.folder].append(Cache.Change(path: item.path, modified: item.modified, size: item.size, hash: read[offset].hash, track: track))
                 } else {
                     failed[item.folder].append(item.path)
@@ -860,23 +884,30 @@ final class Library {
 
             if part.endIndex < work.count {
                 let (albums, index) = assemble(slots.compactMap(\.self))
-                guard await progress((albums, index, stored)) else { return (albums, index, stored) }
+                guard await progress((albums, index, display)) else { return (albums, index, display) }
             }
         }
 
         let (albums, index) = assemble(slots.compactMap(\.self))
-        let covers = covers(albums, stored, touched: touched)
+        let named = Dictionary(albums.map { ($0.id, Library.coverKey($0, stamps)) }) { first, _ in first }
+        let (covers, generated) = covers(albums, stored, keys: named)
         var fresh = Array(repeating: [String: Data](), count: folders.count)
+        var keep = Array(repeating: Set<String>(), count: folders.count)
 
         for album in albums {
             let url = album.tracks[0].url
-            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), !saved[number].contains(album.id) || touched.contains(album.id), let cover = covers[album.id] else { continue }
+            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), let key = named[album.id] else { continue }
 
-            fresh[number][album.id] = cover
+            keep[number].insert(key)
+            if let cover = generated[key] { fresh[number][key] = cover }
         }
 
-        for (number, cache) in caches.enumerated() where !fresh[number].isEmpty {
-            cache?.save([], removed: [], covers: fresh[number])
+        for (number, cache) in caches.enumerated() {
+            let dropping = Array(saved[number].subtracting(keep[number]))
+            guard !fresh[number].isEmpty || !dropping.isEmpty else { continue }
+
+            Log.library.info("covers saved", metadata: ["folder": "\(folders[number].path)", "new": "\(fresh[number].count)", "dropped": "\(dropping.count)"])
+            cache?.save([], removed: [], covers: fresh[number], dropping: dropping)
         }
 
         return (albums, index, covers)
@@ -932,13 +963,15 @@ final class Library {
         }
 
         let (albums, index) = assemble(tracks)
-        let covers = covers(albums, [:])
+        let stamps = Dictionary(files.map { ($0.url.path, Cache.Stamp(modified: $0.modified, size: $0.size)) }) { first, _ in first }
+        let named = Dictionary(albums.map { ($0.id, Library.coverKey($0, stamps)) }) { first, _ in first }
+        let (covers, generated) = covers(albums, [:], keys: named)
         var stored = Array(repeating: [String: Data](), count: folders.count)
         for album in albums {
             let url = album.tracks[0].url
-            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), let cover = covers[album.id] else { continue }
+            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), let key = named[album.id], let cover = generated[key] else { continue }
 
-            stored[number][album.id] = cover
+            stored[number][key] = cover
         }
 
         Log.library.info("rebuild read", metadata: ["files": "\(files.count)", "songs": "\(tracks.count)", "albums": "\(albums.count)", "covers": "\(covers.count)"])
@@ -1002,25 +1035,74 @@ final class Library {
         return Data(SHA256.hash(data: data))
     }
 
-    nonisolated static func covers(_ albums: [Album], _ previous: [String: Data], touched: Set<String> = [], generate: ([URL]) -> [Data?] = Picture.generate) -> [String: Data] {
-        var covers: [String: Data] = [:]
-        var missing: [Album] = []
+    nonisolated static let mark = "\u{1F}"
 
-        for album in albums {
-            if !touched.contains(album.id), let cover = previous[album.id] {
-                covers[album.id] = cover
-            } else {
-                missing.append(album)
+    nonisolated static func fingerprint(_ album: Album, _ stamps: [String: Cache.Stamp]) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        func mix(_ text: String) {
+            for byte in text.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100_0000_01b3 }
+        }
+
+        for path in album.tracks.map(\.url.path).sorted() {
+            let stamp = stamps[path]
+            mix("\(path)\t\(stamp?.modified ?? 0)\t\(stamp?.size ?? -1)\n")
+        }
+
+        let keys: [URLResourceKey] = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        for directory in Set(album.tracks.map { $0.url.deletingLastPathComponent().path }).sorted() {
+            let files = (try? FileManager.default.contentsOfDirectory(at: URL(filePath: directory), includingPropertiesForKeys: keys, options: .skipsHiddenFiles)) ?? []
+            for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                guard let values = try? file.resourceValues(forKeys: Set(keys)), values.contentType?.conforms(to: .image) == true else { continue }
+
+                mix("\(file.lastPathComponent)\t\(values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0)\t\(values.fileSize ?? 0)\n")
             }
         }
 
-        guard !missing.isEmpty else { return covers }
+        return String(hash, radix: 16)
+    }
 
-        for (album, cover) in zip(missing, generate(missing.map { $0.tracks[0].url })) {
-            covers[album.id] = cover
+    nonisolated static func coverKey(_ album: Album, _ stamps: [String: Cache.Stamp]) -> String {
+        album.id + mark + fingerprint(album, stamps)
+    }
+
+    nonisolated static func shown(_ stored: [String: Data], _ previous: [String: Data]) -> [String: Data] {
+        var covers = previous
+        for (key, data) in stored where !data.isEmpty {
+            covers[key.components(separatedBy: mark).first ?? key] = data
+        }
+        return covers
+    }
+
+    nonisolated static func covers(_ albums: [Album], _ stored: [String: Data], keys: [String: String], generate: ([URL]) -> [Data?] = Picture.generate) -> (byID: [String: Data], generated: [String: Data]) {
+        var covers: [String: Data] = [:]
+        var generated: [String: Data] = [:]
+        var missing: [(album: Album, key: String)] = []
+
+        for album in albums {
+            guard let key = keys[album.id] else { continue }
+
+            if let cover = stored[key] {
+                if !cover.isEmpty { covers[album.id] = cover }
+            } else {
+                missing.append((album, key))
+            }
         }
 
-        return covers
+        guard !missing.isEmpty else { return (covers, generated) }
+
+        let previous = Set(stored.keys.map { $0.components(separatedBy: mark).first ?? $0 })
+        let stale = missing.filter { previous.contains($0.album.id) }
+        Log.library.info("covers to make", metadata: [
+            "new": "\(missing.count - stale.count)", "changed": "\(stale.count)",
+            "albums": Log.list(stale.prefix(20).map { $0.album.id.replacingOccurrences(of: "\n", with: " / ") }),
+        ])
+
+        for (item, cover) in zip(missing, generate(missing.map { $0.album.tracks[0].url })) {
+            generated[item.key] = cover ?? Data()
+            if let cover, !cover.isEmpty { covers[item.album.id] = cover }
+        }
+
+        return (covers, generated)
     }
 
     private nonisolated static func read(_ url: URL, _ mp4: Bool) -> Track? {

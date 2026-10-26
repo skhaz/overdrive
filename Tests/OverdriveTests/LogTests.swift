@@ -101,7 +101,7 @@ struct LogTests {
         for name in try FileManager.default.contentsOfDirectory(atPath: root.path) where name.hasSuffix(".swift") && name != "Log.swift" {
             let source = try String(contentsOf: root.appending(path: name), encoding: .utf8)
             #expect(!source.contains("os_log("), "\(name): use Log")
-            #expect(!source.contains("print("), "\(name): use Log")
+            #expect(source.range(of: #"(?<![A-Za-z])print\("#, options: .regularExpression) == nil, "\(name): use Log")
             #expect(!source.contains("NSLog("), "\(name): use Log")
             #expect(!source.contains("Logger(subsystem"), "\(name): use Log")
             #expect(source.range(of: #"Log\.(info|debug|error|fault|write)\(""#, options: .regularExpression) == nil, "\(name): every log is structured: a fixed event and metadata")
@@ -162,9 +162,9 @@ final class Records: @unchecked Sendable {
             "Persist.swift": ["read failed", "decode failed", "write", "move", "remove"],
             "Cache.swift": ["query failed", "statement failed", "begin failed", "save failed", "open failed", "discard"],
             "Picture.swift": ["covers process failed", "covers"],
-            "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled"],
+            "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved"],
             "LastFM.swift": ["connected", "connect failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "settle", "now playing"],
-            "Player.swift": ["restore partial", "give up", "no gain", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue"],
+            "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up"],
             "AppleMusic.swift": ["blocked apple music"],
