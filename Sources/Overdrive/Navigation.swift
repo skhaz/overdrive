@@ -164,7 +164,17 @@ nonisolated struct Navigation {
     }
 
     mutating func show(_ path: [Route], leaving position: Position = Position()) {
-        visit(Place(page: place.page, path: path), leaving: position)
+        visit(Place(page: owner(of: path), path: path), leaving: position)
+    }
+
+    private func owner(of path: [Route]) -> Page {
+        if case .section = place.page { return place.page }
+
+        switch path.first {
+        case .album: return .section(.albums)
+        case .artist: return .section(.artists)
+        case nil: return place.page
+        }
     }
 
     @discardableResult

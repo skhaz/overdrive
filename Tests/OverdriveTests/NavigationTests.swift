@@ -346,6 +346,24 @@ struct NavigationTests {
         #expect(navigation.path(of: albums) == [.album(one)])
     }
 
+    @Test func anAlbumOrArtistFromAListOpensOnItsSection() {
+        let one = Self.album("one")
+        for page in [Page.queue, .liked, mix, .about] {
+            var navigation = Navigation(page: page)
+            navigation.push(.album(one))
+            #expect(navigation.place == Place(page: albums, path: [.album(one)]), "the sidebar must mark the page that shows")
+            navigation.push(.artist("Artist"))
+            #expect(navigation.place == Place(page: albums, path: [.album(one), .artist("Artist")]))
+            navigation.goBack()
+            navigation.goBack()
+            #expect(navigation.place == Place(page: page, path: []))
+
+            var artist = Navigation(page: page)
+            artist.push(.artist("Artist"))
+            #expect(artist.place == Place(page: .section(.artists), path: [.artist("Artist")]))
+        }
+    }
+
     @Test func searchingFromLikedOrAPlaylistOpensTheSongs() {
         for page in [Page.liked, mix] {
             var navigation = Navigation(page: page)
