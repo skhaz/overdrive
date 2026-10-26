@@ -1903,6 +1903,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             lyrics.flush()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            Log.lyrics.debug("flush", metadata: ["reason": "resign active"])
+            lyrics.flush()
+        }
         .onChange(of: player.current, initial: true) {
             if let current = player.current { lyrics.show(current) }
         }
@@ -1929,6 +1933,7 @@ struct ContentView: View {
         .onDisappear {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
+            lyrics.flush()
         }
         .onChange(of: library.scans, refreshed)
         .onChange(of: library.folders) {

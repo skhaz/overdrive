@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 @Observable
 final class Lyrics {
@@ -32,14 +33,21 @@ final class Lyrics {
 
     @ObservationIgnored var source: @Sendable (Track) async -> Result<String, Failure> = { await Lyrics.lookup($0) }
     @ObservationIgnored var refresher: @Sendable (Track) async -> Result<String, Failure> = { await Lyrics.forceLookup($0) }
-    @ObservationIgnored private var saver: Task<Void, Never>?
+    @ObservationIgnored private let keeper: Keeper
+    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var applied = 0
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
 
     var modified: Bool { text != original }
     private(set) var synced: [SyncedLine] = []
 
-    init(enabled: Bool = true) {
+    nonisolated static let drafts = Bundle.main.bundleIdentifier == "org.delduca.Overdrive"
+        ? URL.applicationSupportDirectory.appending(path: "Overdrive/Drafts.plist")
+        : FileManager.default.temporaryDirectory.appending(path: "OverdriveDrafts-\(ProcessInfo.processInfo.processIdentifier).plist")
+
+    init(enabled: Bool = true, drafts: URL = Lyrics.drafts) {
         self.enabled = enabled
+        keeper = Keeper(drafts: drafts)
     }
 
     func show(_ track: Track) {
@@ -75,19 +83,36 @@ final class Lyrics {
         text = value
         lookupTask?.cancel()
         loading = false
-        saver?.cancel()
         guard let track else { return }
-        saver = Task {
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled else { return }
-            save(value, for: track)
-        }
+
+        submit(value, for: track)
     }
 
     func flush() {
-        saver?.cancel()
-        saver = nil
         if let track, modified { save(text, for: track) }
+        keeper.wait()
+    }
+
+    func wait() {
+        keeper.wait()
+    }
+
+    private func submit(_ value: String, for track: Track) {
+        generation += 1
+        keeper.submit(value, id: generation, for: track) { [weak self] id, value, ok in
+            self?.stored(value, for: track, id: id, ok: ok)
+        }
+    }
+
+    private func stored(_ value: String, for track: Track, id: Int, ok: Bool) {
+        guard ok, id > applied, track == self.track else { return }
+
+        applied = id
+        saved = value
+        original = value
+        remote = false
+        loading = false
+        hasLocalLyrics = !value.isEmpty
     }
 
     func refresh() {
@@ -102,7 +127,7 @@ final class Lyrics {
             guard !Task.isCancelled, track == self.track else { return Log.lyrics.debug("refresh dropped", metadata: ["path": "\(track.url.path)"]) }
             if case .success(let lyrics) = result, !lyrics.isEmpty {
                 Persist.write(Data(lyrics.utf8), to: Self.key(track))
-                let local = !(Self.read(file(track)) ?? "").isEmpty
+                let local = !(Self.read(Self.file(track)) ?? "").isEmpty
                 Log.lyrics.info("refresh result", metadata: ["path": "\(track.url.path)", "characters": "\(lyrics.count)", "pending": "\(local)"])
                 if !local {
                     original = lyrics
@@ -155,26 +180,9 @@ final class Lyrics {
     }
 
     func save(_ value: String, for track: Track) {
-        let url = file(track)
-        Log.lyrics.info("save", metadata: ["path": "\(url.path)", "characters": "\(value.count)"])
-
-        if !value.isEmpty {
-            guard Persist.write(Data(value.utf8), to: url) else { return }
-
-            Persist.write(Data(value.utf8), to: Self.key(track))
-        } else {
-            if FileManager.default.fileExists(atPath: url.path) { Persist.remove(url) }
-
-            if FileManager.default.fileExists(atPath: Self.key(track).path) { Persist.remove(Self.key(track)) }
-        }
-
-        guard track == self.track else { return }
-
-        saved = value
-        original = value
-        remote = false
-        loading = false
-        hasLocalLyrics = !value.isEmpty
+        Log.lyrics.info("save", metadata: ["path": "\(Self.file(track).path)", "characters": "\(value.count)"])
+        generation += 1
+        stored(value, for: track, id: generation, ok: keeper.save(value, for: track))
     }
 
     func settle(_ action: @escaping () -> Void) {
@@ -191,8 +199,21 @@ final class Lyrics {
         self.track = track
         hasLocalLyrics = false
 
-        if let lyrics = Self.read(file(track)), !lyrics.isEmpty {
-            Log.lyrics.info("local", metadata: ["path": "\(file(track).path)"])
+        if let draft = keeper.draft(track) {
+            let disk = Self.read(Self.file(track)) ?? ""
+            Log.lyrics.warning("draft restored", metadata: ["path": "\(track.url.path)", "characters": "\(draft.count)"])
+            hasLocalLyrics = !disk.isEmpty
+            saved = disk
+            original = disk
+            text = draft
+            remote = false
+            loading = false
+            submit(draft, for: track)
+            return
+        }
+
+        if let lyrics = Self.read(Self.file(track)), !lyrics.isEmpty {
+            Log.lyrics.info("local", metadata: ["path": "\(Self.file(track).path)"])
             hasLocalLyrics = true
             saved = lyrics
             original = saved
@@ -250,7 +271,7 @@ final class Lyrics {
         }
     }
 
-    private func file(_ track: Track) -> URL {
+    nonisolated static func file(_ track: Track) -> URL {
         track.url.deletingPathExtension().appendingPathExtension(Self.kept)
     }
 
@@ -426,5 +447,84 @@ final class Lyrics {
 
         Log.lyrics.error("request gave up", metadata: ["url": "\(request.url?.absoluteString ?? "")", "failure": "\(failure)"])
         return .failure(failure)
+    }
+}
+
+nonisolated final class Keeper: Sendable {
+    private struct State {
+        var latest: [String: (id: Int, value: String)] = [:]
+        var drafts: [String: String]
+    }
+
+    private let queue = DispatchQueue(label: "Lyrics", qos: .userInitiated)
+    private let state: Mutex<State>
+    private let url: URL
+
+    init(drafts url: URL) {
+        self.url = url
+        state = Mutex(State(drafts: Persist.read([String: String].self, from: url) ?? [:]))
+    }
+
+    func draft(_ track: Track) -> String? {
+        state.withLock { $0.drafts[StoredPath.encode(track.url.path)] }
+    }
+
+    func submit(_ value: String, id: Int, for track: Track, done: @escaping @MainActor @Sendable (Int, String, Bool) -> Void) {
+        let key = track.url.path
+        let superseded = state.withLock { $0.latest.updateValue((id, value), forKey: key) != nil }
+        if superseded { Log.lyrics.trace("save superseded", metadata: ["path": "\(key)"]) }
+
+        queue.async {
+            guard let next = self.state.withLock({ $0.latest.removeValue(forKey: key) }) else { return }
+
+            let ok = self.store(next.value, track)
+            DispatchQueue.main.async { done(next.id, next.value, ok) }
+        }
+    }
+
+    func save(_ value: String, for track: Track) -> Bool {
+        queue.sync {
+            _ = state.withLock { $0.latest.removeValue(forKey: track.url.path) }
+            return store(value, track)
+        }
+    }
+
+    func wait() {
+        queue.sync {}
+    }
+
+    private func store(_ value: String, _ track: Track) -> Bool {
+        let file = Lyrics.file(track)
+        let cache = Lyrics.key(track)
+        let ok: Bool
+        if value.isEmpty {
+            ok = !FileManager.default.fileExists(atPath: file.path) || Persist.remove(file)
+            if ok, FileManager.default.fileExists(atPath: cache.path) { Persist.remove(cache) }
+        } else {
+            ok = Persist.write(Data(value.utf8), to: file)
+            if ok { Persist.write(Data(value.utf8), to: cache) }
+        }
+        Log.lyrics.log(level: ok ? .debug : .error, "stored", metadata: ["path": "\(file.path)", "characters": "\(value.count)", "result": "\(ok ? "ok" : "failed")"])
+
+        let key = StoredPath.encode(track.url.path)
+        let drafts: [String: String]? = state.withLock { state in
+            if ok {
+                guard state.drafts.removeValue(forKey: key) != nil else { return nil }
+            } else {
+                guard state.drafts[key] != value else { return nil }
+                state.drafts[key] = value
+            }
+            return state.drafts
+        }
+        guard let drafts else { return ok }
+
+        if drafts.isEmpty {
+            Persist.remove(url)
+        } else if let data = Persist.encode(drafts, for: url), Persist.write(data, to: url) {
+            if !ok { Log.lyrics.warning("draft kept", metadata: ["path": "\(file.path)", "drafts": "\(url.path)"]) }
+        } else {
+            Log.lyrics.error("draft failed", metadata: ["path": "\(file.path)", "drafts": "\(url.path)"])
+        }
+        return ok
     }
 }

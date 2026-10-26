@@ -22,6 +22,13 @@ struct ViewStructureTests {
         #expect(!source.contains(".id(library.version)"), "a scan must not rebuild the screens")
     }
 
+    @Test func theLyricsSaveWhenTheAppLosesTheFocusOrTheWindowCloses() throws {
+        let source = try source()
+
+        #expect(source.contains("NSApplication.didResignActiveNotification)) { _ in\n            Log.lyrics.debug(\"flush\", metadata: [\"reason\": \"resign active\"])\n            lyrics.flush()"))
+        #expect(source.contains("            monitor = nil\n            lyrics.flush()\n        }"), "closing the window then quitting at once lost the last edit")
+    }
+
     @Test func theLyricsHaveNoSaveButton() throws {
         let panel = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/LyricsPanel.swift"), encoding: .utf8)
         for text in [try source(), panel] {

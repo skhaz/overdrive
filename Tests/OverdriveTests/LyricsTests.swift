@@ -18,7 +18,7 @@ import Testing
     }
 
     private func lyrics(_ folder: URL) -> Lyrics {
-        Lyrics()
+        Lyrics(drafts: folder.appending(path: "Drafts.plist"))
     }
 
     private func read(_ url: URL) -> String? {
@@ -93,6 +93,75 @@ import Testing
 
         #expect(read(folder.appending(path: "Song.lyrics")) == "[00:02.00]Changed")
         #expect(read(Lyrics.key(track)) == "[00:02.00]Changed")
+    }
+
+    @Test func everyEditIsOnTheDiskAtOnce() throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        let lyrics = lyrics(folder)
+        lyrics.show(track)
+
+        lyrics.edit("a")
+        lyrics.wait()
+
+        #expect(read(folder.appending(path: "Song.lyrics")) == "a", "a crash right after an edit must not lose it: there is no delay before the write")
+        #expect(read(Lyrics.key(track)) == "a")
+    }
+
+    @Test func fastEditsEndWithTheLastText() async throws {
+        let folder = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+        let track = track(folder)
+        let lyrics = lyrics(folder)
+        lyrics.show(track)
+
+        var text = ""
+        for index in 0..<200 {
+            text += "\(index % 10)"
+            lyrics.edit(text)
+        }
+        lyrics.wait()
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(read(folder.appending(path: "Song.lyrics")) == text)
+        #expect(lyrics.saved == text, "a coalesced write must report the text it wrote")
+        #expect(!lyrics.modified)
+    }
+
+    @Test func aFailedWriteKeepsADraftUntilTheSongCanBeWritten() async throws {
+        let folder = try folder()
+        let music = folder.appending(path: "Music")
+        try FileManager.default.createDirectory(at: music, withIntermediateDirectories: true)
+        let drafts = folder.appending(path: "Drafts.plist")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: music.path)
+            Persist.flush()
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let track = track(music)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: music.path)
+
+        let first = Lyrics(drafts: drafts)
+        first.show(track)
+        first.edit("kept")
+        first.flush()
+
+        #expect(read(music.appending(path: "Song.lyrics")) == nil)
+        #expect(first.modified, "a failed write must not look saved")
+        #expect(Persist.read([String: String].self, from: drafts)?[StoredPath.encode(track.url.path)] == "kept", "a failed write must keep the edit in a draft")
+
+        let second = Lyrics(drafts: drafts)
+        second.show(track)
+        #expect(second.text == "kept", "the draft comes back on the next launch")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: music.path)
+        second.flush()
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(read(music.appending(path: "Song.lyrics")) == "kept")
+        #expect(!FileManager.default.fileExists(atPath: drafts.path), "a draft leaves once the song file has it")
+        #expect(!second.modified)
     }
 
     @Test func flushSavesAtOnce() throws {
