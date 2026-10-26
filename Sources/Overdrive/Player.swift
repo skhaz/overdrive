@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import MediaPlayer
+import Synchronization
 
 @Observable
 final class Player {
@@ -163,10 +164,17 @@ final class Player {
             Log.player.warning("item error log", metadata: ["domain": "\(event?.errorDomain ?? "")", "code": "\(event?.errorStatusCode ?? 0)", "comment": "\(event?.errorComment ?? "")"])
         }
 
+        let last = Mutex("")
         control = player.observe(\.timeControlStatus, options: [.new]) { player, _ in
-            let status = player.timeControlStatus
+            let status = player.timeControlStatus == .playing ? "playing" : player.timeControlStatus == .paused ? "paused" : "waiting"
             let reason = player.reasonForWaitingToPlay?.rawValue ?? ""
-            Log.player.info("time control", metadata: ["status": "\(status == .playing ? "playing" : status == .paused ? "paused" : "waiting")", "reason": "\(reason)"])
+            let changed = last.withLock { value in
+                defer { value = status + reason }
+                return value != status + reason
+            }
+            guard changed else { return }
+
+            Log.player.info("time control", metadata: ["status": "\(status)", "reason": "\(reason)"])
         }
         output = Output()
 

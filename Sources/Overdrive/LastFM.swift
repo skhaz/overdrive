@@ -56,7 +56,7 @@ final class LastFM {
 
         if configuration.monitor {
             monitor.pathUpdateHandler = { [weak self] path in
-                Log.lastFM.debug("network", metadata: ["status": "\(path.status)", "expensive": "\(path.isExpensive)", "interfaces": Log.list(path.availableInterfaces.map(\.name))])
+                Log.lastFM.debug("network", metadata: ["status": "\(path.status)", "expensive": "\(path.isExpensive)", "interfaces": Log.list(Set(path.availableInterfaces.map(\.name)).sorted())])
                 guard path.status == .satisfied else { return }
 
                 Task { @MainActor in await self?.flush() }

@@ -47,4 +47,9 @@ struct LogGapTests {
         }
         #expect(!(try source("YouTube.swift")).contains("\"url\": \"\\(webView.url?.absoluteString"), "the full page URL never goes to the log")
     }
+
+    @Test func thePlaybackStateLogsOnlyChanges() throws {
+        let player = try source("Player.swift")
+        #expect(player.contains("guard changed else { return }\n\n            Log.player.info(\"time control\""), "AVFoundation repeats the same state; only a change goes to the log")
+    }
 }
