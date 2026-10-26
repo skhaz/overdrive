@@ -248,6 +248,22 @@ final class Library {
         add(panel.urls)
     }
 
+    nonisolated static func attributes(_ url: URL, _ keys: Set<URLResourceKey>, _ misses: Failures) -> URLResourceValues? {
+        do {
+            return try url.resourceValues(forKeys: keys)
+        } catch {
+            if playable.contains(url.pathExtension.lowercased()) { misses.add(url, error) }
+            return nil
+        }
+    }
+
+    nonisolated static func report(_ misses: Failures) {
+        let items = misses.items
+        guard !items.isEmpty else { return }
+
+        Log.library.warning("unreadable attributes", metadata: ["count": "\(items.count)", "errors": Log.list(items.prefix(20))])
+    }
+
     nonisolated static func real(_ url: URL) -> String {
         url.path.withCString { path in realpath(path, nil).map { defer { free($0) }; return String(cString: $0) } } ?? url.path
     }
@@ -341,14 +357,15 @@ final class Library {
 
             let known = stamps[number]
             var seen = 0
-            var failed = false
-            guard let enumerator = FileManager.default.enumerator(at: URL(filePath: cache.root), includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, _ in
-                failed = true
+            let failures = Failures()
+            let misses = Failures()
+            guard let enumerator = FileManager.default.enumerator(at: URL(filePath: cache.root), includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { url, error in
+                failures.add(url, error)
                 return true
             }) else { return "unreadable \(folder.path)" }
 
             while let url = enumerator.nextObject() as? URL {
-                guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+                guard let values = Library.attributes(url, keys, misses), let type = values.contentType, types.contains(where: type.conforms) else { continue }
 
                 let path = cache.relative(url)
                 let modified = values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
@@ -361,7 +378,11 @@ final class Library {
                 seen += 1
             }
 
-            if failed { return "walk error in \(folder.path)" }
+            Library.report(misses)
+            if !failures.items.isEmpty {
+                Log.library.warning("walk error", metadata: ["folder": "\(folder.path)", "count": "\(failures.items.count)", "errors": Log.list(failures.items.prefix(20))])
+                return "walk error in \(folder.path)"
+            }
             if seen != known.count { return "gone in \(folder.path)" }
         }
 
@@ -764,6 +785,7 @@ final class Library {
         var pending: [(slot: Int, url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int, old: Cache.Entry?)] = []
         var removed: [[String]] = []
         var relabel = Array(repeating: [Cache.Change](), count: folders.count)
+        let misses = Failures()
 
         for (number, folder) in folders.enumerated() {
             let cache = caches[number]
@@ -779,7 +801,7 @@ final class Library {
 
             if let enumerator {
                 while let url = enumerator.nextObject() as? URL {
-                    guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+                    guard let values = Library.attributes(url, keys, misses), let type = values.contentType, types.contains(where: type.conforms) else { continue }
 
                     let path = cache?.relative(url) ?? url.path
                     let modified = values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
@@ -810,6 +832,7 @@ final class Library {
         }
 
         Log.library.info("walk", metadata: ["files": "\(slots.count)", "read": "\(pending.count)", "removed": "\(removed.reduce(0) { $0 + $1.count })", "paths": Log.list(removed.lazy.flatMap(\.self).prefix(20))])
+        Library.report(misses)
         if !relabel.allSatisfy(\.isEmpty) { Log.library.info("album ids moved", metadata: ["songs": "\(relabel.reduce(0) { $0 + $1.count })"]) }
         if !pending.isEmpty || removed.contains(where: { !$0.isEmpty }) || relabel.contains(where: { !$0.isEmpty }) {
             for (number, cache) in caches.enumerated() where !removed[number].isEmpty || !relabel[number].isEmpty {
@@ -918,6 +941,7 @@ final class Library {
         let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
         let caches = folders.map { Cache($0) }
         var files: [(url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int)] = []
+        let misses = Failures()
 
         for (number, folder) in folders.enumerated() {
             let cache = caches[number]
@@ -933,7 +957,7 @@ final class Library {
             }
 
             while let url = enumerator.nextObject() as? URL {
-                guard let values = try? url.resourceValues(forKeys: keys), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+                guard let values = Library.attributes(url, keys, misses), let type = values.contentType, types.contains(where: type.conforms) else { continue }
 
                 files.append((url, type.conforms(to: .mpeg4Audio), number, cache?.relative(url) ?? url.path, values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0, values.fileSize ?? 0))
             }
@@ -944,6 +968,7 @@ final class Library {
             }
         }
 
+        Library.report(misses)
         nonisolated(unsafe) let read = UnsafeMutableBufferPointer<Track?>.allocate(capacity: files.count)
         read.initialize(repeating: nil)
         defer { read.deinitialize().deallocate() }

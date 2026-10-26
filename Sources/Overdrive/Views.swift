@@ -312,6 +312,7 @@ struct FileMenu: View {
 func copy(_ values: [String]) {
     var seen: Set<String> = []
     let text = values.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: "\n")
+    Log.app.info("copy", metadata: ["values": "\(values.count)", "characters": "\(text.count)"])
     guard !text.isEmpty else { return }
 
     NSPasteboard.general.clearContents()
@@ -352,7 +353,9 @@ struct LyricsView: View {
 
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
-    @State private var editing = false
+    @State private var editing = false {
+        didSet { if editing != oldValue { Log.lyrics.info("editing", metadata: ["on": "\(editing)"]) } }
+    }
     @FocusState private var typing: Bool
 
     var body: some View {
@@ -1809,7 +1812,9 @@ struct ContentView: View {
             case .album(let album): route = .album(album)
             case .artist(let name): route = .artist(name)
             case .playing(let track):
-                guard let album = library.album(track.albumID) else { return }
+                guard let album = library.album(track.albumID) else {
+                    return Log.navigation.warning("played without album", metadata: ["album": "\(track.albumID)", "path": "\(track.url.path)"])
+                }
 
                 if case .section = page, path.last != .album(album) { tracker.target = track.id }
                 lyrics.settle { navigation.played(album, leaving: tracker.position) }
@@ -1834,10 +1839,10 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatLyrics)) { _ in
             player.lyrics = true
-            if let current = player.current {
-                lyrics.show(current)
-                lyrics.floating = true
-            }
+            guard let current = player.current else { return Log.lyrics.debug("float ignored", metadata: ["reason": "no song"]) }
+
+            lyrics.show(current)
+            lyrics.floating = true
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             lyrics.flush()

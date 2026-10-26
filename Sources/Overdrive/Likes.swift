@@ -84,9 +84,7 @@ final class Likes {
         }
 
         let base = folderPath
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(paths.map { StoredPath.encode($0, relativeTo: base) }) else { return }
+        guard let data = Persist.encode(paths.map { StoredPath.encode($0, relativeTo: base) }, for: file()) else { return }
 
         Persist.write(data, to: file())
     }

@@ -148,8 +148,6 @@ final class Loudness {
     }
 
     private func save() {
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
         var stored = Array(repeating: [String: Entry](), count: roots.count)
 
         let prefixes = roots.map { $0.real + "/" }
@@ -166,9 +164,10 @@ final class Loudness {
         }
 
         for index in roots.indices where !stored[index].isEmpty {
-            guard let data = try? encoder.encode(stored[index]) else { continue }
+            let file = roots[index].folder.appending(path: Self.name)
+            guard let data = Persist.encode(stored[index], for: file) else { continue }
 
-            Persist.write(data, to: roots[index].folder.appending(path: Self.name))
+            Persist.write(data, to: file)
         }
     }
 
@@ -196,8 +195,17 @@ final class Loudness {
     }
 
     private nonisolated static func file(_ url: URL) -> File? {
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
-              let size = values.fileSize, let modified = values.contentModificationDate else { return nil }
+        let values: URLResourceValues
+        do {
+            values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        } catch {
+            Log.loudness.warning("file unreadable", metadata: ["path": "\(url.path)", "error": "\(error)"])
+            return nil
+        }
+        guard let size = values.fileSize, let modified = values.contentModificationDate else {
+            Log.loudness.warning("file unreadable", metadata: ["path": "\(url.path)", "error": "no size or date"])
+            return nil
+        }
 
         return File(url: url, size: size, modified: modified.timeIntervalSinceReferenceDate)
     }
@@ -252,7 +260,10 @@ final class Loudness {
         let channels = min(Int(format.channelCount), 2)
         let rate = format.sampleRate
         let step = Int(rate / 10)
-        guard step > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 65536), let data = buffer.floatChannelData else { return nil }
+        guard step > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 65536), let data = buffer.floatChannelData else {
+            Log.loudness.error("buffer failed", metadata: ["path": "\(file.url.path)", "rate": "\(rate)", "channels": "\(format.channelCount)"])
+            return nil
+        }
 
         var chains = (0..<channels).map { _ in filters(rate) }
         var quarters: [Double] = []

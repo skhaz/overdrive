@@ -59,9 +59,36 @@ nonisolated enum Persist {
         .string(done ? "ok" : String(cString: strerror(errno)))
     }
 
+    static func durable(_ file: Int32, full: (Int32) -> Int32 = { fcntl($0, F_FULLFSYNC) }) -> Bool {
+        if full(file) == 0 { return true }
+        guard errno == ENOTSUP || errno == EINVAL || errno == ENOTTY else { return false }
+
+        Log.persist.debug("full sync unsupported", metadata: ["error": "\(String(cString: strerror(errno)))"])
+        return fsync(file) == 0
+    }
+
+    static func encode<T: Encodable>(_ value: T, for url: URL) -> Data? {
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        do {
+            return try encoder.encode(value)
+        } catch {
+            Log.persist.error("encode failed", metadata: ["path": "\(url.path)", "error": "\(error)"])
+            return nil
+        }
+    }
+
+    private static func folder(_ directory: URL) {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            Log.persist.error("folder failed", metadata: ["path": "\(directory.path)", "error": "\(error)"])
+        }
+    }
+
     private static func store(_ data: Data, _ url: URL) -> Bool {
         let directory = url.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        folder(directory)
 
         let temporary = url.appendingPathExtension("tmp")
         let file = open(temporary.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
@@ -80,7 +107,7 @@ nonisolated enum Persist {
             return true
         }
 
-        let synced = fcntl(file, F_FULLFSYNC) == 0
+        let synced = durable(file)
         close(file)
 
         guard complete, synced, rename(temporary.path, url.path) == 0 else {
@@ -94,7 +121,7 @@ nonisolated enum Persist {
 
     private static func relocate(_ source: URL, _ destination: URL) -> Bool {
         let directory = destination.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        folder(directory)
 
         let moved = source.withUnsafeFileSystemRepresentation { from in
             destination.withUnsafeFileSystemRepresentation { to in

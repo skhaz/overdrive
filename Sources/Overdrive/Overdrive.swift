@@ -22,6 +22,13 @@ final class Delegate: NSObject, NSApplicationDelegate {
                 Log.app.info("workspace", metadata: ["event": "\(notification.name.rawValue)", "volume": "\((notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL)?.path ?? "")"])
             }
         }
+        for (name, event) in [(NSWindow.didBecomeKeyNotification, "key"), (NSWindow.willCloseNotification, "close"), (NSWindow.didMiniaturizeNotification, "minimize"), (NSWindow.didDeminiaturizeNotification, "restore")] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { notification in
+                guard let window = notification.object as? NSWindow, window.identifier?.rawValue.hasPrefix("main") == true else { return }
+
+                Log.app.info("window", metadata: ["event": "\(event)"])
+            }
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -43,6 +50,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
         if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.isVisible }) {
             window.makeKeyAndOrderFront(nil)
         } else {
+            Log.app.info("window", metadata: ["event": "open", "source": "find"])
             open?(id: "main")
         }
         DispatchQueue.main.async { NotificationCenter.default.post(name: .find, object: nil) }
@@ -53,7 +61,10 @@ final class Delegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        if !hasVisibleWindows { open?(id: "main") }
+        if !hasVisibleWindows {
+            Log.app.info("window", metadata: ["event": "open", "source": "dock"])
+            open?(id: "main")
+        }
         return true
     }
 }

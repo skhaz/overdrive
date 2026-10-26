@@ -59,8 +59,13 @@ final class Player {
     }
     var volume = UserDefaults.standard.object(forKey: "volume") as? Float ?? 1 {
         didSet {
-            Log.player.debug("volume", metadata: ["value": "\(volume)"])
             player.volume = volume
+            volumeLog?.cancel()
+            volumeLog = Task { [volume] in
+                guard (try? await Task.sleep(for: .milliseconds(500))) != nil else { return }
+
+                Log.player.info("volume", metadata: ["value": "\(volume)"])
+            }
             UserDefaults.standard.set(volume, forKey: "volume")
         }
     }
@@ -109,6 +114,10 @@ final class Player {
     @ObservationIgnored private var upcoming: AVPlayerItem?
     @ObservationIgnored private var saving: Task<Void, Never>?
     @ObservationIgnored private var origin: [Int] = []
+    @ObservationIgnored private var control: NSKeyValueObservation?
+    @ObservationIgnored private var output: Output?
+    @ObservationIgnored private var volumeLog: Task<Void, Never>?
+    @ObservationIgnored private var announcedState = ""
     nonisolated static let delay = Duration.seconds(1)
 
     init(lastFM: LastFM, loudness: Loudness) {
@@ -130,13 +139,48 @@ final class Player {
             MainActor.assumeIsolated { self?.finished(item) }
         }
 
+        NotificationCenter.default.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] notification in
+            let item = notification.object as? AVPlayerItem
+            let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey].map { "\($0)" } ?? "unknown"
+            MainActor.assumeIsolated {
+                guard let self, let item, item === self.item else { return }
+
+                Log.player.error("play to end failed", metadata: ["path": "\(self.current?.url.path ?? "")", "error": "\(error)"])
+                self.failed(ObjectIdentifier(item))
+            }
+        }
+
+        NotificationCenter.default.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+
+                Log.player.warning("stalled", metadata: ["path": "\(self.current?.url.path ?? "")", "position": "\(self.position)"])
+            }
+        }
+
+        NotificationCenter.default.addObserver(forName: AVPlayerItem.newErrorLogEntryNotification, object: nil, queue: .main) { notification in
+            let event = (notification.object as? AVPlayerItem)?.errorLog()?.events.last
+            Log.player.warning("item error log", metadata: ["domain": "\(event?.errorDomain ?? "")", "code": "\(event?.errorStatusCode ?? 0)", "comment": "\(event?.errorComment ?? "")"])
+        }
+
+        control = player.observe(\.timeControlStatus, options: [.new]) { player, _ in
+            let status = player.timeControlStatus
+            let reason = player.reasonForWaitingToPlay?.rawValue ?? ""
+            Log.player.info("time control", metadata: ["status": "\(status == .playing ? "playing" : status == .paused ? "paused" : "waiting")", "reason": "\(reason)"])
+        }
+        output = Output()
+
         let center = MPRemoteCommandCenter.shared()
         Player.handle(center.playCommand) { [weak self] _ in self?.perform(.play) }
         Player.handle(center.pauseCommand) { [weak self] _ in self?.perform(.pause) }
         Player.handle(center.togglePlayPauseCommand) { [weak self] _ in self?.perform(.toggle) }
         Player.handle(center.nextTrackCommand) { [weak self] _ in self?.perform(.next) }
         Player.handle(center.previousTrackCommand) { [weak self] _ in self?.perform(.previous) }
-        Player.handle(center.changePlaybackPositionCommand) { [weak self] in if self?.intercept == nil { self?.seek($0) } }
+        Player.handle(center.changePlaybackPositionCommand) { [weak self] in
+            guard self?.intercept == nil else { return Log.player.debug("remote ignored", metadata: ["command": "seek", "reason": "video"]) }
+
+            self?.seek($0)
+        }
     }
 
     private nonisolated static func handle(_ command: MPRemoteCommand, _ action: @escaping @MainActor @Sendable (Double) -> Void) {
@@ -422,8 +466,9 @@ final class Player {
         Task {
             if session.position > 0 {
                 seeks += 1
-                await player.seek(to: CMTime(seconds: session.position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                let finished = await player.seek(to: CMTime(seconds: session.position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
                 seeks -= 1
+                Log.player.log(level: finished ? .debug : .warning, "seek done", metadata: ["seconds": "\(session.position)", "finished": "\(finished)", "restore": "true"])
                 guard item === self.item else { return }
 
                 position = session.position
@@ -453,8 +498,9 @@ final class Player {
     }
 
     func resume() {
-        Log.player.info("resume", metadata: ["path": "\(current?.url.path ?? "")"])
-        guard let track = current else { return }
+        guard let track = current else { return Log.player.debug("resume ignored", metadata: ["reason": "no song"]) }
+
+        Log.player.info("resume", metadata: ["path": "\(track.url.path)"])
         guard item != nil else { return load() }
 
         player.play()
@@ -501,8 +547,9 @@ final class Player {
         update()
 
         Task {
-            await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            let finished = await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
             seeks -= 1
+            Log.player.log(level: finished ? .debug : .warning, "seek done", metadata: ["seconds": "\(seconds)", "finished": "\(finished)"])
         }
     }
 
@@ -621,7 +668,7 @@ final class Player {
     }
 
     private func begin() {
-        guard let track = current, let item else { return }
+        guard let track = current, let item else { return Log.player.debug("begin ignored", metadata: ["song": "\(current != nil)", "item": "\(self.item != nil)"]) }
 
         Log.player.info("begin", metadata: ["path": "\(track.url.path)", "playing": "\(playing)", "upcoming": "\(upcoming != nil)"])
         played = 0
@@ -657,9 +704,7 @@ final class Player {
                               shuffle: shuffle, repeatMode: repeatMode.rawValue, playing: playing, played: played,
                               started: started.timeIntervalSince1970, scrobbled: scrobbled,
                               page: view.page, path: view.path, query: view.query, added: added.indices.filter { added[$0] }, lyrics: lyrics)
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(session) else { return }
+        guard let data = Persist.encode(session, for: Player.session) else { return }
 
         Persist.write(data, to: Player.session)
     }
@@ -721,6 +766,11 @@ final class Player {
 
     private func update() {
         let center = MPNowPlayingInfoCenter.default()
+        let state = current.map { "\($0.url.path)|\(playing)" } ?? ""
+        if state != announcedState {
+            announcedState = state
+            Log.player.trace("now playing", metadata: ["path": "\(current?.url.path ?? "")", "state": "\(current == nil ? "stopped" : playing ? "playing" : "paused")"])
+        }
 
         guard let track = current else {
             center.nowPlayingInfo = nil

@@ -92,7 +92,7 @@ final class Lyrics {
 
     func refresh() {
         flush()
-        guard let track = self.track else { return }
+        guard let track = self.track else { return Log.lyrics.debug("refresh ignored", metadata: ["reason": "no song"]) }
 
         Log.lyrics.info("refresh", metadata: ["path": "\(track.url.path)"])
         loading = true
@@ -178,7 +178,7 @@ final class Lyrics {
     }
 
     func persist() {
-        guard let track else { return }
+        guard let track else { return Log.lyrics.debug("persist ignored", metadata: ["reason": "no song"]) }
         save(text, for: track)
     }
 

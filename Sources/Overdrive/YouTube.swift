@@ -193,6 +193,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
             do {
                 id = try await search(track)
             } catch {
+                Log.youTube.warning("search failed", metadata: ["artist": "\(track.artist)", "title": "\(track.title)", "error": "\(error)"])
                 return stop(error.localizedDescription)
             }
         }
@@ -207,9 +208,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
 
         if videos[name] != id {
             videos[name] = id
-            let encoder = PropertyListEncoder()
-            encoder.outputFormat = .binary
-            if let data = try? encoder.encode(videos) { Persist.write(data, to: configuration.store) }
+            if let data = Persist.encode(videos, for: configuration.store) { Persist.write(data, to: configuration.store) }
         }
 
         player.pause()
@@ -234,13 +233,18 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         } catch {
             guard request == current else { return }
 
+            Log.youTube.warning("play failed", metadata: ["id": "\(id)", "artist": "\(track.artist)", "title": "\(track.title)", "error": "\(error)"])
             player.intercept = nil
             return stop(error.localizedDescription)
         }
 
         guard request == current else {
             Log.youTube.debug("superseded", metadata: ["stage": "play", "id": "\(id)"])
-            _ = try? await web.evaluateJavaScript("document.getElementById('movie_player').stopVideo()")
+            do {
+                _ = try await web.evaluateJavaScript("document.getElementById('movie_player').stopVideo()")
+            } catch {
+                Log.youTube.debug("stop video failed", metadata: ["error": "\(error)"])
+            }
             return
         }
 
@@ -278,7 +282,9 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         Log.youTube.info("sign out")
         let store = WKWebsiteDataStore.default()
         let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
-        await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records.filter { $0.displayName.contains("youtube") || $0.displayName.contains("google") })
+        let removed = records.filter { $0.displayName.contains("youtube") || $0.displayName.contains("google") }
+        await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: removed)
+        Log.youTube.info("signed out", metadata: ["records": "\(removed.count)"])
         logged = false
         if panel.isVisible { panel.close() }
         load()
@@ -337,7 +343,7 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         let youTube = webView.url?.host() == YouTube.account.host()
         let path = webView.url?.path() ?? ""
-        Log.youTube.info("page finished", metadata: ["url": "\(webView.url?.absoluteString ?? "")", "mode": "\(mode)"])
+        Log.youTube.info("page finished", metadata: ["url": "\(YouTube.redact(webView.url))", "mode": "\(mode)"])
 
         if mode == .login {
             guard youTube else { return }
@@ -437,6 +443,16 @@ final class YouTube: NSObject, WKNavigationDelegate, NSWindowDelegate {
         }
 
         return nil
+    }
+
+    nonisolated static func redact(_ url: URL?) -> String {
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return "" }
+
+        components.query = nil
+        components.fragment = nil
+        components.user = nil
+        components.password = nil
+        return components.string ?? ""
     }
 
     static func results(_ json: Any) -> [(id: String, title: String, channel: String)] {

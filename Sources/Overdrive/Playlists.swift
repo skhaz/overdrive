@@ -152,9 +152,7 @@ final class Playlists {
         }
 
         let base = folderPath
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(list.map { StoredPath.encode($0, relativeTo: base) }) else { return }
+        guard let data = Persist.encode(list.map { StoredPath.encode($0, relativeTo: base) }, for: file(name)) else { return }
 
         Persist.write(data, to: file(name))
     }

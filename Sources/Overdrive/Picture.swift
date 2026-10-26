@@ -95,8 +95,12 @@ nonisolated enum Picture {
         _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
 
         DispatchQueue.global().async {
-            try? input.fileHandleForWriting.write(contentsOf: paths)
-            try? input.fileHandleForWriting.close()
+            do {
+                try input.fileHandleForWriting.write(contentsOf: paths)
+                try input.fileHandleForWriting.close()
+            } catch {
+                Log.cache.error("covers input failed", metadata: ["albums": "\(urls.count)", "error": "\(error)"])
+            }
         }
 
         let data = output.fileHandleForReading.readDataToEndOfFile()

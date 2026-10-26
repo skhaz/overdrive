@@ -56,6 +56,7 @@ final class LastFM {
 
         if configuration.monitor {
             monitor.pathUpdateHandler = { [weak self] path in
+                Log.lastFM.debug("network", metadata: ["status": "\(path.status)", "expensive": "\(path.isExpensive)", "interfaces": Log.list(path.availableInterfaces.map(\.name))])
                 guard path.status == .satisfied else { return }
 
                 Task { @MainActor in await self?.flush() }
@@ -77,9 +78,7 @@ final class LastFM {
     }
 
     private func persist() {
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(Queue(pending: pending, rejected: rejected)) else { return }
+        guard let data = Persist.encode(Queue(pending: pending, rejected: rejected), for: configuration.store) else { return }
 
         Persist.write(data, to: configuration.store)
     }
@@ -115,9 +114,7 @@ final class LastFM {
     }
 
     private func save() {
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(["session": session, "user": user]) else { return }
+        guard let data = Persist.encode(["session": session, "user": user], for: configuration.credentials) else { return }
 
         Persist.write(data, to: configuration.credentials)
     }
@@ -286,8 +283,11 @@ final class LastFM {
         var pages = 1
 
         repeat {
-            guard let json = try? await call("user.getRecentTracks", ["user": user, "from": String(low), "to": String(high + 1), "limit": "200", "page": String(page)]),
-                  let recent = json["recenttracks"] as? [String: Any] else { return nil }
+            guard let json = try? await call("user.getRecentTracks", ["user": user, "from": String(low), "to": String(high + 1), "limit": "200", "page": String(page)]) else { return nil }
+            guard let recent = json["recenttracks"] as? [String: Any] else {
+                Log.lastFM.debug("history invalid", metadata: ["keys": Log.list(json.keys.sorted())])
+                return nil
+            }
 
             let tracks = recent["track"] as? [[String: Any]] ?? (recent["track"] as? [String: Any]).map { [$0] } ?? []
 
