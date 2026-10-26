@@ -97,6 +97,7 @@ final class Player {
     var duration: Double { current?.duration ?? 0 }
 
     @ObservationIgnored private let player = AVQueuePlayer()
+    @ObservationIgnored let spectrum = Spectrum()
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let loudness: Loudness
     @ObservationIgnored private var order: [Track] = []
@@ -609,37 +610,41 @@ final class Player {
     }
 
     private func adjust(_ item: AVPlayerItem, _ track: Track, wait: Bool = true) async {
-        guard normalize else {
-            item.audioMix = nil
-            return
-        }
+        guard normalize else { return await mix(item, track, gain: nil) }
 
         let album = !shuffle
 
         guard wait || loudness.gain(track, album: album) != nil else {
             Log.player.debug("gain deferred", metadata: ["path": "\(track.url.path)", "album": "\(album)"])
             Task { await loudness.measure(track, album: album) }
-            return
+            return await mix(item, track, gain: nil)
         }
 
         await loudness.measure(track, album: album)
         guard normalize else { return Log.player.debug("no gain", metadata: ["path": "\(track.url.path)", "reason": "disabled"]) }
-        guard let gain = loudness.gain(track, album: album) else { return Log.player.debug("no gain", metadata: ["path": "\(track.url.path)", "reason": "not measured"]) }
-
-        let audio: AVAssetTrack
-        do {
-            guard let first = try await item.asset.loadTracks(withMediaType: .audio).first else {
-                return Log.player.warning("no gain", metadata: ["path": "\(track.url.path)", "reason": "no audio track"])
-            }
-            audio = first
-        } catch {
-            return Log.player.warning("no gain", metadata: ["path": "\(track.url.path)", "reason": "tracks failed", "error": "\(error)"])
+        guard let gain = loudness.gain(track, album: album) else {
+            Log.player.debug("no gain", metadata: ["path": "\(track.url.path)", "reason": "not measured"])
+            return await mix(item, track, gain: nil)
         }
 
         Log.player.debug("gain", metadata: ["path": "\(track.url.path)", "gain": "\(gain)", "album": "\(album)"])
+        await mix(item, track, gain: gain)
+    }
+
+    private func mix(_ item: AVPlayerItem, _ track: Track, gain: Float?) async {
+        let audio: AVAssetTrack
+        do {
+            guard let first = try await item.asset.loadTracks(withMediaType: .audio).first else {
+                return Log.player.warning("no mix", metadata: ["path": "\(track.url.path)", "reason": "no audio track"])
+            }
+            audio = first
+        } catch {
+            return Log.player.warning("no mix", metadata: ["path": "\(track.url.path)", "reason": "tracks failed", "error": "\(error)"])
+        }
 
         let parameters = AVMutableAudioMixInputParameters(track: audio)
-        parameters.setVolume(gain, at: .zero)
+        if let gain { parameters.setVolume(gain, at: .zero) }
+        parameters.audioTapProcessor = spectrum.tap()
         let mix = AVMutableAudioMix()
         mix.inputParameters = [parameters]
         item.audioMix = mix

@@ -1537,6 +1537,53 @@ struct LikedView: View {
     }
 }
 
+struct SpectrumBar: View {
+    static let width: CGFloat = 4
+    static let gap: CGFloat = 2
+    static let height: CGFloat = 26
+
+    @Environment(Player.self) private var player
+    @State private var analyzer = Analyzer()
+    @State private var fading = false
+
+    static func count(_ width: CGFloat) -> Int {
+        max(Int((width + gap) / (Self.width + gap)), 1)
+    }
+
+    static func draw(_ levels: [Float], in context: inout GraphicsContext, size: CGSize) {
+        let step = (size.width + gap) / CGFloat(max(levels.count, 1))
+        let width = step - gap
+        var path = Path()
+        for (index, level) in levels.enumerated() {
+            let height = max(CGFloat(level) * size.height, width)
+            path.addRoundedRect(in: CGRect(x: CGFloat(index) * step, y: size.height - height, width: width, height: height), cornerSize: CGSize(width: width / 2, height: width / 2))
+        }
+        context.fill(path, with: .linearGradient(Gradient(colors: [.accentColor, .accentColor.opacity(0.35)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+    }
+
+    var body: some View {
+        let active = player.playing && !player.isMuted
+
+        TimelineView(.animation(paused: !active && !fading)) { timeline in
+            Canvas { context, size in
+                let levels = analyzer.update(player.spectrum, count: Self.count(size.width), active: active, time: timeline.date.timeIntervalSinceReferenceDate)
+                Self.draw(levels, in: &context, size: size)
+            }
+        }
+        .frame(height: Self.height)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .accessibilityHidden(true)
+        .task(id: active) {
+            guard !active else { return fading = false }
+
+            fading = true
+            try? await Task.sleep(for: .seconds(1))
+            fading = false
+        }
+    }
+}
+
 struct TimeBar: View {
     @Environment(Player.self) private var player
     @State private var scrub: Double?
@@ -1772,7 +1819,10 @@ struct ContentView: View {
             }
 
             Divider()
-            Controls(open: reveal)
+            VStack(spacing: 0) {
+                SpectrumBar()
+                Controls(open: reveal)
+            }
             .background(.bar)
         }
         .dropDestination(for: URL.self) { urls, _ in
