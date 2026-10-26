@@ -57,8 +57,14 @@ struct ViewStructureTests {
         #expect(source.contains("window.makeFirstResponder(field)"), "the search field must take the focus for real")
     }
 
-    @Test func commandAInTheSearchFieldSelectsItsText() throws {
-        #expect(try source().contains("if flags == .command, event.keyCode == 0, !sidebar, !Focus.typing(window.firstResponder) {"), "Command-A while editing the search selected all the results")
+    @Test func commandASelectsAllSongsFromAnyFocus() throws {
+        let source = try source()
+        let press = source.components(separatedBy: "    private func press(_ event: NSEvent) -> Bool {").last ?? ""
+        let guardLine = "guard sidebar || focus == .search || !Focus.typing(window.firstResponder) else { return false }"
+        let rule = "if flags == .command, event.keyCode == 0 {\n            NotificationCenter.default.post(name: .key, object: Key.all)"
+
+        #expect(press.contains(rule), "Command-A selects every song of the top screen also from the search field and the sidebar")
+        #expect(press.range(of: guardLine).map { $0.lowerBound < press.range(of: rule)!.lowerBound } == true, "only the lyrics editor keeps Command-A for its own text")
     }
 
     @Test func theQueueEditsThePlayerQueue() throws {

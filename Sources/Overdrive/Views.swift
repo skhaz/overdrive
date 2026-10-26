@@ -2060,7 +2060,7 @@ struct ContentView: View {
 
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
 
-        if flags == .command, event.keyCode == 0, !sidebar, !Focus.typing(window.firstResponder) {
+        if flags == .command, event.keyCode == 0 {
             NotificationCenter.default.post(name: .key, object: Key.all)
             return true
         }
