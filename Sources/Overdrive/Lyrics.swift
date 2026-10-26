@@ -211,10 +211,24 @@ final class Lyrics {
         original = ""
         text = ""
 
-        if let lyrics = cached(track), !lyrics.isEmpty {
-            Log.lyrics.info("cached", metadata: ["path": "\(track.url.path)"])
+        let key = Self.key(track)
+        if let lyrics = Self.read(key), !lyrics.isEmpty {
             apply(.success(lyrics))
             loading = false
+            guard Self.isCacheStale(key) else { return Log.lyrics.info("cached", metadata: ["path": "\(track.url.path)"]) }
+
+            Log.lyrics.info("cache expired", metadata: ["path": "\(key.path)"])
+            lookupTask = Task {
+                let result = await source(track)
+                guard !Task.isCancelled, track == self.track else { return }
+                guard case .success(let fresh) = result, !fresh.isEmpty, fresh != text, remote, !modified else {
+                    return Log.lyrics.info("cache kept", metadata: ["path": "\(track.url.path)", "edited": "\(modified)"])
+                }
+
+                Log.lyrics.info("cache replaced", metadata: ["path": "\(track.url.path)", "characters": "\(fresh.count)"])
+                original = fresh
+                text = fresh
+            }
             return
         }
 
@@ -247,16 +261,6 @@ final class Lyrics {
 
     nonisolated static func key(_ track: Track) -> URL {
         track.url.deletingPathExtension().appendingPathExtension(cached)
-    }
-
-    private func cached(_ track: Track) -> String? {
-        let keyURL = Self.key(track)
-        guard let lyrics = Self.read(keyURL), !lyrics.isEmpty else { return nil }
-        if Self.isCacheStale(keyURL) {
-            Log.lyrics.info("cache expired", metadata: ["path": "\(keyURL.path)"])
-            return nil
-        }
-        return lyrics
     }
 
     nonisolated static func isCacheStale(_ url: URL, at now: Date = Date()) -> Bool {

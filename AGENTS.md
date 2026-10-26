@@ -92,7 +92,7 @@ In `~/Library/Application Support/Overdrive`:
 | `lastfm.plist` | Last.fm session key and user name. |
 | `Videos.plist` | YouTube video ID per song. |
 
-`Likes.plist` and `Playlists/` live at the root of the first library folder, so they travel with the music. The lyrics cache is one file per song, next to it, with the name of the song and the `.cache.lyrics` extension (`Lyrics.key`): the lyrics from LRCLIB and lyrics.ovh, non-empty only. A cache file is valid for one month after its last write (`Lyrics.validity`, the modification date). After that the app asks the internet again; a non-empty answer replaces the file (atomic, through `Persist`) and starts a new month; an empty answer or a failure keeps the old file and shows it, and the next show tries again.
+`Likes.plist` and `Playlists/` live at the root of the first library folder, so they travel with the music. The lyrics cache is one file per song, next to it, with the name of the song and the `.cache.lyrics` extension (`Lyrics.key`): the lyrics from LRCLIB and lyrics.ovh, non-empty only. A cache file is valid for one month after its last write (`Lyrics.validity`, the modification date). After that the old lyric shows at once and the app asks the internet in the background; a non-empty, different answer replaces the file (atomic, through `Persist`), starts a new month, and replaces the lyric on screen, unless the user has edited it or another song shows; an empty answer or a failure keeps the old file and the old lyric, and the next show tries again.
 
 ## Behavior
 

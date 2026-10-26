@@ -400,3 +400,60 @@ struct ShuffleOriginTests {
         #expect(!source.contains("index = order.firstIndex(of: track) ?? 0"))
     }
 }
+
+@MainActor
+@Suite(.serialized)
+struct ExpiredLyricsTests {
+    private func setup() throws -> (URL, Track) {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "Expired-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let track = Track(url: folder.appending(path: "Song.mp3"), title: "Song", artist: "A", album: "B", number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "B")
+        try Data("old".utf8).write(to: Lyrics.key(track))
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-40 * 86400)], ofItemAtPath: Lyrics.key(track).path)
+        return (folder, track)
+    }
+
+    @Test func anExpiredLyricShowsAtOnceAndIsReplacedWhenANewOneArrives() async throws {
+        let (folder, track) = try setup()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let lyrics = Lyrics()
+        lyrics.source = { _ in
+            try? await Task.sleep(for: .milliseconds(200))
+            return .success("new")
+        }
+        lyrics.show(track)
+        #expect(lyrics.text == "old", "the old lyric stays on screen while the app looks for a new one")
+        #expect(!lyrics.loading)
+
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(lyrics.text == "new", "a new lyric replaces the old one on screen")
+        #expect(lyrics.remote)
+    }
+
+    @Test func aFailedRefreshKeepsTheOldLyric() async throws {
+        let (folder, track) = try setup()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let lyrics = Lyrics()
+        lyrics.source = { _ in .failure(.offline) }
+        lyrics.show(track)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(lyrics.text == "old")
+    }
+
+    @Test func aRefreshNeverReplacesWhatTheUserTypes() async throws {
+        let (folder, track) = try setup()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
+
+        let lyrics = Lyrics()
+        lyrics.source = { _ in
+            try? await Task.sleep(for: .milliseconds(200))
+            return .success("new")
+        }
+        lyrics.show(track)
+        lyrics.edit("typed")
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(lyrics.text == "typed")
+    }
+}
