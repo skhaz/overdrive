@@ -124,7 +124,7 @@ struct SortTests {
         #expect(source.components(separatedBy: "@State private var sort = Sort()").count - 1 == 4, "the sort is not saved")
         #expect(source.components(separatedBy: ".onChange(of: active) { if !active { sort = Sort() } }").count - 1 == 4, "a list that leaves goes back to its own order")
         #expect(!source.contains("@AppStorage(\"sort."), "the sort is not saved")
-        #expect(source.components(separatedBy: "{ if !active { sort = Sort() } }\n").count - 1 == source.components(separatedBy: ".id(sort)").count - 1, "a SwiftUI Table that diffs a new order of the whole library hangs the main thread; a new sort builds a new table")
+        #expect(source.components(separatedBy: "{ if !active { sort = Sort() } }\n").count - 1 == source.components(separatedBy: ".id(sort)").count - 1 + source.components(separatedBy: ".id(\"\\(sort.rawValue)").count - 1, "a SwiftUI Table that diffs a new order of the whole library hangs the main thread; a new sort builds a new table")
         #expect(source.components(separatedBy: "sorted.apply(sort, ").count - 1 == 4, "the sorted rows are kept between redraws")
     }
 }

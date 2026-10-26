@@ -352,6 +352,28 @@ final class Player {
         return matches.dropFirst(occurrence).first ?? matches.first ?? 0
     }
 
+    nonisolated static func refreshed(_ tracks: [Track], _ lookup: (String) -> Track?) -> [Track]? {
+        var changed = false
+        let fresh = tracks.map { track in
+            guard let current = lookup(track.url.path), !current.same(track) else { return track }
+
+            changed = true
+            return current
+        }
+        return changed ? fresh : nil
+    }
+
+    func refresh(_ lookup: (String) -> Track?) {
+        let before = current
+        if let fresh = Player.refreshed(queue, lookup) { queue = fresh }
+        if let fresh = Player.refreshed(order, lookup) { order = fresh }
+        guard let track = current, let before, !track.same(before) else { return }
+
+        Log.player.info("tags refreshed", metadata: ["path": "\(track.url.path)"])
+        artwork = Artwork.image(track)
+        update()
+    }
+
     nonisolated static func waits(found: Int, saved: Int, complete: Bool) -> Bool {
         found == 0 || !complete && found < saved
     }

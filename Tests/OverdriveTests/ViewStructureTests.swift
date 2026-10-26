@@ -18,7 +18,7 @@ struct ViewStructureTests {
     @Test func theSongsTableIsRebuiltWhenTheQueryChanges() throws {
         let source = try source()
 
-        #expect(source.contains("SongTable(tracks: library.tracks).id(\"\\(library.query)\\u{1F}\\(library.members)\")"), "a SwiftUI Table that diffs from a few rows to the whole library hangs the main thread, also after a scan that adds or removes songs")
+        #expect(source.contains("SongTable(tracks: library.tracks).id(\"\\(library.query)\\u{1F}\\(library.members)\\u{1F}\\(library.edits)\")"), "a SwiftUI Table that diffs from a few rows to the whole library hangs the main thread, also after a scan that adds or removes songs")
         #expect(!source.contains(".id(library.version)"), "a scan must not rebuild the screens")
     }
 
@@ -97,7 +97,7 @@ struct ViewStructureTests {
     }
 
     @Test func thePushedScreenKeepsARouteIdentity() throws {
-        #expect(try source().contains(".id(route)"), "each pushed route must build a fresh screen")
+        #expect(try source().contains(".id(\"\\(route.key)\\u{1F}\\(library.edits)\")"), "each pushed route must build a fresh screen, and again after a tag edit")
     }
 
     @Test func onlyTheSongsListOpensAnAlbumOnPlay() throws {

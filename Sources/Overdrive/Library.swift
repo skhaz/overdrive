@@ -24,6 +24,11 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
         StoredPath.encode(url.deletingLastPathComponent().path) + "\n" + album
     }
 
+    func same(_ other: Track) -> Bool {
+        url == other.url && title == other.title && artist == other.artist && album == other.album && number == other.number && disc == other.disc
+            && albumArtist == other.albumArtist && year == other.year && duration == other.duration && albumID == other.albumID
+    }
+
     func at(_ url: URL) -> Track {
         Track(url: url, title: title, artist: artist, album: album, number: number, disc: disc, albumArtist: albumArtist, year: year, duration: duration, albumID: Track.albumID(url, album))
     }
@@ -129,6 +134,7 @@ final class Library {
     private(set) var version = 0
     private(set) var scans = 0
     private(set) var members = 0
+    private(set) var edits = 0
     @ObservationIgnored private var hits: Set<URL> = []
     @ObservationIgnored private var songMatches: Set<URL> = []
     var scanning = false
@@ -459,10 +465,15 @@ final class Library {
     }
 
     private func show(_ snapshot: Snapshot, _ folders: [URL]) {
+        let covered = !everything.isEmpty && snapshot.covers != Artwork.covers
         Artwork.covers = snapshot.covers
         index = snapshot.index
         let tracks = snapshot.albums.flatMap(\.tracks)
         if !tracks.elementsEqual(everything, by: { $0.url == $1.url }) { members += 1 }
+        if Library.edited(lookup, tracks) || covered {
+            edits += 1
+            Log.library.info("edits", metadata: ["edits": "\(edits)"])
+        }
         everything = tracks
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
         if readerFolders != folders {
@@ -478,6 +489,10 @@ final class Library {
         shownFolders = folders
         scans += 1
         search()
+    }
+
+    nonisolated static func edited(_ old: [String: Track], _ tracks: [Track]) -> Bool {
+        tracks.contains { track in old[track.url.path].map { !$0.same(track) } ?? false }
     }
 
     func album(_ id: String) -> Album? {
@@ -731,6 +746,7 @@ final class Library {
         var pending: [(slot: Int, url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int, old: Cache.Entry?)] = []
         var removed: [[String]] = []
         var relabel = Array(repeating: [Cache.Change](), count: folders.count)
+        var touched = Set<String>()
 
         for (number, folder) in folders.enumerated() {
             let cache = caches[number]
@@ -824,6 +840,8 @@ final class Library {
                 }
 
                 if let track = read[offset].track {
+                    touched.insert(track.albumID)
+                    if let old = item.old { touched.insert(old.track.at(item.url).albumID) }
                     changes[item.folder].append(Cache.Change(path: item.path, modified: item.modified, size: item.size, hash: read[offset].hash, track: track))
                 } else {
                     failed[item.folder].append(item.path)
@@ -847,12 +865,12 @@ final class Library {
         }
 
         let (albums, index) = assemble(slots.compactMap(\.self))
-        let covers = covers(albums, stored)
+        let covers = covers(albums, stored, touched: touched)
         var fresh = Array(repeating: [String: Data](), count: folders.count)
 
         for album in albums {
             let url = album.tracks[0].url
-            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), !saved[number].contains(album.id), let cover = covers[album.id] else { continue }
+            guard let number = caches.firstIndex(where: { $0.map { !$0.relative(url).hasPrefix("/") } ?? false }), !saved[number].contains(album.id) || touched.contains(album.id), let cover = covers[album.id] else { continue }
 
             fresh[number][album.id] = cover
         }
@@ -984,12 +1002,12 @@ final class Library {
         return Data(SHA256.hash(data: data))
     }
 
-    private nonisolated static func covers(_ albums: [Album], _ previous: [String: Data]) -> [String: Data] {
+    nonisolated static func covers(_ albums: [Album], _ previous: [String: Data], touched: Set<String> = [], generate: ([URL]) -> [Data?] = Picture.generate) -> [String: Data] {
         var covers: [String: Data] = [:]
         var missing: [Album] = []
 
         for album in albums {
-            if let cover = previous[album.id] {
+            if !touched.contains(album.id), let cover = previous[album.id] {
                 covers[album.id] = cover
             } else {
                 missing.append(album)
@@ -998,7 +1016,7 @@ final class Library {
 
         guard !missing.isEmpty else { return covers }
 
-        for (album, cover) in zip(missing, Picture.generate(missing.map { $0.tracks[0].url })) {
+        for (album, cover) in zip(missing, generate(missing.map { $0.tracks[0].url })) {
             covers[album.id] = cover
         }
 
@@ -1061,7 +1079,12 @@ final class Library {
 }
 
 enum Artwork {
-    static var covers: [String: Data] = [:]
+    static var covers: [String: Data] = [:] {
+        didSet {
+            for (key, data) in covers where oldValue[key] != data { cache.removeObject(forKey: key as NSString) }
+            for key in oldValue.keys where covers[key] == nil { cache.removeObject(forKey: key as NSString) }
+        }
+    }
 
     private static let cache = {
         let cache = NSCache<NSString, NSImage>()

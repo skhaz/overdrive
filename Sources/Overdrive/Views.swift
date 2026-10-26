@@ -1263,6 +1263,7 @@ struct ClearQueue: ViewModifier {
 }
 
 struct QueueView: View {
+    @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
@@ -1296,7 +1297,7 @@ struct QueueView: View {
                 }
                 .onDeleteCommand { if active { remove(selection) } }
                 .onChange(of: active) { if !active { sort = Sort() } }
-                .id(sort)
+                .id("\(sort.rawValue)\u{1F}\(library.edits)")
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1391,7 +1392,7 @@ struct PlaylistView: View {
                     if active { removing = rows.filter { selection.contains($0.id) } }
                 }
                 .onChange(of: active) { if !active { sort = Sort() } }
-                .id(sort)
+                .id("\(sort.rawValue)\u{1F}\(library.edits)")
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1491,7 +1492,7 @@ struct LikedView: View {
                     ForEach(rows) { TableRow($0) }
                 }
                 .onChange(of: active) { if !active { sort = Sort() } }
-                .id(sort)
+                .id("\(sort.rawValue)\u{1F}\(library.edits)")
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { ids.contains($0.id) }
 
@@ -1958,7 +1959,7 @@ struct ContentView: View {
         return ZStack {
             screen(current && path.isEmpty, current && path.isEmpty ? navigation.place.position : Position()) {
                 switch page {
-                case .section(.albums): AlbumGrid(albums: library.filtered)
+                case .section(.albums): AlbumGrid(albums: library.filtered).id(library.edits)
                 case .section(.artists): ArtistList(artists: library.artists)
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
@@ -1967,10 +1968,10 @@ struct ContentView: View {
                 case .section(.songs):
                     VStack(spacing: 0) {
                         if !library.query.isEmpty, !library.filtered.isEmpty {
-                            AlbumStrip(albums: library.filtered)
+                            AlbumStrip(albums: library.filtered).id(library.edits)
                             Divider()
                         }
-                        SongTable(tracks: library.tracks).id("\(library.query)\u{1F}\(library.members)")
+                        SongTable(tracks: library.tracks).id("\(library.query)\u{1F}\(library.members)\u{1F}\(library.edits)")
                     }
                 }
             }
@@ -1985,7 +1986,7 @@ struct ContentView: View {
                     case .artist(let name): AlbumGrid(albums: library.albums(by: name))
                     }
                 }
-                .id(route)
+                .id("\(route.key)\u{1F}\(library.edits)")
             }
         }
     }
@@ -2030,6 +2031,7 @@ struct ContentView: View {
     }
 
     private func refreshed() {
+        player.refresh { library.track($0) }
         likes.load()
         playlists.load()
         navigation.refresh(library.albums)

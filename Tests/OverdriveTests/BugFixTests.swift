@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SQLite3
 import Testing
@@ -185,7 +186,7 @@ struct LibraryBugTests {
 
     @Test func likesAndPlaylistsReloadAfterEveryScan() throws {
         let views = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
-        #expect(views.contains("private func refreshed() {\n        likes.load()\n        playlists.load()"), "a drive that mounts after launch must bring back its likes and playlists")
+        #expect(views.contains("        likes.load()\n        playlists.load()\n        navigation.refresh(library.albums)"), "a drive that mounts after launch must bring back its likes and playlists")
     }
 
     @Test func aPlaylistFileOnDiskIsNeverOverwrittenByANewOne() throws {
@@ -455,5 +456,66 @@ struct ExpiredLyricsTests {
         lyrics.edit("typed")
         try await Task.sleep(for: .milliseconds(400))
         #expect(lyrics.text == "typed")
+    }
+}
+
+@MainActor
+struct TagEditTests {
+    private func track(_ name: String, title: String, album: String = "B") -> Track {
+        Track(url: URL(filePath: "/m/\(name).mp3"), title: title, artist: "A", album: album, number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "/m\n" + album)
+    }
+
+    private func png(_ side: Int) -> Data {
+        let image = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        return image.representation(using: .png, properties: [:])!
+    }
+
+    @Test func aTagEditIsAnEdit() {
+        let old = ["/m/a.mp3": track("a", title: "Old")]
+        #expect(Library.edited(old, [track("a", title: "New")]), "same file, new title")
+        #expect(!Library.edited(old, [track("a", title: "Old")]))
+        #expect(!Library.edited(old, [track("b", title: "Other")]), "a new song is a membership change, not an edit")
+    }
+
+    @Test func theQueueTakesTheNewTags() {
+        let queue = [track("a", title: "Old"), track("b", title: "Same")]
+        let fresh = ["/m/a.mp3": track("a", title: "New"), "/m/b.mp3": track("b", title: "Same")]
+
+        let refreshed = Player.refreshed(queue) { fresh[$0] }
+        #expect(refreshed?.map(\.title) == ["New", "Same"], "the song that plays shows its new title")
+        #expect(Player.refreshed([track("b", title: "Same")]) { fresh[$0] } == nil, "no change, no update")
+        #expect(Player.refreshed([track("gone", title: "X")]) { fresh[$0] } == nil, "a song that left the library stays as it is")
+    }
+
+    @Test func anEditedSongMakesItsAlbumCoverAgain() {
+        let albums = [Album(id: "x", title: "X", artist: "A", year: 0, tracks: [track("a", title: "a", album: "X")]), Album(id: "y", title: "Y", artist: "A", year: 0, tracks: [track("b", title: "b", album: "Y")])]
+        var asked: [URL] = []
+        let covers = Library.covers(albums, ["x": Data([1]), "y": Data([2])], touched: ["x"]) { urls in
+            asked = urls
+            return urls.map { _ in Data([9]) }
+        }
+
+        #expect(asked == [albums[0].tracks[0].url], "only the album with a changed song reads its cover again")
+        #expect(covers["x"] == Data([9]))
+        #expect(covers["y"] == Data([2]))
+    }
+
+    @Test func aNewCoverReplacesTheOneInMemory() {
+        let song = track("a", title: "a", album: "Z")
+        Artwork.covers = [song.albumID: png(4)]
+        #expect(Artwork.image(song)?.size.width == 4)
+
+        Artwork.covers = [song.albumID: png(8)]
+        #expect(Artwork.image(song)?.size.width == 8, "the image in memory must follow the new cover")
+        Artwork.covers = [:]
+    }
+
+    @Test func screensRedrawAfterAnEdit() throws {
+        let views = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
+
+        #expect(views.contains("SongTable(tracks: library.tracks).id(\"\\(library.query)\\u{1F}\\(library.members)\\u{1F}\\(library.edits)\")"))
+        #expect(views.contains(".id(\"\\(route.key)\\u{1F}\\(library.edits)\")"), "an open album shows its new tags and cover")
+        #expect(views.components(separatedBy: ".id(\"\\(sort.rawValue)\\u{1F}\\(library.edits)\")").count - 1 == 3, "the queue, playlists, and liked songs show new tags")
+        #expect(views.contains("player.refresh { library.track($0) }"), "the queue takes the new tags after a scan")
     }
 }

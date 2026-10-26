@@ -22,8 +22,6 @@ nonisolated protocol Sortable {
 nonisolated extension Track: Sortable {
     var song: Track { self }
 
-    func same(_ other: Track) -> Bool { self == other }
-
     static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Track> {
         switch column {
         case .title: KeyPathComparator(\.title, order: order)
@@ -37,7 +35,7 @@ nonisolated extension Track: Sortable {
 nonisolated extension Row: Sortable {
     var song: Track { track }
 
-    func same(_ other: Row) -> Bool { id == other.id && track == other.track }
+    func same(_ other: Row) -> Bool { id == other.id && track.same(other.track) }
 
     static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Row> {
         switch column {
