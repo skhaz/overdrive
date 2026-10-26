@@ -36,7 +36,7 @@ struct LogGapTests {
             "Loudness.swift": ["buffer failed", "file unreadable"],
             "Views.swift": ["editing", "copy", "played without album", "float ignored"],
             "Persist.swift": ["folder failed", "full sync unsupported", "encode failed"],
-            "Lyrics.swift": ["refresh ignored", "persist ignored"],
+            "Lyrics.swift": ["refresh ignored"],
             "Picture.swift": ["covers input failed"],
         ]
         for (file, names) in events {

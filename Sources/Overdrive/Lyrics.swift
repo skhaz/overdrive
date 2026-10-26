@@ -177,11 +177,6 @@ final class Lyrics {
         hasLocalLyrics = !value.isEmpty
     }
 
-    func persist() {
-        guard let track else { return Log.lyrics.debug("persist ignored", metadata: ["reason": "no song"]) }
-        save(text, for: track)
-    }
-
     func settle(_ action: @escaping () -> Void) {
         if modified { flush() }
         action()

@@ -103,13 +103,6 @@ struct FloatingLyrics: View {
                                 .controlSize(.small)
                         }
 
-                        if !lyrics.text.isEmpty, lyrics.remote {
-                            Button("Save next to the song", systemImage: "square.and.arrow.down", action: lyrics.persist)
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
-                                .controlSize(.small)
-                        }
-
                         if !lines.isEmpty {
                             Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
                                 .labelStyle(.iconOnly)

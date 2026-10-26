@@ -22,6 +22,13 @@ struct ViewStructureTests {
         #expect(!source.contains(".id(library.version)"), "a scan must not rebuild the screens")
     }
 
+    @Test func theLyricsHaveNoSaveButton() throws {
+        let panel = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/LyricsPanel.swift"), encoding: .utf8)
+        for text in [try source(), panel] {
+            #expect(!text.contains("square.and.arrow.down"), "edits save by themselves; the save button was removed")
+        }
+    }
+
     @Test func onlyAnEditableTextKeepsTheTypedKeys() throws {
         #expect(!(try source().contains("firstResponder is NSText")), "the selectable lyrics are an NSText; use Focus.typing")
     }

@@ -142,7 +142,7 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: Lyrics.key(track).path))
     }
 
-    @Test func aCachedLyricIsRemoteAndPersistSavesItNextToTheSong() throws {
+    @Test func aCachedLyricIsRemoteAndAnEditSavesItNextToTheSong() throws {
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let track = track(folder)
@@ -155,10 +155,11 @@ import Testing
         #expect(lyrics.remote)
         #expect(lyrics.loading == false)
 
-        lyrics.persist()
+        lyrics.edit("downloaded, kept")
+        lyrics.flush()
         Persist.flush()
 
-        #expect(read(folder.appending(path: "Song.lyrics")) == "downloaded")
+        #expect(read(folder.appending(path: "Song.lyrics")) == "downloaded, kept")
         #expect(lyrics.remote == false)
     }
 
