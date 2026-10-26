@@ -520,14 +520,16 @@ struct SyncedLyrics: NSViewRepresentable {
 
         func center(animated: Bool) {
             guard let text, let scroll = text.enclosingScrollView, let manager = text.layoutManager, let container = text.textContainer,
-                  let current, ranges.indices.contains(current), text.selectedRange().length == 0 else { return }
+                  text.selectedRange().length == 0 else { return }
 
-            manager.ensureLayout(for: container)
-            let glyphs = manager.glyphRange(forCharacterRange: ranges[current], actualCharacterRange: nil)
-            let rect = manager.boundingRect(forGlyphRange: glyphs, in: container)
-            let visible = scroll.contentView.bounds.height
-            let y = min(max(rect.midY + text.textContainerInset.height - visible / 2, 0), max(text.frame.height - visible, 0))
-            let origin = NSPoint(x: 0, y: y)
+            var origin = NSPoint.zero
+            if let current, ranges.indices.contains(current) {
+                manager.ensureLayout(for: container)
+                let glyphs = manager.glyphRange(forCharacterRange: ranges[current], actualCharacterRange: nil)
+                let rect = manager.boundingRect(forGlyphRange: glyphs, in: container)
+                let visible = scroll.contentView.bounds.height
+                origin.y = min(max(rect.midY + text.textContainerInset.height - visible / 2, 0), max(text.frame.height - visible, 0))
+            }
 
             if animated {
                 NSAnimationContext.runAnimationGroup { context in

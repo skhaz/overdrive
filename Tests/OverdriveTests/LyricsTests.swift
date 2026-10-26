@@ -1,3 +1,4 @@
+import AppKit
 import CoreServices
 import Foundation
 import Testing
@@ -284,5 +285,28 @@ import Testing
         #expect(Lyrics.cancelled(URLError(.cancelled)))
         #expect(Lyrics.cancelled(CancellationError()))
         #expect(!Lyrics.cancelled(URLError(.notConnectedToInternet)), "offline still retries")
+    }
+}
+
+@MainActor
+struct SyncedLyricsScrollTests {
+    @Test func aNewSongOrARepeatScrollsToTheTop() {
+        let text = LyricsTextView(usingTextLayoutManager: false)
+        text.isVerticallyResizable = true
+        text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        scroll.documentView = text
+        let coordinator = SyncedLyrics.Coordinator()
+        coordinator.text = text
+        let lines = (0..<100).map { SyncedLine(time: Double($0 + 1), text: "Line \($0)") }
+
+        coordinator.load(lines, current: 99)
+        text.setFrameSize(NSSize(width: 200, height: 3000))
+        coordinator.center(animated: false)
+        #expect(scroll.contentView.bounds.origin.y > 0)
+
+        coordinator.highlight(nil)
+        coordinator.center(animated: false)
+        #expect(scroll.contentView.bounds.origin.y == 0, "the lyrics stayed at the end when the song started again")
     }
 }
