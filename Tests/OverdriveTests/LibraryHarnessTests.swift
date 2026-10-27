@@ -410,6 +410,40 @@ struct LibraryHarnessTests {
         #expect(library.random(3).isEmpty)
     }
 
+    @Test func theCountsFollowTheSongsThatPlay() async throws {
+        let folder = try folder()
+        let moved = folder.deletingLastPathComponent().appending(path: "OverdriveCounts-\(UUID().uuidString)")
+        defer { clean(folder, moved) }
+        for name in ["one", "two", "three"] { try put(folder, "Album/\(name).mp3") }
+        let library = library([folder])
+        await settle(library, [folder])
+        let plays = library.plays
+
+        #expect(library.total == 3)
+        #expect(library.neverPlayed == 3)
+        #expect(library.unplayed(4).isEmpty, "more unplayed songs than the library has never played gives nothing")
+
+        let song = library.unplayed(1)[0]
+        plays.bump(song)
+        #expect(plays.count(song) == 1, "the count is in the memory at once")
+        #expect(library.neverPlayed == 2, "a song that played leaves the never-played pool without a scan")
+        #expect(library.unplayed(3).isEmpty)
+        #expect(library.unplayed(2).allSatisfy { $0 != song }, "the pool holds only the songs you have not played")
+        #expect(library.rows(library.tracks.map(\.url.path)).map(\.plays).sorted() == [0, 0, 1], "every row carries its count")
+
+        plays.flush()
+        Persist.flush()
+        #expect(Persist.read([String: Int].self, from: Plays.file(in: folder))?.count == 1, "one file at the root of the music folder")
+
+        try FileManager.default.moveItem(at: folder, to: moved)
+        library.folders = [moved]
+        await settle(library, [moved])
+
+        #expect(library.tracks.map { plays.count($0) }.sorted() == [0, 0, 1], "the counts travel with the moved folder, with no path in the key")
+        #expect(library.neverPlayed == 2)
+        #expect(plays.missing == false)
+    }
+
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {
         let folder = try folder()
         defer { clean(folder) }

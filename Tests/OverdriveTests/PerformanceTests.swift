@@ -20,11 +20,11 @@ struct PerformanceTests {
     }
 
     @Test func aTokenBuildsTheRowsOnlyOnce() {
-        let cache = Sorted<Track>()
+        let cache = Sorted<Row>()
         var builds = 0
-        let make = { builds += 1; return [self.track("b"), self.track("a")] }
+        let make = { builds += 1; return [Row(id: 0, track: self.track("b")), Row(id: 1, track: self.track("a"))] }
 
-        #expect(cache.apply(Sort(.title), token: 1, make).map(\.title) == ["a", "b"])
+        #expect(cache.apply(Sort(.title), token: 1, make).map(\.song.title) == ["a", "b"])
         _ = cache.apply(Sort(.title), token: 1, make)
         #expect(builds == 1, "a redraw with the same token neither builds nor compares the rows")
 

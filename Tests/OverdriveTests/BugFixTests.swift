@@ -581,9 +581,11 @@ struct CoverFingerprintTests {
         #expect(Library.relevant([("/m/A/cover.jpg", removed)]), "a new cover image in a music folder starts a scan")
         #expect(Library.relevant([("/m/A/folder.png", removed)]))
         #expect(!Library.relevant([("/m/A/notes.txt", removed)]))
+        #expect(!Library.relevant([("/m/Plays.plist", removed)]), "a write of the play counts never starts a scan")
 
         let source = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Library.swift"), encoding: .utf8)
         #expect(Library.full == 6, "every hour a full scan runs, also when the quick check sees nothing")
         #expect(source.contains("if ticks.isMultiple(of: Library.full), !scanning {"))
+        #expect(source.contains("plays.flush()\n                    scan(\"periodic full\")"), "the hourly tick syncs the play counts to the disk")
     }
 }

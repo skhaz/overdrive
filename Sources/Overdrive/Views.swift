@@ -992,6 +992,9 @@ struct AlbumView: View {
 
                                 Spacer()
 
+                                Text("\(library.plays.count(track))").monospacedDigit().foregroundStyle(.secondary)
+                                    .frame(width: 44, alignment: .trailing)
+                                    .help("Times played")
                                 Text(track.duration.time).monospacedDigit().foregroundStyle(.secondary)
                             }
                             .stripe(index, selected: selection.contains(track.id))
@@ -1179,53 +1182,61 @@ struct SongTable: View {
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
     @Environment(\.go) private var go
-    @State private var selection: Set<Track.ID> = []
+    @State private var selection: Set<Row.ID> = []
     @State private var sort = Sort()
-    @State private var sorted = Sorted<Track>()
+    @State private var sorted = Sorted<Row>()
     @Environment(\.active) private var active
 
     var body: some View {
         let now = youTube.showing ?? player.current
-        let tracks = sorted.apply(sort, token: library.scans) { self.tracks }
+        let plays = library.plays
+        let rows = sorted.apply(sort, token: [library.scans, plays.revision]) {
+            tracks.enumerated().map { Row(id: $0.offset, track: $0.element, plays: plays.count($0.element)) }
+        }
 
         ScrollViewReader { proxy in
-            Table(tracks, selection: $selection, sortOrder: order($sort, "songs")) {
-                TableColumn("Title", value: \.title) { Cell(text: $0.title, playing: $0 == now, liked: likes.contains($0)) }
-                TableColumn("Artist", value: \.artist) { Cell(text: $0.artist, playing: $0 == now) }
-                TableColumn("Album", value: \.album) { Cell(text: $0.album, playing: $0 == now) }
-                TableColumn("Time", value: \.duration) { Cell(text: $0.duration.time, playing: $0 == now).monospacedDigit() }.width(60)
+            Table(rows, selection: $selection, sortOrder: order($sort, "songs")) {
+                TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.track == now, liked: likes.contains($0.track)) }
+                TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.track == now) }
+                TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.track == now) }
+                TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.track == now).monospacedDigit() }.width(70)
+                TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
             }
             .onChange(of: active) { if !active { sort = Sort() } }
             .id(sort)
-            .contextMenu(forSelectionType: Track.ID.self) { ids in
-                TrackMenu(tracks: tracks.filter { ids.contains($0.id) })
+            .contextMenu(forSelectionType: Row.ID.self) { ids in
+                let picked = rows.filter { ids.contains($0.id) }
 
-                if ids.count == 1, let track = tracks.first(where: { ids.contains($0.id) }) {
-                    GoMenu(track: track)
+                if !picked.isEmpty {
+                    TrackMenu(tracks: picked.map(\.track))
+
+                    if picked.count == 1 {
+                        GoMenu(track: picked[0].track)
+                    }
+
+                    CopyMenu(tracks: picked.map(\.track))
+                    FileMenu(urls: picked.map(\.track.url))
                 }
-
-                CopyMenu(tracks: tracks.filter { ids.contains($0.id) })
-                FileMenu(urls: Array(ids))
             } primaryAction: { ids in
-                guard let index = tracks.firstIndex(where: { ids.contains($0.id) }) else { return }
+                guard let index = rows.firstIndex(where: { ids.contains($0.id) }) else { return }
 
-                player.start(tracks, at: index)
-                go(.playing(tracks[index]))
+                player.start(rows.map(\.track), at: index)
+                go(.playing(rows[index].track))
             }
             .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
-                if let track, tracks.contains(track) { selection = [track.id] }
+                if let track, let row = rows.first(where: { $0.track == track }) { selection = [row.id] }
             }
-            .modifier(Keys(count: tracks.count, selected: { selection.contains(tracks[$0].id) }, select: { index in
-                selection = [tracks[index].id]
-                proxy.scrollTo(tracks[index].id)
+            .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
+                selection = [rows[index].id]
+                proxy.scrollTo(rows[index].id)
             }, enter: { index in
-                player.start(tracks, at: index)
-                go(.playing(tracks[index]))
+                player.start(rows.map(\.track), at: index)
+                go(.playing(rows[index].track))
             }, extend: { index in
-                selection.insert(tracks[index].id)
-                proxy.scrollTo(tracks[index].id)
-            }, selectAll: { selection = Set(tracks.map(\.id)) }))
-            .modifier(Selected(tracks: selection.count == 1 ? selection.compactMap { library.track($0.path) } : tracks.filter { selection.contains($0.id) }))
+                selection.insert(rows[index].id)
+                proxy.scrollTo(rows[index].id)
+            }, selectAll: { selection = Set(rows.map(\.id)) }))
+            .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
 
         }
     }
@@ -1270,7 +1281,7 @@ struct UpNextView: View {
     @Environment(\.active) private var active
 
     var body: some View {
-        let rows = sorted.apply(sort, token: [player.revision, player.index]) { player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0]) } }
+        let rows = sorted.apply(sort, token: [player.revision, player.index, library.plays.revision]) { player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0], plays: library.plays.count(player.queue[$0])) } }
         let now = youTube.showing == nil ? player.index : nil
 
         if rows.isEmpty {
@@ -1282,6 +1293,7 @@ struct UpNextView: View {
                     TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track), added: added($0)) }
                     TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.id == now) }
                     TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.id == now) }
+                    TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.id == now).monospacedDigit() }.width(70)
                     TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
                 } rows: {
                     ForEach(rows) { TableRow($0).draggable(String($0.id)) }
@@ -1376,6 +1388,7 @@ struct PlaylistView: View {
                     TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.track == now, liked: likes.contains($0.track)) }
                     TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.track == now) }
                     TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.track == now) }
+                    TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.track == now).monospacedDigit() }.width(70)
                     TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
                 } rows: {
                     ForEach(rows) { TableRow($0).draggable(String($0.id)) }
@@ -1484,6 +1497,7 @@ struct LikedView: View {
                     TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.track == now) }
                     TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.track == now) }
                     TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.track == now) }
+                    TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.track == now).monospacedDigit() }.width(70)
                     TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
                 } rows: {
                     ForEach(rows) { TableRow($0) }

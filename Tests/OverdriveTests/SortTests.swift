@@ -7,6 +7,10 @@ struct SortTests {
         Track(url: URL(filePath: "/m/\(title)-\(artist)-\(duration).mp3"), title: title, artist: artist, album: "Album", number: 1, disc: 1, albumArtist: "", year: 2000, duration: duration, albumID: "x")
     }
 
+    private func row(_ title: String, _ artist: String = "A", _ duration: Double = 100, plays: Int = 0) -> Row {
+        Row(id: 0, track: track(title, artist, duration), plays: plays)
+    }
+
     private func album(_ title: String, _ artist: String, _ year: Int) -> Album {
         Album(id: "\(artist)/\(title)", title: title, artist: artist, year: year, tracks: [])
     }
@@ -14,6 +18,8 @@ struct SortTests {
     @Test func theSortIsSavedAsText() {
         #expect(Sort(.title).rawValue == "title")
         #expect(Sort(.time, ascending: false).rawValue == "-time")
+        #expect(Sort(.plays).rawValue == "plays")
+        #expect(Sort(rawValue: "-plays") == Sort(.plays, ascending: false))
         #expect(Sort().rawValue == "")
         #expect(Sort(rawValue: "-artist") == Sort(.artist, ascending: false))
         #expect(Sort(rawValue: "") == Sort())
@@ -21,25 +27,34 @@ struct SortTests {
     }
 
     @Test func noSortKeepsTheOrder() {
-        let tracks = [track("b"), track("a")]
-        #expect(Sort().apply(tracks).map(\.title) == ["b", "a"], "Up Next and the playlists keep their own order")
+        let rows = [row("b"), row("a")]
+        #expect(Sort().apply(rows).map(\.song.title) == ["b", "a"], "Up Next and the playlists keep their own order")
     }
 
     @Test func aColumnSortsUpAndDown() {
-        let tracks = [track("Song 10"), track("song 2"), track("Song 1")]
-        #expect(Sort(.title).apply(tracks).map(\.title) == ["Song 1", "song 2", "Song 10"], "the order is the Finder order")
-        #expect(Sort(.title, ascending: false).apply(tracks).map(\.title) == ["Song 10", "song 2", "Song 1"])
+        let rows = [row("Song 10"), row("song 2"), row("Song 1")]
+        #expect(Sort(.title).apply(rows).map(\.song.title) == ["Song 1", "song 2", "Song 10"], "the order is the Finder order")
+        #expect(Sort(.title, ascending: false).apply(rows).map(\.song.title) == ["Song 10", "song 2", "Song 1"])
     }
 
     @Test func timeSortsAsANumber() {
-        let tracks = [track("a", "A", 600), track("b", "A", 70), track("c", "A", 300)]
-        #expect(Sort(.time).apply(tracks).map(\.title) == ["b", "c", "a"])
+        let rows = [row("a", "A", 600), row("b", "A", 70), row("c", "A", 300)]
+        #expect(Sort(.time).apply(rows).map(\.song.title) == ["b", "c", "a"])
+    }
+
+    @Test func playsSortAsANumber() {
+        let rows = [row("a", plays: 30), row("b", plays: 2), row("c", plays: 4), row("d", plays: 0)]
+        #expect(Sort(.plays).apply(rows).map(\.song.title) == ["d", "b", "c", "a"])
+        #expect(Sort(.plays, ascending: false).apply(rows).map(\.song.title) == ["a", "c", "b", "d"], "down puts the most played song first")
     }
 
     @Test func equalValuesKeepTheirOrder() {
-        let tracks = [track("x", "B"), track("y", "A"), track("z", "B")]
-        #expect(Sort(.artist).apply(tracks).map(\.title) == ["y", "x", "z"])
-        #expect(Sort(.artist, ascending: false).apply(tracks).map(\.title) == ["x", "z", "y"])
+        let rows = [row("x", "B"), row("y", "A"), row("z", "B")]
+        #expect(Sort(.artist).apply(rows).map(\.song.title) == ["y", "x", "z"])
+        #expect(Sort(.artist, ascending: false).apply(rows).map(\.song.title) == ["x", "z", "y"])
+
+        let same = [row("x", plays: 2), row("y", plays: 2), row("z", plays: 0)]
+        #expect(Sort(.plays).apply(same).map(\.song.title) == ["z", "x", "y"], "a tie keeps the order of the list")
     }
 
     @Test func rowsSortByTheirSong() {
@@ -60,34 +75,40 @@ struct SortTests {
         for column in Column.allCases {
             for ascending in [true, false] {
                 let sort = Sort(column, ascending: ascending)
-                let tracks: [KeyPathComparator<Track>] = sort.comparators()
                 let rows: [KeyPathComparator<Row>] = sort.comparators()
-                #expect(Sort(tracks) == sort)
-                #expect(Sort(rows) == sort)
+                #expect(Sort(rows) == sort, "\(column) must round-trip through the table header")
             }
         }
-        #expect(Sort([KeyPathComparator<Track>]()) == Sort())
+        #expect(Sort([KeyPathComparator<Row>]()) == Sort())
     }
 
     @Test func sortingTheWholeLibraryIsFast() {
-        let tracks = (0..<20_000).map { track("Song \($0 % 997)", "Artist \($0 % 311)", Double($0 % 500)) }
+        let rows = (0..<20_000).map { Row(id: $0, track: track("Song \($0 % 997)", "Artist \($0 % 311)", Double($0 % 500)), plays: $0 % 997) }
         let start = ContinuousClock.now
-        for column in Column.allCases { _ = Sort(column).apply(tracks) }
+        for column in Column.allCases { _ = Sort(column).apply(rows) }
         #expect(ContinuousClock.now - start < .seconds(5), "a sort by artist of every song hung the app")
     }
 
     @Test @MainActor func theSortRunsOnlyWhenTheSortOrTheListChanges() {
-        let cache = Sorted<Track>()
-        let tracks = [track("b"), track("a")]
+        let cache = Sorted<Row>()
+        let rows = [row("b"), row("a")]
 
-        #expect(cache.apply(Sort(.title), tracks).map(\.title) == ["a", "b"])
-        _ = cache.apply(Sort(.title), tracks)
-        _ = cache.apply(Sort(.title), tracks)
+        #expect(cache.apply(Sort(.title), rows).map(\.song.title) == ["a", "b"])
+        _ = cache.apply(Sort(.title), rows)
+        _ = cache.apply(Sort(.title), rows)
         #expect(cache.runs == 1, "a redraw, such as a click on a row, must not sort again")
 
-        #expect(cache.apply(Sort(.title, ascending: false), tracks).map(\.title) == ["b", "a"])
-        #expect(cache.apply(Sort(.title, ascending: false), tracks + [track("c")]).map(\.title) == ["c", "b", "a"])
+        #expect(cache.apply(Sort(.title, ascending: false), rows).map(\.song.title) == ["b", "a"])
+        #expect(cache.apply(Sort(.title, ascending: false), rows + [row("c")]).map(\.song.title) == ["c", "b", "a"])
         #expect(cache.runs == 3)
+    }
+
+    @Test @MainActor func aNewCountRebuildsTheRows() {
+        let cache = Sorted<Row>()
+
+        _ = cache.apply(Sort(.plays), [row("a", plays: 1), row("b", plays: 0)])
+        #expect(cache.apply(Sort(.plays), [row("a", plays: 2), row("b", plays: 0)]).map(\.song.title) == ["b", "a"], "a song that just finished playing moves in the sorted list")
+        #expect(cache.runs == 2)
     }
 
     @Test @MainActor func aMovedRowSortsAgain() {

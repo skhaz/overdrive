@@ -7,10 +7,17 @@ struct RandomTests {
         try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/\(name)"), encoding: .utf8)
     }
 
-    private func body(_ source: String, _ signature: String) -> String {
+    private func body(_ source: String, _ signature: String) throws -> String {
         guard let start = source.range(of: signature) else { return "" }
         let rest = source[start.upperBound...]
-        return String(rest[..<(rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex)])
+        return String(rest[..<(try #require(rest.range(of: "\n    }\n")).lowerBound)])
+    }
+
+    private func discovery(_ app: String) throws -> String {
+        let start = try #require(app.range(of: "Menu(\"Discovery\"")).lowerBound
+        let rest = app[start...]
+        let end = try #require(rest.range(of: "Button(\"Clear Up Next")).lowerBound
+        return String(rest[..<end])
     }
 
     @Test func noSongsAskedForGivesNoSong() {
@@ -62,6 +69,15 @@ struct RandomTests {
         #expect(Player.picked(library, 200) != library, "the whole library comes back shuffled")
     }
 
+    @Test func thePickTouchesEverySongOnlyOnce() {
+        let library = Array(0..<50_000)
+        var counted = 0
+        let picked = Player.picked(library.lazy.map { counted += 1; return $0 }, 20)
+
+        #expect(picked.count == 20)
+        #expect(counted == 50_000, "one pass over the library, no second look and no copy of it")
+    }
+
     @Test func aRandomPickReplacesUpNextAndPlays() throws {
         let player = try body(try source("Player.swift"), "func random(_ tracks: [Track]) {")
 
@@ -70,30 +86,43 @@ struct RandomTests {
         #expect(!player.contains("clear()"), "play replaces the queue, so no stop in between")
     }
 
-    @Test func theRandomMenuOffersEveryCountAndNoShortcut() throws {
-        let app = try source("Overdrive.swift")
-        let start = try #require(app.range(of: "Menu(\"Discovery\"")).upperBound
-        let rest = app[start...]
-        let end = try #require(rest.range(of: ".disabled(library.total < Library.randomCounts[0])")).lowerBound
-        let menu = String(rest[..<end])
+    @Test func theDiscoveryMenuOffersBothPickers() throws {
+        let menu = try discovery(try source("Overdrive.swift"))
 
         #expect(Library.randomCounts == [1, 10, 20, 100])
-        #expect(app.contains("ForEach(Library.randomCounts, id: \\.self)"))
-        #expect(app.contains("player.random(library.random(number))"), "each value picks its songs from the library")
+        #expect(menu.contains("Menu(\"Songs (\\(library.total))\")"), "the picker says how many songs can come from it")
+        #expect(menu.contains("Menu(\"Never Played (\\(library.neverPlayed))\")"), "the unplayed picker says how many songs were never played")
+        #expect(menu.components(separatedBy: "ForEach(Library.randomCounts, id: \\.self)").count - 1 == 2, "both pickers use the same values")
+        #expect(menu.components(separatedBy: "player.random(library.random(number))").count - 1 == 1)
+        #expect(menu.components(separatedBy: "player.random(library.unplayed(number))").count - 1 == 1)
         #expect(menu.range(of: "keyboardShortcut") == nil, "a menu bar item never gets a plain key")
-        #expect(menu.components(separatedBy: ".disabled(library.total < number)").count - 1 == 1, "each value is disabled on its own")
     }
 
-    @Test func aValueNeedsThatManySongs() throws {
-        let library = try source("Library.swift")
+    @Test func everyPickerNeedsItsOwnSongs() throws {
+        let menu = try discovery(try source("Overdrive.swift"))
 
-        #expect(try source("Overdrive.swift").contains(".disabled(library.total < number)"), "a count with more songs asked for than the library has stays off")
-        #expect(library.contains("private(set) var total = 0"), "the menu reads the size of the library")
-        #expect(library.contains("total = everything.count"), "the size follows every scan")
-        #expect(try body(library, "func random(_ count: Int) -> [Track] {").contains("guard total >= count else { return [] }"), "a pick of more songs than the library has gives nothing")
+        #expect(menu.components(separatedBy: ".disabled(library.total < number)").count - 1 == 1, "a value with more songs than the library has stays off")
+        #expect(menu.components(separatedBy: ".disabled(library.neverPlayed < number)").count - 1 == 1, "a value with more songs than the library has never played stays off")
+        #expect(menu.contains(".disabled(library.total < Library.randomCounts[0])"))
+        #expect(menu.contains(".disabled(library.neverPlayed < Library.randomCounts[0])"))
+        #expect(menu.contains(".disabled(library.total == 0)"), "an empty library disables the whole menu")
     }
 
-    @Test func anEmptyLibraryDisablesTheWholeMenu() throws {
-        #expect(try source("Overdrive.swift").contains("Menu(\"Discovery\", systemImage: \"die.face.5\") {\n                    ForEach(Library.randomCounts, id: \\.self) { number in\n                        Button(\"\\(number) Song\\(number == 1 ? \"\" : \"s\")\") { player.random(library.random(number)) }\n                            .disabled(library.total < number)\n                    }\n                }\n                .disabled(library.total < Library.randomCounts[0])"))
+    @Test func theUnplayedPickNeedsItsCount() throws {
+        let library = try body(try source("Library.swift"), "func unplayed(_ count: Int) -> [Track] {")
+
+        #expect(library.contains("guard neverPlayed >= count else { return [] }"), "a pick of more unplayed songs than the library has gives nothing")
+        #expect(library.contains("everything.lazy.filter"), "the pick filters as it walks, so it never builds a second copy of the library")
+    }
+
+    @Test func theCountIsSetWhenASongEnds() throws {
+        let player = try source("Player.swift")
+        let finished = try body(player, "private func finished(_ ended: AVPlayerItem?) {")
+
+        #expect(finished.contains("if let track = current { plays.bump(track) }"), "a song that played to the end counts one play")
+        #expect(player.components(separatedBy: "plays.bump").count - 1 == 1, "only a full play counts a song")
+        let moved = try #require(finished.range(of: "guard let next = following(index)")?.lowerBound)
+        #expect(try #require(finished.range(of: "plays.bump")?.upperBound) < moved, "the count is taken before the player moves to the next song")
+        #expect(player.contains("plays: Plays) {"), "the player gets the counts of the library at boot")
     }
 }

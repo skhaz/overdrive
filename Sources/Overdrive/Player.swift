@@ -112,6 +112,7 @@ final class Player {
     @ObservationIgnored let spectrum = Spectrum()
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let loudness: Loudness
+    @ObservationIgnored private let plays: Plays
     @ObservationIgnored private var order: [Track] = []
     @ObservationIgnored private var played = 0.0
     @ObservationIgnored private var started = Date.now
@@ -134,9 +135,10 @@ final class Player {
     @ObservationIgnored private var announcedState = ""
     nonisolated static let delay = Duration.seconds(1)
 
-    init(lastFM: LastFM, loudness: Loudness) {
+    init(lastFM: LastFM, loudness: Loudness, plays: Plays) {
         self.lastFM = lastFM
         self.loudness = loudness
+        self.plays = plays
         spectrum.listening = showsSpectrum
         player.volume = volume
         player.actionAtItemEnd = .advance
@@ -692,6 +694,7 @@ final class Player {
         guard let ended, ended === item else { return Log.player.trace("stale item event", metadata: ["kind": "end"]) }
 
         Log.player.info("finished", metadata: ["path": "\(current?.url.path ?? "")"])
+        if let track = current { plays.bump(track) }
         guard let next = following(index) else { return stop() }
 
         index = next

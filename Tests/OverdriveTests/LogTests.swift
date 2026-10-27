@@ -165,6 +165,7 @@ final class Records: @unchecked Sendable {
             "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved"],
             "LastFM.swift": ["connected", "connect failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "settle", "now playing"],
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored"],
+            "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up"],
             "Spectrum.swift": ["spectrum tap failed"],
@@ -189,6 +190,11 @@ final class Records: @unchecked Sendable {
         let youTube = try source("YouTube.swift")
         for name in ["watch", "close", "signOut", "load", "show", "stop", "failed", "search", "webViewWebContentProcessDidTerminate"] {
             #expect(body(youTube, "func \(name)(").contains("Log.youTube."), "YouTube.\(name) must log")
+        }
+
+        let plays = try source("Plays.swift")
+        for name in ["bump", "rebind", "load", "flush"] {
+            #expect(body(plays, "func \(name)(").contains("Log.plays."), "Plays.\(name) must log")
         }
 
         let views = try source("Views.swift")

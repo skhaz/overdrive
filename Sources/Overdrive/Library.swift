@@ -74,6 +74,7 @@ nonisolated final class Failures: @unchecked Sendable {
 nonisolated struct Row: Identifiable, Sendable {
     let id: Int
     let track: Track
+    var plays = 0
 }
 
 nonisolated struct Album: Identifiable, Hashable, Sendable {
@@ -135,6 +136,7 @@ final class Library {
     private(set) var filtered: [Album] = []
     private(set) var tracks: [Track] = []
     private(set) var total = 0
+    private(set) var neverPlayed = 0
     private(set) var version = 0
     private(set) var scans = 0
     private(set) var members = 0
@@ -149,6 +151,7 @@ final class Library {
             Log.library.info("folders", metadata: ["old": Log.list(oldValue.map(\.path)), "new": Log.list(folders.map(\.path))])
             if persistent { UserDefaults.standard.set(folders.map { StoredPath.encode($0.path) }, forKey: Library.key) }
             loudness.folders = folders
+            plays.rebind(folders.first)
             watch()
             scan()
         }
@@ -182,6 +185,7 @@ final class Library {
 
     @ObservationIgnored private var index = Index()
     @ObservationIgnored private var everything: [Track] = []
+    @ObservationIgnored private var playedKeys: Set<String> = []
     @ObservationIgnored private var byYear: [Album] = []
     @ObservationIgnored private var lookup: [String: Track] = [:]
     @ObservationIgnored private var byID: [String: Album] = [:]
@@ -210,12 +214,16 @@ final class Library {
     @ObservationIgnored private let loudness: Loudness
     @ObservationIgnored private let persistent: Bool
     @ObservationIgnored var loaded: ((_ complete: Bool) -> Void)?
+    let plays: Plays
 
     init(loudness: Loudness, folders: [URL]? = nil) {
         self.loudness = loudness
         persistent = folders == nil
-        self.folders = folders ?? Library.savedFolders()
-        loudness.folders = self.folders
+        let folders = folders ?? Library.savedFolders()
+        self.folders = folders
+        plays = Plays(root: folders.first)
+        loudness.folders = folders
+        plays.flipped = { [weak self] track in self?.songPlayed(track) }
         watch()
         scan()
         if persistent { sync() }
@@ -299,6 +307,7 @@ final class Library {
                 ticks += 1
                 if ticks.isMultiple(of: Library.full), !scanning {
                     Log.library.info("sync full scan", metadata: ["every": "\(Library.period * Library.full)"])
+                    plays.flush()
                     scan("periodic full")
                     continue
                 }
@@ -509,6 +518,10 @@ final class Library {
         }
         everything = tracks
         total = everything.count
+        if plays.missing, plays.root != nil { plays.load() }
+        let played = plays
+        playedKeys = Set(everything.lazy.map(Plays.key).filter { played.played($0) })
+        neverPlayed = total - playedKeys.count
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
         if readerFolders != folders {
             readers = folders.compactMap { folder in
@@ -547,6 +560,19 @@ final class Library {
         return Player.picked(everything, count)
     }
 
+    func unplayed(_ count: Int) -> [Track] {
+        guard neverPlayed >= count else { return [] }
+        let played = plays
+
+        return Player.picked(everything.lazy.filter { !played.played(Plays.key($0)) }, count)
+    }
+
+    private func songPlayed(_ track: Track) {
+        guard lookup[track.url.path] != nil, playedKeys.insert(Plays.key(track)).inserted else { return }
+
+        neverPlayed = max(total - playedKeys.count, 0)
+    }
+
     func matched(_ track: Track) -> Bool {
         !query.isEmpty && songMatches.contains(track.id)
     }
@@ -563,7 +589,7 @@ final class Library {
             }
             guard hits?.contains(track.id) ?? true else { return nil }
 
-            return Row(id: position, track: track)
+            return Row(id: position, track: track, plays: plays.count(track))
         }
 
         if !missing.isEmpty, !albums.isEmpty, reported.insert([scans, paths.count, missing.count]).inserted {

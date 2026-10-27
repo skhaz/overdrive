@@ -41,6 +41,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         Log.app.info("quit")
+        Overdrive.shared.library.plays.flush()
         Log.flush()
     }
 
@@ -79,7 +80,7 @@ struct Reopen: ViewModifier {
 }
 
 struct Overdrive: App {
-    private static let shared = {
+    fileprivate static let shared = {
         Log.start()
         Log.app.info("start", metadata: ["version": "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")", "macos": "\(ProcessInfo.processInfo.operatingSystemVersionString)", "pid": "\(getpid())"])
         signal(SIGTERM, SIG_IGN)
@@ -90,7 +91,7 @@ struct Overdrive: App {
         let lastFM = LastFM()
         let loudness = Loudness()
         let library = Library(loudness: loudness)
-        let player = Player(lastFM: lastFM, loudness: loudness)
+        let player = Player(lastFM: lastFM, loudness: loudness, plays: library.plays)
         let youTube = YouTube(player: player)
         library.loaded = { [unowned library] complete in player.restore(complete: complete) { library.track($0) } }
 
@@ -212,12 +213,23 @@ struct Overdrive: App {
                     .disabled(player.current == nil)
                 Divider()
                 Menu("Discovery", systemImage: "die.face.5") {
-                    ForEach(Library.randomCounts, id: \.self) { number in
-                        Button("\(number) Song\(number == 1 ? "" : "s")") { player.random(library.random(number)) }
-                            .disabled(library.total < number)
+                    Menu("Songs (\(library.total))") {
+                        ForEach(Library.randomCounts, id: \.self) { number in
+                            Button("\(number) Song\(number == 1 ? "" : "s")") { player.random(library.random(number)) }
+                                .disabled(library.total < number)
+                        }
                     }
+                    .disabled(library.total < Library.randomCounts[0])
+
+                    Menu("Never Played (\(library.neverPlayed))") {
+                        ForEach(Library.randomCounts, id: \.self) { number in
+                            Button("\(number) Song\(number == 1 ? "" : "s")") { player.random(library.unplayed(number)) }
+                                .disabled(library.neverPlayed < number)
+                        }
+                    }
+                    .disabled(library.neverPlayed < Library.randomCounts[0])
                 }
-                .disabled(library.total < Library.randomCounts[0])
+                .disabled(library.total == 0)
                 Button("Clear Up Next…", systemImage: "trash") { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
                     .disabled(player.queue.isEmpty)
                 Button("Go to Current Song") { NotificationCenter.default.post(name: .reveal, object: nil) }

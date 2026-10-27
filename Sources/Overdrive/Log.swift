@@ -19,6 +19,7 @@ nonisolated enum Log {
     static let youTube = make("youtube")
     static let loudness = make("loudness")
     static let likes = make("likes")
+    static let plays = make("plays")
     static let playlists = make("playlists")
     static let navigation = make("navigation")
     static let keys = make("keys")

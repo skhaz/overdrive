@@ -1,47 +1,36 @@
 import SwiftUI
 
 nonisolated enum Column: String, CaseIterable {
-    case title, artist, album, time
+    case title, artist, album, plays, time
 
     var text: KeyPath<Track, String>? {
         switch self {
         case .title: \.title
         case .artist: \.artist
         case .album: \.album
-        case .time: nil
+        case .plays, .time: nil
         }
     }
 }
 
 nonisolated protocol Sortable {
     var song: Track { get }
+    var plays: Int { get }
     func same(_ other: Self) -> Bool
     static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Self>
-}
-
-nonisolated extension Track: Sortable {
-    var song: Track { self }
-
-    static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Track> {
-        switch column {
-        case .title: KeyPathComparator(\.title, order: order)
-        case .artist: KeyPathComparator(\.artist, order: order)
-        case .album: KeyPathComparator(\.album, order: order)
-        case .time: KeyPathComparator(\.duration, order: order)
-        }
-    }
 }
 
 nonisolated extension Row: Sortable {
     var song: Track { track }
 
-    func same(_ other: Row) -> Bool { id == other.id && track.same(other.track) }
+    func same(_ other: Row) -> Bool { id == other.id && track.same(other.track) && plays == other.plays }
 
     static func comparator(_ column: Column, _ order: SortOrder) -> KeyPathComparator<Row> {
         switch column {
         case .title: KeyPathComparator(\.track.title, order: order)
         case .artist: KeyPathComparator(\.track.artist, order: order)
         case .album: KeyPathComparator(\.track.album, order: order)
+        case .plays: KeyPathComparator(\.plays, order: order)
         case .time: KeyPathComparator(\.track.duration, order: order)
         }
     }
@@ -86,9 +75,17 @@ nonisolated struct Sort: Hashable, RawRepresentable {
         guard let column else { return items }
 
         let order = items.indices.sorted { first, second in
-            let one = items[first].song, two = items[second].song
-            let result = column.text.map { one[keyPath: $0].localizedStandardCompare(two[keyPath: $0]) }
-                ?? (one.duration == two.duration ? .orderedSame : one.duration < two.duration ? .orderedAscending : .orderedDescending)
+            let result: ComparisonResult
+            if let text = column.text {
+                let one = items[first].song[keyPath: text], two = items[second].song[keyPath: text]
+                result = one.localizedStandardCompare(two)
+            } else if column == .plays {
+                let one = items[first].plays, two = items[second].plays
+                result = one == two ? .orderedSame : one < two ? .orderedAscending : .orderedDescending
+            } else {
+                let one = items[first].song.duration, two = items[second].song.duration
+                result = one == two ? .orderedSame : one < two ? .orderedAscending : .orderedDescending
+            }
             guard result != .orderedSame else { return first < second }
 
             return (result == .orderedAscending) == ascending
