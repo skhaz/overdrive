@@ -13,11 +13,16 @@ struct RandomTests {
         return String(rest[..<(try #require(rest.range(of: "\n    }\n")).lowerBound)])
     }
 
-    private func discovery(_ app: String) throws -> String {
-        let start = try #require(app.range(of: "Menu(\"Discovery\"")).lowerBound
-        let rest = app[start...]
-        let end = try #require(rest.range(of: "Button(\"Clear Up Next")).lowerBound
-        return String(rest[..<end])
+    private func discovery(_ source: String) throws -> String {
+        let start = try #require(source.range(of: "struct DiscoveryMenu: View {")).upperBound
+        let rest = source[start...]
+        return String(rest[..<(try #require(rest.range(of: "\n}\n")).lowerBound)])
+    }
+
+    private func handler(_ source: String, _ notification: String) throws -> String {
+        let start = try #require(source.range(of: "publisher(for: .\(notification))) { _ in")).upperBound
+        let rest = source[start...]
+        return String(rest[..<(try #require(rest.range(of: "\n        }")).lowerBound)])
     }
 
     @Test func noSongsAskedForGivesNoSong() {
@@ -86,26 +91,54 @@ struct RandomTests {
         #expect(!player.contains("clear()"), "play replaces the queue, so no stop in between")
     }
 
-    @Test func theDiscoveryMenuOffersBothPickers() throws {
-        let menu = try discovery(try source("Overdrive.swift"))
+    @Test func theDiscoveryMenuOffersEveryPicker() throws {
+        let menu = try discovery(try source("Views.swift"))
 
         #expect(Library.randomCounts == [1, 10, 20, 100])
         #expect(menu.contains("Menu(\"Songs (\\(library.total))\")"), "the picker says how many songs can come from it")
         #expect(menu.contains("Menu(\"Never Played (\\(library.neverPlayed))\")"), "the unplayed picker says how many songs were never played")
-        #expect(menu.components(separatedBy: "ForEach(Library.randomCounts, id: \\.self)").count - 1 == 2, "both pickers use the same values")
-        #expect(menu.components(separatedBy: "player.random(library.random(number))").count - 1 == 1)
-        #expect(menu.components(separatedBy: "player.random(library.unplayed(number))").count - 1 == 1)
+        #expect(menu.contains("Menu(\"Most Played (\\(library.played))\")"), "the best played picker says how many songs have a count")
+        #expect(menu.components(separatedBy: "values(library.total) { picked(library.random($0)) }").count - 1 == 1)
+        #expect(menu.components(separatedBy: "values(library.neverPlayed) { picked(library.unplayed($0)) }").count - 1 == 1)
+        #expect(menu.components(separatedBy: "values(library.played) { picked(library.topmost($0)) }").count - 1 == 1)
+        #expect(menu.components(separatedBy: "ForEach(Library.randomCounts, id: \\.self)").count - 1 == 1, "one list of values, used by every picker")
         #expect(menu.range(of: "keyboardShortcut") == nil, "a menu bar item never gets a plain key")
     }
 
     @Test func everyPickerNeedsItsOwnSongs() throws {
-        let menu = try discovery(try source("Overdrive.swift"))
+        let menu = try discovery(try source("Views.swift"))
 
-        #expect(menu.components(separatedBy: ".disabled(library.total < number)").count - 1 == 1, "a value with more songs than the library has stays off")
-        #expect(menu.components(separatedBy: ".disabled(library.neverPlayed < number)").count - 1 == 1, "a value with more songs than the library has never played stays off")
-        #expect(menu.contains(".disabled(library.total < Library.randomCounts[0])"))
-        #expect(menu.contains(".disabled(library.neverPlayed < Library.randomCounts[0])"))
-        #expect(menu.contains(".disabled(library.total == 0)"), "an empty library disables the whole menu")
+        #expect(menu.components(separatedBy: ".disabled(pool.map { $0 < number } ?? false)").count - 1 == 1, "a value with more songs than its pool stays off")
+        #expect(menu.contains(".disabled(library.total < Library.randomCounts[0])"), "an empty library disables the Songs picker")
+        #expect(menu.contains(".disabled(library.neverPlayed < Library.randomCounts[0])"), "nothing new disables the Never Played picker")
+        #expect(menu.contains(".disabled(library.played < Library.randomCounts[0])"), "nothing played disables the Most Played picker")
+    }
+
+    @Test func discoveryIsItsOwnMenuBarMenu() throws {
+        let app = try source("Overdrive.swift")
+        let start = try #require(app.range(of: "CommandMenu(\"Discovery\") {")).upperBound
+        let rest = app[start...]
+        let menu = String(rest[..<(try #require(rest.range(of: "\n            }")).lowerBound)])
+
+        #expect(menu.contains("DiscoveryMenu()"), "the menu bar entry holds the pickers")
+        #expect(menu.contains(".environment(library)") && menu.contains(".environment(player)"))
+        #expect(app.range(of: "CommandMenu(\"Discovery\")")!.lowerBound < app.range(of: "CommandMenu(\"Song\")")!.lowerBound, "Discovery comes before Song")
+
+        let controls = try body(app, "CommandMenu(\"Controls\") {")
+        #expect(!controls.contains("Discovery"), "the pickers are never in Controls as well")
+        #expect(!controls.contains("library.random(") && !controls.contains("library.unplayed("), "Controls only clears and moves")
+    }
+
+    @Test func aDiscoveryPickShowsUpNext() throws {
+        let views = try source("Views.swift")
+
+        #expect(try discovery(views).contains("player.random(tracks)\n        NotificationCenter.default.post(name: .discovery, object: nil)"), "the pick happens first, then the screen follows it")
+        #expect(views.contains("static let discovery = Notification.Name(\"discovery\")"))
+
+        let shown = try handler(views, "discovery")
+        #expect(shown.contains("navigation.open(.upNext, leaving: tracker.position)"), "the picked songs show in Up Next")
+        #expect(shown.contains("lyrics.settle {"), "a page change flushes a pending lyrics edit first")
+        #expect(!shown.contains("player.random"), "the handler never picks a second time")
     }
 
     @Test func theUnplayedPickNeedsItsCount() throws {
@@ -113,6 +146,25 @@ struct RandomTests {
 
         #expect(library.contains("guard neverPlayed >= count else { return [] }"), "a pick of more unplayed songs than the library has gives nothing")
         #expect(library.contains("everything.lazy.filter"), "the pick filters as it walks, so it never builds a second copy of the library")
+    }
+
+    @Test func theBestPlayedPickNeedsItsCount() throws {
+        let library = try source("Library.swift")
+        let body = try self.body(library, "func topmost(_ count: Int) -> [Track] {")
+
+        #expect(body.contains("guard played >= count else { return [] }"), "a pick of more songs than the library has played gives nothing")
+        #expect(body.contains("plays.top(count)"), "the pick reads the play order, it never sorts the library")
+        #expect(!body.contains("sorted") && !body.contains("everything.lazy"), "no walk over the library and no sort of it")
+        #expect(body.contains("tracks.shuffle()"), "the best played songs come in a random order")
+        #expect(library.contains("private(set) var played = 0"), "the library knows how many songs have a count")
+        #expect(library.contains("played = playedKeys.count"), "a play moves a song into that pool without a scan")
+    }
+
+    @Test func theBestPlayedPickSkipsASongTheLibraryDoesNotHave() throws {
+        let library = try source("Library.swift")
+
+        #expect(try self.body(library, "func topmost(_ count: Int) -> [Track] {").contains("{ index[$0] != nil }"), "a key of a folder that left the library never takes the place of a real song")
+        #expect(library.contains("keyIndex = everything.indices.reduce"), "the key of every song is indexed once per scan, so the lookup is O(1)")
     }
 
     @Test func theCountIsSetWhenASongEnds() throws {

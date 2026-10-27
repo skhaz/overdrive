@@ -141,6 +141,36 @@ final class LastFM {
         Task { await flush() }
     }
 
+    /// The artist names the user listened to most, best first.
+    func topArtists(_ count: Int) async -> [String] {
+        guard count > 0, !user.isEmpty else { return [] }
+
+        guard let json = try? await call("user.getTopArtists", ["user": user, "limit": String(count)]) else { return [] }
+        let artists = LastFM.items(json["topartists"], "artist")
+        Log.lastFM.debug("top artists", metadata: ["user": "\(user)", "asked": "\(count)", "got": "\(artists.count)"])
+
+        return artists.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
+    }
+
+    /// The tracks of one artist on Last.fm, most listened to first. No session key:
+    /// the method is public and holds no personal count, so the personal signal is
+    /// the choice of artist, not the choice of song.
+    func topTracks(_ artist: String, _ count: Int) async -> [String] {
+        guard count > 0, !artist.isEmpty else { return [] }
+
+        guard let json = try? await call("artist.getTopTracks", ["artist": artist, "limit": String(count), "autocorrect": "1"]) else { return [] }
+        let tracks = LastFM.items(json["toptracks"], "track")
+        Log.lastFM.debug("top tracks", metadata: ["artist": "\(artist)", "asked": "\(count)", "got": "\(tracks.count)"])
+
+        return tracks.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
+    }
+
+    /// One list, whether the service sent an array or a single item.
+    nonisolated static func items(_ value: Any?, _ key: String) -> [[String: Any]] {
+        guard let container = value as? [String: Any] else { return [] }
+        return container[key] as? [[String: Any]] ?? (container[key] as? [String: Any]).map { [$0] } ?? []
+    }
+
     nonisolated static func resume(after date: Date) -> Date {
         Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 86400).rounded(.down) * 86400 + 86400)
     }

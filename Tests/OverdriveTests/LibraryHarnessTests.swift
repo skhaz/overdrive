@@ -444,6 +444,35 @@ struct LibraryHarnessTests {
         #expect(plays.missing == false)
     }
 
+    @Test func theSongsOfAnArtistAreIndexedOncePerScan() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        try put(folder, "Album/one.mp3")
+        try put(folder, "Album/two.mp3")
+        try put(folder, "Other/three.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let all = library.albums.flatMap(\.tracks)
+        let artist = all[0].artist
+        let folded = Fuzzy.fold(artist)
+        let expected = all.filter { Fuzzy.fold($0.artist) == folded }
+        guard !expected.isEmpty else {
+            Issue.record("the fixtures give no artist to look up")
+            return
+        }
+
+        #expect(library.songs(by: artist) == expected, "the songs of one artist, in library order")
+        #expect(library.songs(by: artist.uppercased()) == expected, "the lookup folds the name, so an accent or a case change still finds it")
+        #expect(library.songs(by: "Nobody At All") == [])
+
+        try put(folder, "Album/four.mp3")
+        await settle(library, [folder])
+        let grown = library.albums.flatMap(\.tracks).filter { Fuzzy.fold($0.artist) == folded }
+
+        #expect(library.songs(by: artist).count == grown.count, "the index follows every scan")
+    }
+
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {
         let folder = try folder()
         defer { clean(folder) }

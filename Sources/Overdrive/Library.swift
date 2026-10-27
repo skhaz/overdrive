@@ -137,6 +137,7 @@ final class Library {
     private(set) var tracks: [Track] = []
     private(set) var total = 0
     private(set) var neverPlayed = 0
+    private(set) var played = 0
     private(set) var version = 0
     private(set) var scans = 0
     private(set) var members = 0
@@ -186,10 +187,12 @@ final class Library {
     @ObservationIgnored private var index = Index()
     @ObservationIgnored private var everything: [Track] = []
     @ObservationIgnored private var playedKeys: Set<String> = []
+    @ObservationIgnored private var keyIndex: [String: Int] = [:]
     @ObservationIgnored private var byYear: [Album] = []
     @ObservationIgnored private var lookup: [String: Track] = [:]
     @ObservationIgnored private var byID: [String: Album] = [:]
     @ObservationIgnored private var byArtist: [String: [Album]] = [:]
+    @ObservationIgnored private var bySong: [String: [Track]] = [:]
     @ObservationIgnored private var readers: [Cache] = []
     @ObservationIgnored private var readerFolders: [URL] = []
     @ObservationIgnored private var pending: Task<Void, Never>?
@@ -519,9 +522,14 @@ final class Library {
         everything = tracks
         total = everything.count
         if plays.missing, plays.root != nil { plays.load() }
-        let played = plays
-        playedKeys = Set(everything.lazy.map(Plays.key).filter { played.played($0) })
+        let store = plays
+        playedKeys = Set(everything.lazy.map(Plays.key).filter { store.played($0) })
         neverPlayed = total - playedKeys.count
+        played = playedKeys.count
+        keyIndex = everything.indices.reduce(into: [String: Int]()) { index, slot in
+            let key = Plays.key(everything[slot])
+            if index[key] == nil { index[key] = slot }
+        }
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
         if readerFolders != folders {
             readers = folders.compactMap { folder in
@@ -533,6 +541,7 @@ final class Library {
         byYear = Library.chronological(snapshot.albums)
         byID = Dictionary(snapshot.albums.map { ($0.id, $0) }) { first, _ in first }
         byArtist = Dictionary(grouping: byYear, by: \.artist)
+        bySong = Dictionary(grouping: everything, by: { Fuzzy.fold($0.artist) })
         shownFolders = folders
         scans += 1
         search()
@@ -550,6 +559,12 @@ final class Library {
         byArtist[artist] ?? []
     }
 
+    /// The songs of one artist, as the tags name it, folded. Built once per scan,
+    /// so a lookup by name is O(1) and never walks the library.
+    func songs(by artist: String) -> [Track] {
+        bySong[Fuzzy.fold(artist)] ?? []
+    }
+
     func track(_ path: String) -> Track? {
         lookup[path]
     }
@@ -562,15 +577,28 @@ final class Library {
 
     func unplayed(_ count: Int) -> [Track] {
         guard neverPlayed >= count else { return [] }
-        let played = plays
+        let store = plays
 
-        return Player.picked(everything.lazy.filter { !played.played(Plays.key($0)) }, count)
+        return Player.picked(everything.lazy.filter { !store.played(Plays.key($0)) }, count)
+    }
+
+    /// The best played songs, in a random order. The play order lives in `Plays`
+    /// and is kept up to date by every play, so this reads O(count) songs and never
+    /// sorts or walks the library.
+    func topmost(_ count: Int) -> [Track] {
+        guard played >= count else { return [] }
+        let index = keyIndex
+        var tracks = plays.top(count) { index[$0] != nil }.compactMap { index[$0] }.map { everything[$0] }
+
+        tracks.shuffle()
+        return tracks
     }
 
     private func songPlayed(_ track: Track) {
         guard lookup[track.url.path] != nil, playedKeys.insert(Plays.key(track)).inserted else { return }
 
         neverPlayed = max(total - playedKeys.count, 0)
+        played = playedKeys.count
     }
 
     func matched(_ track: Track) -> Bool {

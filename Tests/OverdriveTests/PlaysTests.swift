@@ -15,6 +15,125 @@ struct PlaysTests {
         Track(url: URL(fileURLWithPath: path), title: URL(fileURLWithPath: path).lastPathComponent, artist: artist, album: album, number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x")
     }
 
+    private func ranks(_ counts: [(String, Int)]) -> [Plays.Rank] {
+        counts.map { Plays.Rank(key: $0.0, count: $0.1) }
+    }
+
+    @Test func theBestPlayedPickGoesDownTheOrder() {
+        let best = Plays.top(ranks([("a", 9), ("b", 5), ("c", 5), ("d", 1)]), 3) { _ in true }
+
+        #expect(best.first == "a", "the most played song comes first")
+        #expect(Set(best) == ["a", "b", "c"])
+        #expect(Plays.top(ranks([("a", 9), ("b", 5)]), 5) { _ in true } == ["a", "b"], "fewer songs than asked for gives what there is")
+        #expect(Plays.top(ranks([("a", 9)]), 0) { _ in true }.isEmpty, "nothing asked for, nothing picked")
+    }
+
+    @Test func theBestPlayedPickDrawsAtRandomInsideTheLastGroup() {
+        let tied = (0..<40).map { ("song\($0)", 7) }
+        var picks: Set<Set<String>> = []
+        for _ in 0..<40 { picks.insert(Set(Plays.top(ranks(tied), 10) { _ in true })) }
+
+        #expect(picks.count > 1, "the group that fills the pick is drawn at random, not cut at its head")
+        #expect(picks.allSatisfy { $0.isSubset(of: Set(tied.map(\.0))) && $0.count == 10 })
+    }
+
+    @Test func theBestPlayedPickSkipsWhatTheCallerRejects() {
+        let keys = Plays.top(ranks([("gone", 99), ("a", 9), ("b", 8)]), 2) { $0 != "gone" }
+
+        #expect(keys == ["a", "b"], "a song the library does not have takes no place in the pick")
+    }
+
+    @Test func theBestPlayedPickWalksOnlyWhatItNeeds() {
+        let many = (0..<50_000).map { ("song\($0)", 50_000 - $0) }
+        var seen = 0
+        let keys = Plays.top(many.map { Plays.Rank(key: $0.0, count: $0.1) }, 10) { key in
+            seen += 1
+            return true
+        }
+
+        #expect(keys.count == 10)
+        #expect(seen == 10, "the pick costs O(pick), not the size of the play order")
+    }
+
+    @Test func oneMorePlayMovesTheSongUpTheOrder() {
+        var order = ranks([("top", 9), ("mid", 5), ("other", 5), ("low", 1)])
+        var slots = Dictionary(order.enumerated().map { ($0.element.key, $0.offset) }) { first, _ in first }
+
+        Plays.sift(&order, &slots, 3)
+        #expect(order.map(\.count) == [9, 5, 5, 2], "a song that passes nobody stays where it is")
+        #expect(order.map(\.key) == ["top", "mid", "other", "low"])
+        #expect(slots["low"] == 3)
+
+        Plays.sift(&order, &slots, 1)
+        #expect(order.map(\.count) == [9, 6, 5, 2], "a song that reaches the count above it passes nobody")
+        #expect(order.map(\.key) == ["top", "mid", "other", "low"])
+
+        Plays.sift(&order, &slots, 2)
+        #expect(order.map(\.count) == [9, 6, 6, 2], "a tie keeps its place")
+        #expect(order.map(\.key) == ["top", "mid", "other", "low"])
+
+        for (slot, rank) in order.enumerated() { #expect(slots[rank.key] == slot, "every place stays true") }
+    }
+
+    @Test func aPlayThatPassesSongsRewritesEveryPlace() {
+        var order = ranks([("a", 3), ("b", 2), ("c", 2), ("d", 2)])
+        var slots = Dictionary(order.enumerated().map { ($0.element.key, $0.offset) }) { first, _ in first }
+
+        Plays.sift(&order, &slots, 3)
+
+        #expect(order.map(\.key) == ["a", "d", "b", "c"], "the song that played rises over the tie below it")
+        #expect(order.map(\.count) == [3, 3, 2, 2])
+        for (slot, rank) in order.enumerated() { #expect(slots[rank.key] == slot, "a swap that is not recorded sends the next play to the wrong song") }
+    }
+
+    @Test func thePlayOrderFollowsEveryPlay() {
+        let songs = (0..<60).map { track("/m/Song \($0).mp3") }
+        let plays = Plays(root: nil)
+        var saved: [String: Int] = [:]
+
+        for round in 0..<20 {
+            for (number, song) in songs.enumerated() where (number + round) % (1 + number % 7) == 0 {
+                saved[Plays.key(song), default: 0] += 1
+                plays.bump(song)
+            }
+        }
+
+        #expect(Set(saved.values).count > 1, "the counts differ, so the order means something")
+        let best = saved.values.max()!
+        let keys = plays.top(20) { _ in true }
+        #expect(keys.count == 20)
+        #expect(keys.map { saved[$0]! } == saved.values.sorted(by: >).prefix(20).map { $0 }, "the kept order holds the same counts as a full sort")
+
+        for _ in 0..<20 {
+            let one = plays.top(1) { _ in true }
+            #expect(one.count == 1, "a tie at the top is drawn at random, and every draw is a best song")
+            #expect(saved[one[0]] == best)
+        }
+
+        let fresh = track("/m/A New Song.mp3")
+        plays.bump(fresh)
+        #expect(plays.count(fresh) == 1, "the count is there before the disk")
+        #expect(plays.top(saved.count + 1) { _ in true } == plays.top(saved.count) { _ in true } + [Plays.key(fresh)] || plays.top(saved.count + 1) { _ in true }.count == saved.count + 1, "a song that played for the first time enters the order")
+        #expect(plays.top(saved.count + 1) { _ in true }.contains(Plays.key(fresh)), "and it is in the play order")
+    }
+
+    @Test func thePlayOrderComesBackFromTheFile() throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let songs = (0..<20).map { track("/m/Song \($0).mp3") }
+        let plays = Plays(root: root)
+        for (number, song) in songs.enumerated() {
+            for _ in 0...number { plays.bump(song) }
+        }
+        plays.flush()
+        Persist.flush()
+
+        let again = Plays(root: root)
+        #expect(again.top(5) { _ in true } == plays.top(5) { _ in true }, "the order is rebuilt from the counts, best first")
+        #expect(again.count(songs[19]) == 20)
+    }
+
     @Test func theKeyCarriesNoPath() {
         let key = Plays.key(track("/a/b/One.mp3", "Album", "Artist"))
 

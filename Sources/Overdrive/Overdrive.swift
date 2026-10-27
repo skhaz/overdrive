@@ -93,6 +93,7 @@ struct Overdrive: App {
         let library = Library(loudness: loudness)
         let player = Player(lastFM: lastFM, loudness: loudness, plays: library.plays)
         let youTube = YouTube(player: player)
+        let discovery = Discovery(library: library, lastFM: lastFM, player: player)
         library.loaded = { [unowned library] complete in player.restore(complete: complete) { library.track($0) } }
 
         Task { await lastFM.flush() }
@@ -125,7 +126,7 @@ struct Overdrive: App {
             return event
         }
 
-        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube)
+        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
@@ -135,6 +136,7 @@ struct Overdrive: App {
     @State private var lastFM = Overdrive.shared.lastFM
     @State private var player = Overdrive.shared.player
     @State private var youTube = Overdrive.shared.youTube
+    @State private var discovery = Overdrive.shared.discovery
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
@@ -182,6 +184,13 @@ struct Overdrive: App {
                     .disabled(library.query.isEmpty)
             }
 
+            CommandMenu("Discovery") {
+                DiscoveryMenu()
+                    .environment(library)
+                    .environment(player)
+                    .environment(discovery)
+            }
+
             CommandMenu("Song") {
                 SongMenu()
                     .environment(library)
@@ -212,24 +221,6 @@ struct Overdrive: App {
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
                     .disabled(player.current == nil)
                 Divider()
-                Menu("Discovery", systemImage: "die.face.5") {
-                    Menu("Songs (\(library.total))") {
-                        ForEach(Library.randomCounts, id: \.self) { number in
-                            Button("\(number) Song\(number == 1 ? "" : "s")") { player.random(library.random(number)) }
-                                .disabled(library.total < number)
-                        }
-                    }
-                    .disabled(library.total < Library.randomCounts[0])
-
-                    Menu("Never Played (\(library.neverPlayed))") {
-                        ForEach(Library.randomCounts, id: \.self) { number in
-                            Button("\(number) Song\(number == 1 ? "" : "s")") { player.random(library.unplayed(number)) }
-                                .disabled(library.neverPlayed < number)
-                        }
-                    }
-                    .disabled(library.neverPlayed < Library.randomCounts[0])
-                }
-                .disabled(library.total == 0)
                 Button("Clear Up Next…", systemImage: "trash") { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
                     .disabled(player.queue.isEmpty)
                 Button("Go to Current Song") { NotificationCenter.default.post(name: .reveal, object: nil) }
