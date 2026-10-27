@@ -56,7 +56,7 @@ The song that plays shows in color and is selected in the list.
 
 Right-click a song, an album, or the bottom bar. You can:
 
-- **Play Next** or **Add to Queue**.
+- **Play Next** (right after the song that plays) or **Add to Queue** (at the end of the queue).
 - **Add to Playlist**.
 - **Watch Video on YouTube**.
 - **Go to Album** or **Go to Artist**.

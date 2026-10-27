@@ -34,28 +34,36 @@ struct QueueTests {
         #expect(removed.index == 0)
     }
 
-    @Test func addToQueuePlaysTheSongsBeforeTheRestOfTheAlbum() {
+    @Test func addToQueueGoesToTheEndOfTheQueue() {
         let album = ["01", "02", "03", "04", "05", "06"]
         let added = Player.inserting(album, Array(repeating: false, count: 6), at: 0, ["02", "03", "05", "04"], next: false)
 
-        #expect(added.items == ["01", "02", "03", "05", "04", "06"], "the picked songs went to the end, after the rest of the album")
-        #expect(added.marks == [false, true, true, true, true, false])
+        #expect(added.items == ["01", "06", "02", "03", "05", "04"], "the picked songs went to the end of the queue, after the rest of the album")
+        #expect(added.marks == [false, false, true, true, true, true])
         #expect(added.index == 0)
     }
 
-    @Test func addToQueueGoesAfterTheSongsAddedBefore() {
+    @Test func eachAddToQueueGoesAfterTheSongsAddedBefore() {
         let first = Player.inserting(["a", "b", "c"], [false, false, false], at: 0, ["x"], next: false)
         let second = Player.inserting(first.items, first.marks, at: first.index, ["y"], next: false)
 
-        #expect(second.items == ["a", "x", "y", "b", "c"])
-        #expect(second.marks == [false, true, true, false, false])
+        #expect(second.items == ["a", "b", "c", "x", "y"])
+        #expect(second.marks == [false, false, false, true, true])
+    }
+
+    @Test func addToQueueAtTheEndOfTheQueueAddsToIt() {
+        let added = Player.inserting(["a", "b"], [false, false], at: 1, ["x"], next: false)
+
+        #expect(added.items == ["a", "b", "x"])
+        #expect(added.index == 1, "the song that plays does not move")
     }
 
     @Test func playNextGoesRightAfterTheCurrentSong() {
         let first = Player.inserting(["a", "b", "c"], [false, false, false], at: 0, ["x"], next: false)
         let next = Player.inserting(first.items, first.marks, at: first.index, ["y"], next: true)
 
-        #expect(next.items == ["a", "y", "x", "b", "c"])
+        #expect(next.items == ["a", "y", "b", "c", "x"])
+        #expect(next.marks == [false, true, false, false, true], "Play Next goes before the songs added to the end")
     }
 
     @Test func aSongAddedTwiceMovesAndKeepsTheCurrentSong() {
