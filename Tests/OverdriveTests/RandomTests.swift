@@ -172,7 +172,7 @@ struct RandomTests {
         #expect(try self.body(library, "func topmost(_ count: Int) -> [Track] {").contains("{ index[$0] != nil }"), "a key of a folder that left the library never takes the place of a real song")
         #expect(library.contains("keyIndex = index"), "the key of every song is indexed once per scan, so the lookup is O(1)")
         #expect(library.components(separatedBy: "for (slot, track) in everything.enumerated() {").count - 1 == 1, "one pass per scan builds the played keys, the played bands, and the key index")
-        #expect(library.contains("if bandKeys.insert(Fuzzy.fold(track.artist)).inserted { bands += 1 }"), "a first play opens a band without a scan")
+        #expect(library.contains("if held == 0 { bands += 1 }"), "a first play opens a band without a scan")
     }
 
     @Test func theCountIsSetWhenASongEnds() throws {

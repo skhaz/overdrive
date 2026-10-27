@@ -135,6 +135,24 @@ struct DiscoveryTests {
         #expect(Discovery.owned(["Bloodcraft"], []) == nil, "an artist with no songs in the library is skipped")
     }
 
+    @Test func theTitleRankBeatsTheClosestName() {
+        let songs = [
+            Track(url: URL(fileURLWithPath: "/m/a.mp3"), title: "Bloodcrafts", artist: "A", album: "B", number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x"),
+            Track(url: URL(fileURLWithPath: "/m/b.mp3"), title: "Blood of Lions", artist: "A", album: "B", number: 2, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x"),
+        ]
+
+        #expect(Discovery.owned(["Bloodcraft", "Blood of Lions"], songs)?.title == "Bloodcrafts",
+                "a fuzzy match on the higher-ranked title wins over an exact name lower down; the exact key must not jump the queue")
+    }
+
+    @Test func anExactNameIsFoundWithoutScanningTheSongs() throws {
+        let discovery = try source("Discovery.swift")
+
+        #expect(discovery.contains("if let held = exact[Similarity.normal(letters)] { return held }"), "the common case is one dictionary read, not 300 comparisons")
+        #expect(discovery.contains("Similarity.letters(song.title)"), "every song name is folded once, before the titles run")
+        #expect(!discovery.contains("Similarity.ratio("), "the ratio pass runs on the letters, so nothing is folded a second time")
+    }
+
     @Test func theClosestNameOfTheLibraryWinsInsideOneTitle() {
         #expect(Discovery.owned(["Sandman"], songs(["Sandman", "Enter Sandman", "Sandmen"]))?.title == "Sandman", "the exact name beats a near one")
         #expect(Discovery.owned(["Enter Sandman"], songs(["Sandmen", "Enter Sandman"]))?.title == "Enter Sandman")
@@ -251,7 +269,9 @@ struct DiscoveryTests {
         let discovery = try source("Discovery.swift")
 
         #expect(discovery.contains("!LastFM.key.isEmpty && !lastFM.user.isEmpty && !library.albums.isEmpty"), "no key, no user, or no songs means the submenu is off")
-        #expect(body(discovery, "case .artists, .bands:").contains("guard ready else {"), "a click that cannot work is refused before any request")
+        #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("if pool == .artists || pool == .bands, !ready"), "a click that cannot work is refused before any request")
+        #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "!ready")!.lowerBound < body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "generation += 1")!.lowerBound,
+                "a refused click must not retire the discovery that is in flight")
     }
 
     @Test func aClickAsksTheInternetAtOnceAndKeepsNoCache() throws {
@@ -260,7 +280,9 @@ struct DiscoveryTests {
         #expect(!discovery.contains("Persist."), "the discovery is never written to the disk")
         #expect(!discovery.contains("Date(") && !discovery.contains("ContinuousClock"), "no lifetime, no cache")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("await lastFM.topArtists(count)"), "the artists come from a fresh request")
-        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("library.topBands(count).map(\\.name)"), "the bands come from the local play counts")
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("wanted = library.topBands(count)"), "the bands come from the local play counts")
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").components(separatedBy: "library.songs(by:").count - 1 == 1,
+                "one lookup per artist: the band picker brings its own songs, so nothing is looked up twice")
         #expect(discovery.contains("player.random(tracks)\n        NotificationCenter.default.post(name: .discovery, object: nil)"), "the picked songs replace Up Next and the screen follows")
     }
 
@@ -320,11 +342,33 @@ struct DiscoveryTests {
     @Test func theChartIsReadFourArtistsAtATime() throws {
         let discovery = try source("Discovery.swift")
 
+        let walk = body(discovery, "nonisolated static func collect(_ count: Int, _ wanted: [(name: String, songs: [Track])],")
+
         #expect(Discovery.window == 4, "Last.fm answers 29 when one IP spends its rate")
         #expect(Discovery.tracks == 10, "ten top tracks of an artist is enough to find a song the library has")
-        #expect(discovery.contains("min(start + window, names.count)"), "the walk stops at the artists it has")
-        #expect(discovery.contains("found.count < count"), "the walk stops as soon as the list is full")
-        #expect(discovery.components(separatedBy: "guard !Task.isCancelled else {").count - 1 == 2, "a cancelled walk stops asking, in the window loop and after the artist list")
+        #expect(walk.contains("min(start + min(window, count - found.count), names.count)"), "a discovery of one song asks one artist, not a whole window")
+        #expect(walk.contains("start += slice.count"), "the walk advances by the artists it asked, so none is skipped")
+        #expect(walk.contains("found.count < count"), "the walk stops as soon as the list is full")
+        #expect(walk.components(separatedBy: "guard !Task.isCancelled else {").count - 1 == 1, "a cancelled walk stops asking, in the window loop")
+        #expect(discovery.contains("guard !Task.isCancelled else {"), "and before the first request of the walk")
+    }
+
+    @Test func theWalkNeverAsksMoreThanItNeeds() async {
+        let asked = Counter()
+        let wanted = (0..<12).map { ("Artist \($0)", songs(["Song \($0)"], "Artist \($0)")) }
+
+        _ = await Discovery.collect(1, wanted) { name in
+            asked.hit()
+            return [name.replacingOccurrences(of: "Artist", with: "Song")]
+        }
+        #expect(asked.value == 1, "one song asked for is one artist asked about")
+
+        let counter = Counter()
+        _ = await Discovery.collect(6, wanted) { _ in
+            counter.hit()
+            return []
+        }
+        #expect(counter.value == 12, "nothing matches, so every artist is asked, four at a time and never skipped")
     }
 
     // MARK: - helpers

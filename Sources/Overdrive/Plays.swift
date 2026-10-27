@@ -60,7 +60,7 @@ final class Plays {
     private(set) var revision = 0
 
     private(set) var root: URL?
-    var flipped: ((Track) -> Void)?
+    var onPlay: ((Track) -> Void)?
 
     @ObservationIgnored private var counts: [String: Int] = [:]
     @ObservationIgnored private var pending: [String: Int] = [:]
@@ -92,6 +92,10 @@ final class Plays {
         Self.top(ranked, count, live)
     }
 
+    func top(_ key: String) -> Int {
+        (counts[key] ?? 0) + (pending[key] ?? 0)
+    }
+
     func bump(_ track: Track) {
         let key = Self.key(track)
         pending[key, default: 0] += 1
@@ -101,12 +105,13 @@ final class Plays {
         guard value > 1 else {
             ranked.append(Rank(key: key, count: 1))
             slots[key] = ranked.count - 1
-            flipped?(track)
+            onPlay?(track)
             return
         }
 
         guard slots[key] != nil else { return }
         Plays.sift(&ranked, &slots, slots[key]!)
+        onPlay?(track)
     }
 
     func rebind(_ folder: URL?) {

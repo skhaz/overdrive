@@ -169,17 +169,17 @@ struct PlaysTests {
         #expect(plays.played(Plays.key(song)))
     }
 
-    @Test func onlyTheFirstPlayFlipsASong() {
-        var flipped: [String] = []
+    @Test func everyPlayTellsTheLibrary() {
+        var heard: [String] = []
         let song = track("/m/One.mp3")
         let plays = Plays(root: nil)
-        plays.flipped = { flipped.append($0.url.path) }
+        plays.onPlay = { heard.append($0.url.path) }
 
         plays.bump(song)
         plays.bump(song)
         plays.bump(track("/m/Two.mp3"))
 
-        #expect(flipped == ["/m/One.mp3", "/m/Two.mp3"], "a flip is what moves the never-played count")
+        #expect(heard == ["/m/One.mp3", "/m/One.mp3", "/m/Two.mp3"], "the band totals follow every play, not only the first")
     }
 
     @Test func theCountsAreInTheMemoryBeforeTheDisk() throws {

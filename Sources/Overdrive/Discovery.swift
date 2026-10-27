@@ -10,14 +10,34 @@ final class Discovery {
     nonisolated static let tracks = 10
 
     nonisolated static func owned(_ titles: [String], _ songs: [Track]) -> Track? {
+        guard !titles.isEmpty, !songs.isEmpty else { return nil }
+
+        var exact: [String: Track] = [:]
+        var names: [(track: Track, letters: [Unicode.Scalar])] = []
+        exact.reserveCapacity(songs.count)
+        names.reserveCapacity(songs.count)
+
+        for song in songs {
+            let letters = Similarity.letters(song.title)
+            guard !letters.isEmpty else { continue }
+
+            let key = Similarity.normal(letters)
+            if exact[key] == nil { exact[key] = song }
+            names.append((song, letters))
+        }
+
         for title in titles {
+            let letters = Similarity.letters(title)
+            guard !letters.isEmpty else { continue }
+            if let held = exact[Similarity.normal(letters)] { return held }
+
             var best: (track: Track, ratio: Double)?
 
-            for song in songs {
-                let ratio = Similarity.ratio(title, song.title)
-                guard ratio >= Similarity.threshold, ratio > (best?.ratio ?? 0) else { continue }
+            for candidate in names {
+                guard let ratio = Similarity.close(letters, candidate.letters) else { continue }
+                guard ratio > (best?.ratio ?? 0) else { continue }
 
-                best = (song, ratio)
+                best = (candidate.track, ratio)
             }
 
             if let best { return best.track }
@@ -40,7 +60,7 @@ final class Discovery {
                 return found
             }
 
-            let slice = Array(names[start..<min(start + window, names.count)])
+            let slice = Array(names[start..<min(start + min(window, count - found.count), names.count)])
 
             let picked = await withTaskGroup(of: (index: Int, track: Track?).self) { group in
                 for (index, pair) in slice.enumerated() {
@@ -62,7 +82,7 @@ final class Discovery {
                 if seen.insert(track.id).inserted { found.append(track) }
             }
 
-            start += window
+            start += slice.count
         }
 
         return found
@@ -87,6 +107,10 @@ final class Discovery {
     }
 
     func pick(_ pool: Pool, _ count: Int) {
+        if pool == .artists || pool == .bands, !ready {
+            return Log.player.warning("discovery ignored", metadata: ["pool": "\(pool.rawValue)", "reason": "no last.fm", "songs": "\(count)"])
+        }
+
         generation += 1
         let mine = generation
         work?.cancel()
@@ -103,10 +127,6 @@ final class Discovery {
         case .played:
             start(library.topmost(count), mine, pool, count)
         case .artists, .bands:
-            guard ready else {
-                return Log.player.warning("discovery ignored", metadata: ["pool": "\(pool.rawValue)", "reason": "no last.fm", "songs": "\(count)"])
-            }
-
             running = true
             work = Task {
                 let tracks = await self.walk(pool, count)
@@ -134,14 +154,16 @@ final class Discovery {
     }
 
     private func walk(_ pool: Pool, _ count: Int) async -> [Track] {
-        let names: [String]
-        if pool == .artists {
-            names = await lastFM.topArtists(count)
-        } else {
-            names = library.topBands(count).map(\.name)
+        let wanted: [(name: String, songs: [Track])]
+
+        switch pool {
+        case .artists:
+            wanted = (await lastFM.topArtists(count)).map { (name: $0, songs: library.songs(by: $0)) }
+        default:
+            wanted = library.topBands(count)
         }
 
-        guard !names.isEmpty else {
+        guard !wanted.isEmpty else {
             Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no artists"])
             return []
         }
@@ -150,12 +172,11 @@ final class Discovery {
             return []
         }
 
-        let wanted = names.map { (name: $0, songs: library.songs(by: $0)) }
         let held = wanted.filter { !$0.songs.isEmpty }.count
         let fm = lastFM
         let found = await Discovery.collect(count, wanted) { await fm.topTracks($0, Discovery.tracks) }
 
-        Log.player.info("discovery result", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "artists": "\(names.count)", "held": "\(held)", "found": "\(found.count)"])
+        Log.player.info("discovery result", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "artists": "\(wanted.count)", "held": "\(held)", "found": "\(found.count)"])
         return found
     }
 }
