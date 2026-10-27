@@ -184,6 +184,9 @@ struct Overdrive: App {
                     likes.load()
                 }
                 .disabled(library.scanning)
+
+                Button("Sync Liked Songs from Last.fm", action: loves.syncNow)
+                    .disabled(loves.syncing || lastFM.user.isEmpty)
             }
 
             CommandGroup(after: .textEditing) {

@@ -206,6 +206,19 @@ struct LovesTests {
         #expect(body(loves, "private func pull(full: Bool) async -> Read {").contains("guard !full, !remote.isEmpty else { return await every() }"), "a cache with no mirror or a sync asked for in full reads everything")
     }
 
+    @Test func theFileMenuForcesTheWholeListAndPagesIt() throws {
+        let app = try source("Overdrive.swift")
+        let item = region(app, "Button(\"Sync Liked Songs from Last.fm\"", "\n            }")
+
+        #expect(!item.isEmpty, "the File menu must offer the sync")
+        #expect(item.contains("action: loves.syncNow"), "and it goes through the same sync as Settings")
+        #expect(item.contains(".disabled(loves.syncing || lastFM.user.isEmpty)"), "dimmed while it runs and with no account")
+
+        let loves = try source("Loves.swift")
+        #expect(body(loves, "func syncNow() {").contains("sync(full: true)"), "the command asks for the whole list, not the fast page")
+        #expect(body(loves, "private func every() async -> Read {").contains("fetch(number, LastFM.wide)"), "and the whole list is read page by page")
+    }
+
     @Test func aLikeMadeInTheAppIsSavedAndSentAtOnce() throws {
         let loves = try source("Loves.swift")
         let local = body(loves, "private func local(_ tracks: [Track], _ love: Bool) {")

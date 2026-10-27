@@ -17,6 +17,10 @@ struct LibraryHarnessTests {
         var value = 0
     }
 
+    private final class Tally: @unchecked Sendable {
+        var values: [Int] = []
+    }
+
     private func folder() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "OverdriveHarness-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -882,6 +886,48 @@ struct LibraryHarnessTests {
         await loves.sync()
         #expect(page.value == 4 && wide.value == 3, "a love back on the server costs the page and the list that explains it")
         #expect(likes.contains(song("beta")), "and it arrives again")
+    }
+
+    @Test func aForcedSyncPagesThroughTheWholeList() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        for name in ["alpha", "beta", "gamma"] { try put(folder, "Album/\(name).mp3") }
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger)
+        loves.send = { (_: Loves.Entry) in .sent }
+
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let artist = song("alpha").artist
+        let asked = Tally()
+        let limits = Tally()
+
+        loves.read = { page, limit in
+            asked.values.append(page)
+            limits.values.append(limit)
+            let titles = page == 1 ? ["alpha", "beta"] : ["gamma"]
+            return LastFM.Page(tracks: titles.map { LastFM.Loved(artist: artist, title: $0) }, total: 3, pages: 2)
+        }
+
+        await loves.sync(full: true)
+
+        #expect(asked.values == [1, 2], "a sync asked for in full reads every page, in order: \(asked.values)")
+        #expect(limits.values == [LastFM.wide, LastFM.wide], "and every page is the big one, so a long account costs few requests")
+        #expect(loves.remote.count == 3, "the whole list is the mirror now")
+        #expect(likes.paths.count == 3, "and every loved song the library holds is liked")
+        #expect(likes.contains(song("gamma")), "including the one on the second page")
     }
 
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {
