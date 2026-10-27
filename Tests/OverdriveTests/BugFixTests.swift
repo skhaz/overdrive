@@ -10,11 +10,11 @@ struct BugFixTests {
         try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/\(name)"), encoding: .utf8)
     }
 
-    @Test func theQueuePageRedrawsWhenTheQueueChanges() throws {
+    @Test func theUpNextPageRedrawsWhenTheQueueChanges() throws {
         let player = try source("Player.swift")
 
         #expect(player.contains("private(set) var revision = 0"))
-        #expect(!player.contains("@ObservationIgnored private(set) var revision"), "the Queue rows read the queue only when the token changes, so the token itself must be observed, or a shuffle shows an old order and actions reach the wrong song")
+        #expect(!player.contains("@ObservationIgnored private(set) var revision"), "the Up Next rows read the queue only when the token changes, so the token itself must be observed, or a shuffle shows an old order and actions reach the wrong song")
     }
 
     @Test func aRightClickNeverReachesAHiddenTable() throws {
@@ -63,7 +63,7 @@ struct PlayerRestoreTests {
 
         #expect(stop.contains("played = 0") && stop.contains("scrobbled = false") && stop.contains("announced = false"), "the end of the queue must not give the scrobble state of the last song to the first one")
         #expect(stop.contains("save()"))
-        #expect(source.contains("guard current != nil else { return play(tracks) }"), "Add to Queue after the queue ends adds to it, it does not replace it")
+        #expect(source.contains("guard current != nil else { return play(tracks) }"), "Add to Up Next after the list ends adds to it, it does not replace it")
         #expect(source.contains("guard restored || Player.saved == nil else {"), "nothing writes the session before the saved one is back or the user plays something new")
         #expect(source.contains("if repeatMode != oldValue { Log.player.info(\"repeat\", metadata: [\"mode\": \"\\(repeatMode)\"]); save() }"))
     }
@@ -478,7 +478,7 @@ struct TagEditTests {
         #expect(!Library.edited(old, [track("b", title: "Other")]), "a new song is a membership change, not an edit")
     }
 
-    @Test func theQueueTakesTheNewTags() {
+    @Test func theUpNextListTakesTheNewTags() {
         let queue = [track("a", title: "Old"), track("b", title: "Same")]
         let fresh = ["/m/a.mp3": track("a", title: "New"), "/m/b.mp3": track("b", title: "Same")]
 

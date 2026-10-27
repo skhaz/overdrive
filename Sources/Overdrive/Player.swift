@@ -246,16 +246,14 @@ final class Player {
         load()
     }
 
-    func insert(_ tracks: [Track], next: Bool) {
-        var metadata = Log.paths(tracks.map(\.url.path))
-        metadata["next"] = "\(next)"
-        Log.player.info("insert", metadata: metadata)
+    func insert(_ tracks: [Track]) {
+        Log.player.info("insert", metadata: Log.paths(tracks.map(\.url.path)))
         guard current != nil else { return play(tracks) }
         let track = queue[index]
 
         origin = []
         let tracks = tracks.filter { $0 != track }
-        let inserted = Player.inserting(queue, added, at: index, tracks, next: next)
+        let inserted = Player.inserting(queue, added, at: index, tracks)
         queue = inserted.items
         added = inserted.marks
         index = inserted.index
@@ -264,8 +262,6 @@ final class Player {
         order.removeAll { set.contains($0) }
         if !shuffle {
             order = queue
-        } else if next {
-            order.insert(contentsOf: tracks, at: (order.firstIndex(of: track) ?? -1) + 1)
         } else {
             order.append(contentsOf: tracks)
         }
@@ -274,7 +270,7 @@ final class Player {
         save()
     }
 
-    nonisolated static func inserting<T: Hashable>(_ items: [T], _ marks: [Bool], at index: Int, _ new: [T], next: Bool) -> (items: [T], marks: [Bool], index: Int) {
+    nonisolated static func inserting<T: Hashable>(_ items: [T], _ marks: [Bool], at index: Int, _ new: [T]) -> (items: [T], marks: [Bool], index: Int) {
         let new = items.indices.contains(index) ? new.filter { $0 != items[index] } : new
         let set = Set(new)
         let kept = items.indices.filter { $0 == index || !set.contains(items[$0]) }
@@ -282,7 +278,7 @@ final class Player {
         var marks = kept.map { marks.indices.contains($0) && marks[$0] }
         let index = kept.firstIndex(of: index) ?? 0
 
-        let position = next ? index + 1 : items.count
+        let position = items.count
 
         items.insert(contentsOf: new, at: position)
         marks.insert(contentsOf: repeatElement(true, count: new.count), at: position)

@@ -211,7 +211,7 @@ struct Overdrive: App {
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
                     .disabled(player.current == nil)
                 Divider()
-                Button("Clear Queue…", systemImage: "trash") { NotificationCenter.default.post(name: .clearQueue, object: nil) }
+                Button("Clear Up Next…", systemImage: "trash") { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
                     .disabled(player.queue.isEmpty)
                 Button("Go to Current Song") { NotificationCenter.default.post(name: .reveal, object: nil) }
                     .keyboardShortcut("l")

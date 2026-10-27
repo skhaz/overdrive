@@ -16,7 +16,7 @@ nonisolated enum Page: Hashable {
     case section(Section)
     case playlist(String)
     case liked
-    case queue
+    case upNext
     case about
 
     init?(key: String) {
@@ -24,8 +24,8 @@ nonisolated enum Page: Hashable {
             self = .playlist(String(key.dropFirst(9)))
         } else if key == "liked" {
             self = .liked
-        } else if key == "queue" {
-            self = .queue
+        } else if key == "up-next" {
+            self = .upNext
         } else if key == "about" {
             self = .about
         } else if let section = Section(rawValue: key) {
@@ -40,7 +40,7 @@ nonisolated enum Page: Hashable {
         case .section(let section): section.rawValue
         case .playlist(let name): "playlist:" + name
         case .liked: "liked"
-        case .queue: "queue"
+        case .upNext: "up-next"
         case .about: "about"
         }
     }
@@ -50,7 +50,7 @@ nonisolated enum Page: Hashable {
         case .section(let section): section.rawValue
         case .playlist(let name): name
         case .liked: "Liked Songs"
-        case .queue: "Queue"
+        case .upNext: "Up Next"
         case .about: "About"
         }
     }
@@ -145,7 +145,7 @@ nonisolated struct Navigation {
         switch (place.path.last, place.page) {
         case (.album, _): true
         case (.artist, _), (nil, .section(.albums)), (nil, .section(.artists)), (_, .about): false
-        case (nil, .section(.songs)), (nil, .liked), (nil, .playlist), (nil, .queue): true
+        case (nil, .section(.songs)), (nil, .liked), (nil, .playlist), (nil, .upNext): true
         }
     }
 

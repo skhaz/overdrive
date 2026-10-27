@@ -348,7 +348,7 @@ struct NavigationTests {
 
     @Test func anAlbumOrArtistFromAListOpensOnItsSection() {
         let one = Self.album("one")
-        for page in [Page.queue, .liked, mix, .about] {
+        for page in [Page.upNext, .liked, mix, .about] {
             var navigation = Navigation(page: page)
             navigation.push(.album(one))
             #expect(navigation.place == Place(page: albums, path: [.album(one)]), "the sidebar must mark the page that shows")

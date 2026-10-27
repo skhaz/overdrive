@@ -81,14 +81,14 @@ struct ViewStructureTests {
         #expect(press.range(of: guardLine).map { $0.lowerBound < press.range(of: rule)!.lowerBound } == true, "only the lyrics editor keeps Command-A for its own text")
     }
 
-    @Test func theQueueEditsThePlayerQueue() throws {
+    @Test func theUpNextPageEditsThePlayerQueue() throws {
         let source = try source()
-        let queue = region(source, from: "struct QueueView: View {")
+        let list = region(source, from: "struct UpNextView: View {")
 
-        #expect(source.contains("row(\"Queue\", \"list.bullet\", .queue)"))
-        #expect(queue.contains("player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))"), "a drag must reorder only the songs after the one that plays")
-        #expect(queue.contains("player.queue.indices.dropFirst(player.index)"), "the queue shows the song that plays and the songs that follow, not the played ones")
-        #expect(queue.contains("delete: { remove(selection) }"), "Delete must remove the selected songs")
+        #expect(source.contains("row(\"Up Next\", \"list.bullet\", .upNext)"))
+        #expect(list.contains("player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))"), "a drag must reorder only the songs after the one that plays")
+        #expect(list.contains("player.queue.indices.dropFirst(player.index)"), "Up Next shows the song that plays and the songs that follow, not the played ones")
+        #expect(list.contains("delete: { remove(selection) }"), "Delete must remove the selected songs")
     }
 
     @Test func theLyricsButtonHidesTheLyrics() throws {
@@ -99,13 +99,13 @@ struct ViewStructureTests {
         #expect(source.contains("lyrics.enabled = player.lyrics"), "hidden lyrics stop all work")
     }
 
-    @Test func clearingTheQueueAsksFirst() throws {
+    @Test func clearingUpNextAsksFirst() throws {
         let source = try source()
-        let queue = region(source, from: "struct QueueView: View {")
+        let list = region(source, from: "struct UpNextView: View {")
 
-        #expect(source.contains("Button(\"Clear Queue\", systemImage: \"trash\") { clearing = true }"), "the Queue page must show a clear button that asks first")
-        #expect(source.contains("Button(\"Clear Queue\", role: .destructive, action: player.clear)"), "only the confirmation clears the queue")
-        #expect(!queue.contains("player.clear"), "the Queue page never clears without the confirmation")
+        #expect(source.contains("Button(\"Clear Up Next\", systemImage: \"trash\") { clearing = true }"), "the Up Next page must show a clear button that asks first")
+        #expect(source.contains("Button(\"Clear Up Next\", role: .destructive, action: player.clear)"), "only the confirmation clears the list")
+        #expect(!list.contains("player.clear"), "the Up Next page never clears without the confirmation")
     }
 
     @Test func theFindShortcutFocusesTheSearchWithItsTextSelected() throws {

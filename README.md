@@ -17,7 +17,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Same volume for all songs**, so you do not have to change the volume between songs.
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.
-- **Playlists** and a queue (Play Next and Add to Queue). The Queue in the sidebar shows the song that plays and the songs that come next. Drag them to change the order, or press Delete to remove them. Click the trash button to clear the queue. After you confirm, the song stops and the player starts again with no song.
+- **Playlists** and **Up Next** (the list of what plays next). Up Next in the sidebar shows the song that plays and the songs that come after it. Add songs to it from the menu of a song; they go to the end of the list. Drag them to change the order, or press Delete to remove them. Click the trash button to clear the list. After you confirm, the song stops and the player starts again with no song.
 - **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar.
 - **Continues where you stopped.** When you open the app again, it shows the same song, at the same time.
 - **Keyboard media keys** and Control Center play, pause, and change songs.
@@ -56,7 +56,7 @@ The song that plays shows in color and is selected in the list.
 
 Right-click a song, an album, or the bottom bar. You can:
 
-- **Play Next** (right after the song that plays) or **Add to Queue** (at the end of the queue).
+- **Add to Up Next** (the songs go to the end of the list).
 - **Add to Playlist**.
 - **Watch Video on YouTube**.
 - **Go to Album** or **Go to Artist**.
@@ -133,8 +133,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 | Command-[ | Go back to the previous screen |
 | Command-] | Go forward again |
 | Control-Return | Open the menu of the item, as with a right-click |
-| Command-Return | Play the selected songs next |
-| Option-Command-Return | Add the selected songs to the queue |
+| Command-Return | Add the selected songs to the end of Up Next |
 | Shift-Command-L | Like or unlike the selected songs |
 | Shift-Command-Y | Watch the video of the selected song on YouTube |
 | Shift-Command-N | New playlist with the selected songs |

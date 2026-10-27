@@ -245,10 +245,8 @@ struct TrackMenu: View {
 
     var body: some View {
         if !tracks.isEmpty {
-            Button("Play Next") { player.insert(tracks, next: true) }
+            Button("Add to Up Next") { player.insert(tracks) }
                 .keyboardShortcut(.return, modifiers: .command)
-            Button("Add to Queue") { player.insert(tracks, next: false) }
-                .keyboardShortcut(.return, modifiers: [.command, .option])
 
             let liked = tracks.allSatisfy(likes.contains)
             Button((liked ? "Unlike " : "Like ") + (tracks.count == 1 ? "Song" : "Songs"), systemImage: liked ? "heart.slash" : "heart") { likes.toggle(tracks) }
@@ -766,7 +764,7 @@ extension Notification.Name {
     static let reveal = Notification.Name("reveal")
     static let editLyrics = Notification.Name("editLyrics")
     static let floatLyrics = Notification.Name("floatLyrics")
-    static let clearQueue = Notification.Name("clearQueue")
+    static let clearUpNext = Notification.Name("clearUpNext")
     static let find = Notification.Name("find")
 }
 
@@ -1163,7 +1161,7 @@ struct Cell: View {
                 .foregroundStyle(playing && prominence != .increased ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
 
             if added {
-                Image(systemName: "text.badge.plus").font(.caption).foregroundStyle(.secondary).help("Added to the queue")
+                Image(systemName: "text.badge.plus").font(.caption).foregroundStyle(.secondary).help("Added to Up Next")
             }
 
             if liked {
@@ -1243,25 +1241,25 @@ struct Find: ViewModifier {
     }
 }
 
-struct ClearQueue: ViewModifier {
+struct ClearUpNext: ViewModifier {
     @Binding var clearing: Bool
     @Environment(Player.self) private var player
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog("Clear the queue?", isPresented: $clearing) {
-                Button("Clear Queue", role: .destructive, action: player.clear)
+            .confirmationDialog("Clear Up Next?", isPresented: $clearing) {
+                Button("Clear Up Next", role: .destructive, action: player.clear)
                 Button("Cancel", role: .cancel) { Log.player.info("clear cancelled", metadata: ["count": "\(player.queue.count)"]) }
             } message: {
-                Text("The song stops and the queue empties.")
+                Text("The song stops and Up Next becomes empty.")
             }
-            .onReceive(NotificationCenter.default.publisher(for: .clearQueue)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .clearUpNext)) { _ in
                 if !player.queue.isEmpty { clearing = true }
             }
     }
 }
 
-struct QueueView: View {
+struct UpNextView: View {
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
@@ -1276,11 +1274,11 @@ struct QueueView: View {
         let now = youTube.showing == nil ? player.index : nil
 
         if rows.isEmpty {
-            ContentUnavailableView("No Songs", systemImage: "list.bullet", description: Text("Play a song or an album to fill the queue."))
+            ContentUnavailableView("No Songs", systemImage: "list.bullet", description: Text("Play a song or an album to fill Up Next."))
                 .modifier(Selected(tracks: []))
         } else {
             ScrollViewReader { proxy in
-                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "queue")) {
+                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "up-next")) {
                     TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track), added: added($0)) }
                     TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.id == now) }
                     TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.id == now) }
@@ -1301,11 +1299,11 @@ struct QueueView: View {
                     let picked = rows.filter { ids.contains($0.id) }
 
                     if !picked.isEmpty {
-                        Button("Remove from Queue", role: .destructive) { remove(ids) }
+                        Button("Remove from Up Next", role: .destructive) { remove(ids) }
                             .keyboardShortcut(.delete)
                             .disabled(ids == [player.index] && rows.count > 1)
                             .buttonStyle(PressableButtonStyle(isDestructive: true))
-                        Button("Clear Queue", role: .destructive) { NotificationCenter.default.post(name: .clearQueue, object: nil) }
+                        Button("Clear Up Next", role: .destructive) { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
                             .buttonStyle(PressableButtonStyle(isDestructive: true))
                         Divider()
 
@@ -1344,7 +1342,7 @@ struct QueueView: View {
 
     private func remove(_ positions: Set<Int>) {
         guard !Player.clears(player.queue.count, positions, from: player.index) else {
-            return NotificationCenter.default.post(name: .clearQueue, object: nil)
+            return NotificationCenter.default.post(name: .clearUpNext, object: nil)
         }
 
         selection = []
@@ -1725,7 +1723,7 @@ struct ContentView: View {
                         }
 
                         row("Liked Songs", "heart", .liked)
-                        row("Queue", "list.bullet", .queue)
+                        row("Up Next", "list.bullet", .upNext)
 
                         SwiftUI.Section {
                             ForEach(playlists.names, id: \.self) { name in
@@ -1795,10 +1793,10 @@ struct ContentView: View {
                             .keyboardShortcut("]")
                             .disabled(navigation.forward.isEmpty)
                     }
-                    if page == .queue {
+                    if page == .upNext {
                         ToolbarItem(placement: .primaryAction) {
-                            Button("Clear Queue", systemImage: "trash") { clearing = true }
-                                .help("Clear Queue")
+                            Button("Clear Up Next", systemImage: "trash") { clearing = true }
+                                .help("Clear Up Next")
                                 .disabled(player.queue.isEmpty)
                         }
                     }
@@ -1888,7 +1886,7 @@ struct ContentView: View {
             Log.navigation.info("navigate", metadata: ["page": "\(page.key)", "from": Log.list(path.map(\.key)), "to": "\(route.key)"])
             lyrics.settle { navigation.push(route, leaving: tracker.position) }
         })
-        .modifier(ClearQueue(clearing: $clearing))
+        .modifier(ClearUpNext(clearing: $clearing))
         .modifier(Find { window in focusSearch(window, selecting: true) })
         .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
             if let current = player.current { reveal(current) }
@@ -2013,7 +2011,7 @@ struct ContentView: View {
         case (nil, .section(.songs)): summary(library.tracks)
         case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
         case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
-        case (nil, .queue): summary(player.queue.dropFirst(player.index))
+        case (nil, .upNext): summary(player.queue.dropFirst(player.index))
         case (nil, .about): ""
         }
     }
@@ -2029,7 +2027,7 @@ struct ContentView: View {
                 case .section(.artists): ArtistList(artists: library.artists)
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
-                case .queue: QueueView()
+                case .upNext: UpNextView()
                 case .about: AboutView()
                 case .section(.songs):
                     VStack(spacing: 0) {
@@ -2108,7 +2106,7 @@ struct ContentView: View {
         let target = Page(key: Player.saved?.page ?? "") ?? .section(.albums)
         Log.navigation.info("restore", metadata: ["page": "\(target.key)", "current": "\(page.key)", "routes": Log.list(routes.map(\.key))])
         switch target {
-        case .liked, .playlist, .queue:
+        case .liked, .playlist, .upNext:
             break
         default:
             navigation.restore(routes, on: target)
