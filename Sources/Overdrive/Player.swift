@@ -58,6 +58,18 @@ final class Player {
             requeue()
         }
     }
+    var showsSpectrum = Spectrum.enabled(UserDefaults.standard.object(forKey: "spectrum")) {
+        didSet {
+            guard showsSpectrum != oldValue else { return }
+
+            Log.player.info("spectrum", metadata: ["on": "\(showsSpectrum)"])
+            UserDefaults.standard.set(showsSpectrum, forKey: "spectrum")
+            spectrum.listening = false
+            spectrum.clear()
+            if let item, let track = current { Task { await adjust(item, track) } }
+            requeue()
+        }
+    }
     var volume = UserDefaults.standard.object(forKey: "volume") as? Float ?? 1 {
         didSet {
             player.volume = volume
@@ -125,6 +137,7 @@ final class Player {
     init(lastFM: LastFM, loudness: Loudness) {
         self.lastFM = lastFM
         self.loudness = loudness
+        spectrum.listening = showsSpectrum
         player.volume = volume
         player.actionAtItemEnd = .advance
 
@@ -610,6 +623,10 @@ final class Player {
     }
 
     private func adjust(_ item: AVPlayerItem, _ track: Track, wait: Bool = true) async {
+        guard normalize || showsSpectrum else {
+            item.audioMix = nil
+            return Log.player.debug("no mix", metadata: ["path": "\(track.url.path)", "reason": "nothing to apply"])
+        }
         guard normalize else { return await mix(item, track, gain: nil) }
 
         let album = !shuffle
@@ -644,7 +661,7 @@ final class Player {
 
         let parameters = AVMutableAudioMixInputParameters(track: audio)
         if let gain { parameters.setVolume(gain, at: .zero) }
-        parameters.audioTapProcessor = spectrum.tap()
+        parameters.audioTapProcessor = showsSpectrum ? spectrum.tap() : nil
         let mix = AVMutableAudioMix()
         mix.inputParameters = [parameters]
         item.audioMix = mix

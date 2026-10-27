@@ -108,6 +108,7 @@ Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email
 | Setting | What it does |
 | --- | --- |
 | Folders | The folders with your music. |
+| Playback > Show Spectrum | Show or hide the bars of the song that plays, above the playback controls (default: shown). |
 | Last.fm | Connect or disconnect your Last.fm account. |
 | YouTube > Open Videos In | Show the videos in the small window (default) or in your web browser. |
 | YouTube > Window Corner | The corner of the screen for the video window. |

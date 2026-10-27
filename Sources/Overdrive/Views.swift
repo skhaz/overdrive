@@ -1824,7 +1824,7 @@ struct ContentView: View {
 
             Divider()
             VStack(spacing: 0) {
-                SpectrumBar()
+                if player.showsSpectrum { SpectrumBar() }
                 Controls(open: reveal)
             }
             .background(.bar)
@@ -2230,6 +2230,7 @@ struct ContentView: View {
 
 struct SettingsView: View {
     @Environment(Library.self) private var library
+    @Environment(Player.self) private var player
     @Environment(LastFM.self) private var lastFM
     @Environment(YouTube.self) private var youTube
     @State private var username = ""
@@ -2237,6 +2238,7 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var youTube = youTube
+        @Bindable var player = player
 
         Form {
             SwiftUI.Section("Folders") {
@@ -2252,6 +2254,10 @@ struct SettingsView: View {
 
                 Button("Add Folder…", action: library.choose)
                     .buttonStyle(PressableButtonStyle(isProminent: true))
+            }
+
+            SwiftUI.Section("Playback") {
+                Toggle("Show Spectrum", isOn: $player.showsSpectrum)
             }
 
             SwiftUI.Section {

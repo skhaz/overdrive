@@ -201,6 +201,31 @@ struct ViewStructureTests {
         #expect(selected.contains("lyrics.selected = picked != nil"), "the top screen tells if one song is selected")
     }
 
+    @Test func theDisabledSpectrumConsumesNothing() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let player = try String(contentsOf: root.appending(path: "Sources/Overdrive/Player.swift"), encoding: .utf8)
+
+        #expect(try source().contains("if player.showsSpectrum { SpectrumBar() }"), "a disabled spectrum draws no view, so no timeline and no FFT")
+        #expect(player.contains("parameters.audioTapProcessor = showsSpectrum ? spectrum.tap() : nil"), "a disabled spectrum installs no tap on the audio thread")
+        #expect(player.contains("guard normalize || showsSpectrum else {\n            item.audioMix = nil"), "a song with no gain and no spectrum keeps no mix, so the old tap leaves with it")
+        #expect(player.contains("spectrum.listening = false\n            spectrum.clear()"), "turning the spectrum off stops the samples and empties the ring")
+        #expect(player.contains("spectrum.listening = showsSpectrum"), "the spectrum starts in the saved state")
+    }
+
+    @Test func theSpectrumSettingIsInThePreferences() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let player = try String(contentsOf: root.appending(path: "Sources/Overdrive/Player.swift"), encoding: .utf8)
+        let source = try source()
+        let settings = region(source, from: "struct SettingsView: View {")
+
+        #expect(settings.contains("@Environment(Player.self) private var player"))
+        #expect(settings.contains("Toggle(\"Show Spectrum\", isOn: $player.showsSpectrum)"), "Settings offers the spectrum switch")
+        let app = try String(contentsOf: root.appending(path: "Sources/Overdrive/Overdrive.swift"), encoding: .utf8)
+        #expect(app.contains("SettingsView()\n                .environment(library)\n                .environment(player)"), "the settings window gets the player")
+        #expect(player.contains(#"Spectrum.enabled(UserDefaults.standard.object(forKey: "spectrum"))"#), "the switch reads the saved state at launch")
+        #expect(player.contains(#"UserDefaults.standard.set(showsSpectrum, forKey: "spectrum")"#), "every change of the switch is persisted")
+    }
+
     @Test func theFloatingLyricsBringTheAppBack() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let panel = try String(contentsOf: root.appending(path: "Sources/Overdrive/LyricsPanel.swift"), encoding: .utf8)

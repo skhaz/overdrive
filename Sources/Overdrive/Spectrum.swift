@@ -6,6 +6,8 @@ import Synchronization
 nonisolated final class Spectrum: Sendable {
     static let size = 4096
 
+    nonisolated static func enabled(_ saved: Any?) -> Bool { (saved as? Bool) ?? true }
+
     private struct Ring {
         var samples = [Float](repeating: 0, count: Spectrum.size)
         var head = 0
@@ -35,6 +37,13 @@ nonisolated final class Spectrum: Sendable {
     var listening: Bool {
         get { open.load(ordering: .relaxed) }
         set { open.store(newValue, ordering: .relaxed) }
+    }
+
+    func clear() {
+        ring.withLock { ring in
+            ring.samples.withUnsafeMutableBufferPointer { $0.assign(repeating: 0) }
+            ring.head = 0
+        }
     }
 
     func prepare(rate: Double) {

@@ -122,4 +122,23 @@ struct SpectrumTests {
         #expect(!SpectrumBar.running(shown: false, active: true, fading: false), "a window in the background must not draw")
         #expect(!SpectrumBar.running(shown: false, active: false, fading: true))
     }
+
+    @Test func theSettingIsOnByDefault() {
+        #expect(Spectrum.enabled(nil), "no saved state means the spectrum is on")
+        #expect(Spectrum.enabled(true))
+        #expect(!Spectrum.enabled(false))
+        #expect(Spectrum.enabled("off"), "a value that is not a bool is no saved state")
+    }
+
+    @Test func clearingEmptiesTheRing() {
+        let spectrum = Spectrum()
+        Self.feed(spectrum) { _ in 1 }
+        var out = [Float](repeating: 0, count: Spectrum.size)
+        _ = out.withUnsafeMutableBufferPointer { spectrum.copy(into: $0) }
+        #expect(out.allSatisfy { $0 == 1 })
+
+        spectrum.clear()
+        _ = out.withUnsafeMutableBufferPointer { spectrum.copy(into: $0) }
+        #expect(out.allSatisfy { $0 == 0 }, "a spectrum that comes back must not show the samples of the last song")
+    }
 }

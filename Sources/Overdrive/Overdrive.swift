@@ -245,6 +245,7 @@ struct Overdrive: App {
         Settings {
             SettingsView()
                 .environment(library)
+                .environment(player)
                 .environment(lastFM)
                 .environment(youTube)
         }
