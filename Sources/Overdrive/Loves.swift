@@ -130,7 +130,7 @@ final class Loves {
         Task { [weak self] in
             while true {
                 guard let self else { return }
-                if !self.pending.isEmpty, !self.syncing { await self.drain() }
+                if !self.pending.isEmpty, !self.syncing, !self.lastFM.session.isEmpty { await self.drain() }
 
                 do { try await Task.sleep(for: retry) } catch { return }
             }

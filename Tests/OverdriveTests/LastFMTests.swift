@@ -274,6 +274,17 @@ struct LastFMTests {
         #expect(server.received == ["A", "B"])
     }
 
+    @Test func aPlayWithoutAnAccountIsNotQueued() async {
+        let lastFM = client()
+        lastFM.disconnect()
+        scrobble(lastFM, ["A"])
+        await settle(lastFM)
+
+        #expect(lastFM.pending.isEmpty, "a play is a scrobble only when there is an account to take it")
+        #expect(server.received.isEmpty)
+        #expect(lastFM.rejected.isEmpty)
+    }
+
     @Test func aLoveIsOnlySentWhenLastFmAnswersSuccessfully() async {
         let lastFM = client()
 

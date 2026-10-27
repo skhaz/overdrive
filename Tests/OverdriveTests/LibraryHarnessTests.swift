@@ -888,6 +888,53 @@ struct LibraryHarnessTests {
         #expect(likes.contains(song("beta")), "and it arrives again")
     }
 
+    @Test func aLikeMadeWithoutAnAccountGoesUpWhenItIsConnected() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        try put(folder, "Album/alpha.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .seconds(3600))
+
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let artist = song("alpha").artist
+        let track = song("alpha")
+
+        likes.add([track], notify: true)
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(loves.pending.map { $0.title } == ["alpha"], "with no account the like waits on the disk, it is not lost")
+        #expect(likes.contains(track), "and the app keeps it as a liked song with no internet and no account")
+        #expect(Persist.read(Loves.Ledger.self, from: ledger)?.pending.count == 1, "the queue survives a quit even so")
+
+        lastFM.session = "key"
+        lastFM.user = "tester"
+        let sent = Counter()
+        loves.send = { (_: Loves.Entry) in
+            sent.value += 1
+            return .sent
+        }
+        loves.read = { _, _ in
+            LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "alpha")], total: 1, pages: 1)
+        }
+
+        await loves.sync()
+
+        #expect(sent.value == 1, "connecting the account sends the wish that was waiting")
+        #expect(loves.pending.isEmpty, "and the queue is empty again")
+    }
+
     @Test func theHourKeepsTheLovedTracksInStepWithoutAClick() async throws {
         let folder = try folder()
         let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
@@ -944,6 +991,7 @@ struct LibraryHarnessTests {
         let data = try #require(Persist.encode(Loves.Ledger(remote: [], pending: [held], dropped: [], wishes: [:]), for: ledger))
         #expect(Persist.write(data, to: ledger))
 
+        lastFM.session = "key"
         let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .milliseconds(20))
         let sent = Counter()
         loves.send = { (_: Loves.Entry) in

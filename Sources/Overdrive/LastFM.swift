@@ -141,6 +141,10 @@ final class LastFM {
     }
 
     func scrobble(_ track: Track, at date: Date) {
+        guard !session.isEmpty else {
+            return Log.lastFM.debug("scrobble skipped", metadata: ["reason": "no account", "artist": "\(track.artist)", "title": "\(track.title)"])
+        }
+
         Log.lastFM.info("queue scrobble", metadata: ["artist": "\(track.artist)", "title": "\(track.title)", "date": "\(date)", "pending": "\(pending.count + 1)"])
         pending.append(parameters(track).merging(["timestamp": String(Int(date.timeIntervalSince1970)), "_id": UUID().uuidString]) { $1 })
 
