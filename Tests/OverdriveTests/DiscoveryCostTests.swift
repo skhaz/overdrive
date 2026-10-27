@@ -64,4 +64,20 @@ struct DiscoveryCostTests {
         #expect(Similarity.close(one, two) == nil, "these names do not match, so the short walk may stop early")
         #expect(banded < whole, "a name that cannot reach the line must cost less than a full distance: \(banded) vs \(whole)")
     }
+
+    @Test func theLocalPassOverABigMirrorCostsNothing() {
+        let library = Library(loudness: Loudness(), folders: [])
+        let mirror = (0..<20_000).map { Loves.key("Ghost \($0)", "Dance Macabre \($0)") }
+
+        let start = ContinuousClock.now
+        var held = 0
+        for key in mirror {
+            let parts = key.components(separatedBy: "\u{1F}")
+            if library.hold(folded: parts[0], folded: parts[1]) != nil { held += 1 }
+        }
+        let elapsed = start.duration(to: .now)
+
+        #expect(held == 0, "a library with no folders holds no loved song")
+        #expect(elapsed < .milliseconds(50), "20 000 loved keys over a library that holds none of them took \(elapsed); the local pass runs on every scan")
+    }
 }

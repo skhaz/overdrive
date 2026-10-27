@@ -100,6 +100,8 @@ struct Overdrive: App {
             player.restore(complete: complete) { library.track($0) }
             guard complete else { return }
 
+            loves.apply()
+
             Task { await loves.arrive() }
         }
 

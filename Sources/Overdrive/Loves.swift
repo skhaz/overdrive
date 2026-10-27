@@ -48,17 +48,15 @@ final class Loves {
         return kept
     }
 
-    /// What one read of the remote list means for the app.
-    /// `add` is what Last.fm has and the app does not know about; `gone` is what the
-    /// app thought it had loved and Last.fm no longer lists. A key in `held` is in
-    /// neither: it is a wish the user made that the server has not caught up with, so
-    /// a read that is a little behind cannot undo it in either direction.
-    nonisolated static func reconcile(_ loved: [LastFM.Loved], _ known: Set<String>, _ held: Set<String>) -> (fresh: Set<String>, add: [LastFM.Loved], gone: [String]) {
+    /// What one read of the remote list means for the app. `fresh` is the mirror the
+    /// server just described; `gone` is what the mirror had and the server dropped.
+    /// A key in `held` is in neither: it is a wish the user made that the server has
+    /// not caught up with, so a read that is a little behind cannot undo it.
+    nonisolated static func reconcile(_ loved: [LastFM.Loved], _ known: Set<String>, _ held: Set<String>) -> (fresh: Set<String>, gone: [String]) {
         let fresh = Set(loved.map { key($0.artist, $0.title) })
-        let add = loved.filter { !known.contains(key($0.artist, $0.title)) && !held.contains(key($0.artist, $0.title)) }
         let gone = known.filter { !fresh.contains($0) && !held.contains($0) }.sorted()
 
-        return (fresh, add, gone)
+        return (fresh, gone)
     }
 
     private(set) var syncing = false
@@ -78,7 +76,7 @@ final class Loves {
 
     var send: ((Entry) async -> LastFM.Outcome)?
     var snapshot: (() async -> [LastFM.Loved]?)?
-    var found: ((LastFM.Loved) -> Track?)?
+    var found: ((String, String) -> Track?)?
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let lastFM: LastFM
@@ -116,6 +114,14 @@ final class Loves {
 
         Log.loves.info("arrive", metadata: ["pending": "\(pending.count)", "remote": "\(remote.count)"])
         await sync()
+    }
+
+    /// A scan brought songs in: the mirror may now reach a loved song it could not
+    /// hold before. Local work only, no request.
+    func apply() {
+        guard !remote.isEmpty else { return Log.loves.debug("apply skipped", metadata: ["reason": "no mirror"]) }
+
+        settle([])
     }
 
     /// One sync at a time: push what the user did, then read the truth back.
@@ -217,28 +223,76 @@ final class Loves {
         let read = Loves.reconcile(loved, remote, held)
         let known = remote
 
-        var added: [Track] = []
-        var gone: [Track] = []
+        remote = read.fresh.union(confirmed.subtracting(read.fresh))
+        confirmed = []
+        save()
 
-        for item in read.add {
-            let track = found.map { $0(item) } ?? library.loved(item)
-            if let track { added.append(track) }
+        // The fuzzy walk runs once per key, on the read that brings it in, and only
+        // for a key whose exact name the library does not hold. A scan never pays it.
+        let delta = read.fresh.subtracting(known).subtracting(held)
+        let resolved = delta.compactMap { key -> (String, Track)? in
+            guard hold(key) == nil, let track = loose(key) else { return nil }
+
+            return (key, track)
         }
 
-        for key in read.gone {
-            let parts = key.components(separatedBy: Self.joined)
-            guard parts.count == 2, let track = library.hold(parts[0], parts[1]) else { continue }
+        settle(read.gone, resolved)
+
+        Log.loves.info("pull", metadata: ["loved": "\(loved.count)", "remote": "\(read.fresh.count)", "known": "\(known.count)", "held": "\(held.count)", "loose": "\(resolved.count)"])
+    }
+
+    /// The name of a key matched by similarity, for the case where Last.fm spells a
+    /// song a little differently than the file does.
+    private func loose(_ key: String) -> Track? {
+        let parts = key.components(separatedBy: Self.joined)
+        guard parts.count == 2 else { return nil }
+
+        return library.loved(folded: parts[0], folded: parts[1])
+    }
+
+    /// The local half of the sync: every loved key that the library holds becomes a
+    /// liked song, and the keys the server dropped stop being liked. No request.
+    /// A loved song the library does not have is left in the mirror, so a folder
+    /// added later brings it down with no read of its own.
+    /// `resolved` are the keys a read just matched by name, not by exact title; they
+    /// arrive here because the fuzzy walk is work for the moment a key shows up, not
+    /// work to repeat on every scan.
+    private func settle(_ dropped: [String], _ resolved: [(key: String, track: Track)] = []) {
+        let held = Set(pending.map(Self.key)).union(confirmed)
+        var added: [Track] = []
+        var gone: [Track] = []
+        var seen: Set<Track.ID> = []
+
+        for key in remote where !held.contains(key) {
+            guard let track = hold(key), !likes.contains(track), seen.insert(track.id).inserted else { continue }
+
+            added.append(track)
+        }
+
+        // A song matched by name carries the key that matched it: the server spells
+        // it differently, so the key of the song itself is not on the mirror.
+        for pair in resolved where remote.contains(pair.key) && !likes.contains(pair.track) && seen.insert(pair.track.id).inserted {
+            added.append(pair.track)
+        }
+
+        for key in dropped {
+            guard let track = hold(key), likes.contains(track) else { continue }
 
             gone.append(track)
         }
 
         likes.add(added, notify: false)
         likes.remove(gone, notify: false)
-        remote = read.fresh
-        confirmed = []
-        save()
+        Log.loves.info("apply", metadata: ["remote": "\(remote.count)", "liked": "\(added.count)", "unliked": "\(gone.count)", "held": "\(held.count)"])
+    }
 
-        Log.loves.info("pull", metadata: ["loved": "\(loved.count)", "remote": "\(read.fresh.count)", "known": "\(known.count)", "liked": "\(added.count)", "unliked": "\(gone.count)", "held": "\(held.count)"])
+    /// The exact name of a key. Both parts are already folded, so this is two
+    /// dictionary reads and no work per character.
+    private func hold(_ key: String) -> Track? {
+        let parts = key.components(separatedBy: Self.joined)
+        guard parts.count == 2 else { return nil }
+
+        return found.map { $0(parts[0], parts[1]) } ?? library.hold(folded: parts[0], folded: parts[1])
     }
 
     private func save() {
