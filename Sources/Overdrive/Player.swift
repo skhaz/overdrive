@@ -285,6 +285,13 @@ final class Player {
         return (items, marks, index)
     }
 
+    func random(_ tracks: [Track]) {
+        Log.player.info("random", metadata: ["songs": "\(tracks.count)", "up next": "\(queue.count)"])
+        guard !tracks.isEmpty else { return Log.player.debug("random ignored", metadata: ["reason": "no songs"]) }
+
+        play(tracks)
+    }
+
     func jump(to position: Int) {
         Log.player.info("jump", metadata: ["position": "\(position)", "count": "\(queue.count)"])
         guard queue.indices.contains(position) else { return }
@@ -400,6 +407,25 @@ final class Player {
         rest.remove(at: index)
         rest.shuffle()
         return [index] + rest
+    }
+
+    nonisolated static func picked<T>(_ items: some Sequence<T>, _ count: Int) -> [T] {
+        guard count > 0 else { return [] }
+
+        var pool: [T] = []
+        var seen = 0
+        for item in items {
+            if pool.count < count {
+                pool.append(item)
+            } else {
+                let pick = Int.random(in: 0...seen)
+                if pick < count { pool[pick] = item }
+            }
+            seen += 1
+        }
+
+        pool.shuffle()
+        return pool
     }
 
     nonisolated static func unshuffled<T: Equatable>(_ position: Int, origin: [Int], queue: [T], order: [T]) -> Int {

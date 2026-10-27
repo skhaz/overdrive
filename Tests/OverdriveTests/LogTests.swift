@@ -164,7 +164,7 @@ final class Records: @unchecked Sendable {
             "Picture.swift": ["covers process failed", "covers"],
             "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved"],
             "LastFM.swift": ["connected", "connect failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "settle", "now playing"],
-            "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum"],
+            "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up"],
             "Spectrum.swift": ["spectrum tap failed"],
@@ -182,7 +182,7 @@ final class Records: @unchecked Sendable {
 
     @Test func everyActionLogs() throws {
         let player = try source("Player.swift")
-        for name in ["toggleMute", "play", "insert", "jump", "move", "clear", "remove", "restore", "resume", "pause", "next", "previous", "seek", "perform", "stop", "load", "finished", "failed", "begin"] {
+        for name in ["toggleMute", "play", "insert", "random", "jump", "move", "clear", "remove", "restore", "resume", "pause", "next", "previous", "seek", "perform", "stop", "load", "finished", "failed", "begin"] {
             #expect(body(player, "func \(name)(").contains("Log.player."), "Player.\(name) must log")
         }
 

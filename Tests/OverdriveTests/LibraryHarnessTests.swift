@@ -387,6 +387,29 @@ struct LibraryHarnessTests {
         library.query = ""
     }
 
+    @Test func theRandomPickFollowsTheLibrary() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        for name in ["one", "two", "three"] { try put(folder, "Album/\(name).mp3") }
+        let library = library([folder])
+        await settle(library, [folder])
+        let all = Set(loaded(library))
+
+        #expect(library.total == 3)
+        #expect(library.random(10).isEmpty, "a pick of more songs than the library has gives nothing")
+        #expect(Set(library.random(3).map(\.url.path)) == all, "every song comes once, in any order")
+        #expect(Set(library.random(1).map(\.url.path)).isSubset(of: all))
+
+        library.query = "one"
+        #expect(Set(library.random(3).map(\.url.path)) == all, "the pick reads the library, not the search results")
+        library.query = ""
+
+        try FileManager.default.removeItem(at: folder.appending(path: "Album/three.mp3"))
+        await settle(library, [folder])
+        #expect(library.total == 2)
+        #expect(library.random(3).isEmpty)
+    }
+
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {
         let folder = try folder()
         defer { clean(folder) }

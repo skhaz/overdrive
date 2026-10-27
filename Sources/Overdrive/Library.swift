@@ -129,10 +129,12 @@ final class Library {
     static let quiet = Duration.milliseconds(1500)
     static let period = Duration.seconds(600)
     nonisolated static let full = 6
+    nonisolated static let randomCounts = [1, 10, 20, 100]
 
     private(set) var albums: [Album] = []
     private(set) var filtered: [Album] = []
     private(set) var tracks: [Track] = []
+    private(set) var total = 0
     private(set) var version = 0
     private(set) var scans = 0
     private(set) var members = 0
@@ -506,6 +508,7 @@ final class Library {
             Log.library.info("edits", metadata: ["edits": "\(edits)"])
         }
         everything = tracks
+        total = everything.count
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
         if readerFolders != folders {
             readers = folders.compactMap { folder in
@@ -536,6 +539,12 @@ final class Library {
 
     func track(_ path: String) -> Track? {
         lookup[path]
+    }
+
+    func random(_ count: Int) -> [Track] {
+        guard total >= count else { return [] }
+
+        return Player.picked(everything, count)
     }
 
     func matched(_ track: Track) -> Bool {

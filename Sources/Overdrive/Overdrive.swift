@@ -211,6 +211,13 @@ struct Overdrive: App {
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
                     .disabled(player.current == nil)
                 Divider()
+                Menu("Discovery", systemImage: "die.face.5") {
+                    ForEach(Library.randomCounts, id: \.self) { number in
+                        Button("\(number) Song\(number == 1 ? "" : "s")") { player.random(library.random(number)) }
+                            .disabled(library.total < number)
+                    }
+                }
+                .disabled(library.total < Library.randomCounts[0])
                 Button("Clear Up Next…", systemImage: "trash") { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
                     .disabled(player.queue.isEmpty)
                 Button("Go to Current Song") { NotificationCenter.default.post(name: .reveal, object: nil) }

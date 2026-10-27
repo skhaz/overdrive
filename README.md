@@ -17,6 +17,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Same volume for all songs**, so you do not have to change the volume between songs.
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.
+- **Discovery:** pick 1, 10, 20, or 100 songs at random from your library and play them right away.
 - **Playlists** and **Up Next** (the list of what plays next). Up Next in the sidebar shows the song that plays and the songs that come after it. Add songs to it from the menu of a song; they go to the end of the list. Drag them to change the order, or press Delete to remove them. Click the trash button to clear the list. After you confirm, the song stops and the player starts again with no song.
 - **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar.
 - **Continues where you stopped.** When you open the app again, it shows the same song, at the same time.
@@ -51,6 +52,12 @@ Drag a music folder to the window, or choose Overdrive > Settings > Folders > Ad
 - Click the cover or the name in the bottom bar to open the album that plays.
 
 The song that plays shows in color and is selected in the list.
+
+### Discover songs
+
+Choose **Controls > Discovery** and pick 1, 10, 20, or 100 songs. The app picks that many songs at random from your whole library, puts them in Up Next, and plays the first one. What was in Up Next before goes away.
+
+A value that needs more songs than your library has is dimmed. The pick never follows the search: it reads the whole library.
 
 ### Use the menu of a song
 
