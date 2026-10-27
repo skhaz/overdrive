@@ -216,43 +216,32 @@ struct SongMenu: View {
 
 struct DiscoveryMenu: View {
     @Environment(Library.self) private var library
-    @Environment(Player.self) private var player
     @Environment(Discovery.self) private var discovery
 
     var body: some View {
-        Menu("Songs (\(library.total))") {
-            values(library.total) { picked(library.random($0)) }
-        }
-        .disabled(library.total < Library.randomCounts[0])
+        Menu("Songs (\(library.total))") { values(library.total) { discovery.pick(.songs, $0) } }
+            .disabled(library.total < Library.randomCounts[0])
 
-        Menu("Never Played (\(library.neverPlayed))") {
-            values(library.neverPlayed) { picked(library.unplayed($0)) }
-        }
-        .disabled(library.neverPlayed < Library.randomCounts[0])
+        Menu("Never Played (\(library.neverPlayed))") { values(library.neverPlayed) { discovery.pick(.unplayed, $0) } }
+            .disabled(library.neverPlayed < Library.randomCounts[0])
 
-        Menu("Most Played (\(library.played))") {
-            values(library.played) { picked(library.topmost($0)) }
-        }
-        .disabled(library.played < Library.randomCounts[0])
+        Menu("Most Played (\(library.played))") { values(library.played) { discovery.pick(.played, $0) } }
+            .disabled(library.played < Library.randomCounts[0])
 
-        Menu("Last.fm Artists") {
-            values(nil) { discovery.topSongs($0) }
-        }
-        .disabled(!discovery.ready || discovery.running)
+        Divider()
+
+        Menu("Last.fm Artists") { values(nil) { discovery.pick(.artists, $0) } }
+            .disabled(!discovery.ready || discovery.running)
+
+        Menu("Top Bands (\(library.bands))") { values(nil) { discovery.pick(.bands, $0) } }
+            .disabled(!discovery.ready || discovery.running || library.bands == 0)
     }
 
-    /// The four values of one picker. A nil pool has no size to check, because the
-    /// answer comes from the internet and only the request can tell how short it is.
     @ViewBuilder private func values(_ pool: Int?, _ action: @escaping @MainActor (Int) -> Void) -> some View {
         ForEach(Library.randomCounts, id: \.self) { number in
             Button("\(number) Song\(number == 1 ? "" : "s")") { action(number) }
                 .disabled(pool.map { $0 < number } ?? false)
         }
-    }
-
-    private func picked(_ tracks: [Track]) {
-        player.random(tracks)
-        NotificationCenter.default.post(name: .discovery, object: nil)
     }
 }
 

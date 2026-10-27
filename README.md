@@ -17,7 +17,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Same volume for all songs**, so you do not have to change the volume between songs.
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.
-- **Discovery:** pick 1, 10, 20, or 100 songs at random from your library, only the songs you have not played yet, the ones you played most, or the top tracks of your Last.fm artists.
+- **Discovery:** pick 1, 10, 20, or 100 songs at random from your library, only the songs you have not played yet, the ones you played most, or the top tracks of your Last.fm artists and of your own top bands.
 - **Play counts:** every song shows how many times you played it all the way through, and you can sort any list by it. The counts travel with your music.
 - **Playlists** and **Up Next** (the list of what plays next). Up Next in the sidebar shows the song that plays and the songs that come after it. Add songs to it from the menu of a song; they go to the end of the list. Drag them to change the order, or press Delete to remove them. Click the trash button to clear the list. After you confirm, the song stops and the player starts again with no song.
 - **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar.
@@ -56,16 +56,17 @@ The song that plays shows in color and is selected in the list.
 
 ### Discover songs
 
-The **Discovery** menu at the top of the screen has four pickers, each with 1, 10, 20, or 100 songs:
+The **Discovery** menu at the top of the screen has five pickers, each with 1, 10, 20, or 100 songs:
 
 - **Songs** picks that many songs at random from your whole library.
 - **Never Played** picks only the songs you have not played yet.
 - **Most Played** picks from the songs you played, and takes the ones with the highest count.
 - **Last.fm Artists** asks Last.fm for the artists you listened to most, and for each one takes the top track that your library really has.
+- **Top Bands** does the same, but it picks the bands by your own play counts instead of what Last.fm thinks you like.
 
-The app puts the chosen songs in Up Next and plays the first one right away, then opens the Up Next page so you see the list. What was in Up Next before goes away. Each local picker shows how many songs it can pick from, and a value that needs more songs than that is dimmed, so you never get a shorter list than you asked for. The pick never follows the search: it reads the whole library.
+The app puts the chosen songs in Up Next and plays the first one right away, then opens the Up Next page so you see the list. What was in Up Next before goes away. A new discovery replaces the one before it, also while one is still on its way: an answer that arrives late is dropped, and the list you chose last is the one that plays. Each local picker shows how many songs it can pick from, and a value that needs more songs than that is dimmed, so you never get a shorter list than you asked for. The pick never follows the search: it reads the whole library.
 
-**Last.fm Artists** needs the Last.fm key built into the app and your account connected in Settings > Last.fm. Without either one the submenu is dimmed. Every click asks the internet again; the app keeps nothing from Last.fm on the disk. It asks for four artists at a time, so a discovery of 100 songs is many requests, and Last.fm answers too many requests from one address for a short while with an error. When that happens the list is simply shorter, or empty, and the app changes nothing and says so in the log.
+The two Last.fm pickers need the Last.fm key built into the app and your account connected in Settings > Last.fm. Without either one they are dimmed, and **Top Bands** is also dimmed while no song has a count. Every click asks the internet again; the app keeps nothing from Last.fm on the disk. It asks for four artists at a time, so a discovery of 100 songs is many requests, and Last.fm answers too many requests from one address for a short while with an error. When that happens the list is simply shorter, or empty, and the app changes nothing and says so in the log. While one of them is on its way, both are dimmed, so you do not spend two searches at once.
 
 A song matches a Last.fm title by name: the app compares the letters and digits of the two names, so accents, case, punctuation, and spacing make no difference, and it takes the title when the names are at least 80% alike. A long suffix is a different song: "Come As You Are" does not match "Come As You Are (Remastered)", and "Sandman" does not match "Enter Sandman", while "Sandman" does match "Sandmen". The app plays the name your library has, not the name Last.fm sent.
 

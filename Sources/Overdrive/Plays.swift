@@ -2,7 +2,6 @@ import Foundation
 
 @Observable
 final class Plays {
-    /// One song in the play order: its key and how many times it played.
     nonisolated struct Rank: Equatable {
         let key: String
         var count: Int
@@ -24,9 +23,6 @@ final class Plays {
         saved.merging(added) { $0 + $1 }
     }
 
-    /// The keys of the best `count` songs, drawn at random inside the group that
-    /// fills the pick. The order is sorted, so a group is one run of equal counts:
-    /// the walk costs O(pick) and stops there, never at the size of the library.
     nonisolated static func top(_ ranks: [Rank], _ count: Int, _ live: (String) -> Bool) -> [String] {
         guard count > 0 else { return [] }
 
@@ -49,9 +45,6 @@ final class Plays {
         return keys
     }
 
-    /// One more play of the song at `slot`. Its count goes up by one, so it passes
-    /// only the songs that already have its new count: a short sift up, with no
-    /// search, because its place is known, and no rebuild of the places.
     nonisolated static func sift(_ ranks: inout [Rank], _ slots: inout [String: Int], _ slot: Int) {
         let count = ranks[slot].count + 1
         var at = slot
@@ -80,10 +73,9 @@ final class Plays {
         load()
     }
 
-    /// The count of a song, memory first: the disk is one sync behind by design.
-    /// Reading the revision makes every screen that shows a count follow a new play.
     func count(_ track: Track) -> Int {
         let key = Self.key(track)
+        // Reading the revision is what makes every screen that shows a count follow a new play.
         _ = revision
         return (counts[key] ?? 0) + (pending[key] ?? 0)
     }
@@ -96,8 +88,6 @@ final class Plays {
         target == nil
     }
 
-    /// The songs that played, best first. A song the caller rejects is skipped, so
-    /// a key of a folder that left the library never takes the place of a real one.
     func top(_ count: Int, _ live: (String) -> Bool) -> [String] {
         Self.top(ranked, count, live)
     }
@@ -119,9 +109,6 @@ final class Plays {
         Plays.sift(&ranked, &slots, slots[key]!)
     }
 
-    /// The file of a library folder, read again when the folders change.
-    /// Counts that never reached the disk travel with the music, so a folder
-    /// that moved while the app was closed keeps them.
     func rebind(_ folder: URL?) {
         let carried = flush() ? [:] : pending
         pending = [:]
@@ -156,7 +143,6 @@ final class Plays {
         Log.plays.info("load", metadata: ["file": "\(file.path)", "songs": "\(counts.count)"])
     }
 
-    /// One atomic write of every count. True when the disk has all of them.
     @discardableResult
     func flush() -> Bool {
         guard !pending.isEmpty else { return true }
@@ -178,7 +164,6 @@ final class Plays {
         return true
     }
 
-    /// The play order of every count, best first, ties by key.
     private func order() {
         let totals = pending.isEmpty ? counts : Self.merged(counts, pending)
         ranked = totals.map { Rank(key: $0.key, count: $0.value) }.sorted {

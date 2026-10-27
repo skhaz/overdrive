@@ -19,6 +19,10 @@ struct RandomTests {
         return String(rest[..<(try #require(rest.range(of: "\n}\n")).lowerBound)])
     }
 
+    private func discoveryRegion(_ source: String) throws -> String {
+        try body(source, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {")
+    }
+
     private func handler(_ source: String, _ notification: String) throws -> String {
         let start = try #require(source.range(of: "publisher(for: .\(notification))) { _ in")).upperBound
         let rest = source[start...]
@@ -98,9 +102,9 @@ struct RandomTests {
         #expect(menu.contains("Menu(\"Songs (\\(library.total))\")"), "the picker says how many songs can come from it")
         #expect(menu.contains("Menu(\"Never Played (\\(library.neverPlayed))\")"), "the unplayed picker says how many songs were never played")
         #expect(menu.contains("Menu(\"Most Played (\\(library.played))\")"), "the best played picker says how many songs have a count")
-        #expect(menu.components(separatedBy: "values(library.total) { picked(library.random($0)) }").count - 1 == 1)
-        #expect(menu.components(separatedBy: "values(library.neverPlayed) { picked(library.unplayed($0)) }").count - 1 == 1)
-        #expect(menu.components(separatedBy: "values(library.played) { picked(library.topmost($0)) }").count - 1 == 1)
+        #expect(menu.components(separatedBy: "values(library.total) { discovery.pick(.songs, $0) }").count - 1 == 1)
+        #expect(menu.components(separatedBy: "values(library.neverPlayed) { discovery.pick(.unplayed, $0) }").count - 1 == 1)
+        #expect(menu.components(separatedBy: "values(library.played) { discovery.pick(.played, $0) }").count - 1 == 1)
         #expect(menu.components(separatedBy: "ForEach(Library.randomCounts, id: \\.self)").count - 1 == 1, "one list of values, used by every picker")
         #expect(menu.range(of: "keyboardShortcut") == nil, "a menu bar item never gets a plain key")
     }
@@ -121,7 +125,8 @@ struct RandomTests {
         let menu = String(rest[..<(try #require(rest.range(of: "\n            }")).lowerBound)])
 
         #expect(menu.contains("DiscoveryMenu()"), "the menu bar entry holds the pickers")
-        #expect(menu.contains(".environment(library)") && menu.contains(".environment(player)"))
+        #expect(menu.contains(".environment(library)") && menu.contains(".environment(discovery)"))
+        #expect(!menu.contains(".environment(player)"), "the menu no longer plays by itself; Discovery owns the pick")
         #expect(app.range(of: "CommandMenu(\"Discovery\")")!.lowerBound < app.range(of: "CommandMenu(\"Song\")")!.lowerBound, "Discovery comes before Song")
 
         let controls = try body(app, "CommandMenu(\"Controls\") {")
@@ -131,8 +136,9 @@ struct RandomTests {
 
     @Test func aDiscoveryPickShowsUpNext() throws {
         let views = try source("Views.swift")
+        let discovery = try source("Discovery.swift")
 
-        #expect(try discovery(views).contains("player.random(tracks)\n        NotificationCenter.default.post(name: .discovery, object: nil)"), "the pick happens first, then the screen follows it")
+        #expect(try discoveryRegion(discovery).contains("player.random(tracks)\n        NotificationCenter.default.post(name: .discovery, object: nil)"), "the pick replaces Up Next, then the screen follows it")
         #expect(views.contains("static let discovery = Notification.Name(\"discovery\")"))
 
         let shown = try handler(views, "discovery")
@@ -164,7 +170,9 @@ struct RandomTests {
         let library = try source("Library.swift")
 
         #expect(try self.body(library, "func topmost(_ count: Int) -> [Track] {").contains("{ index[$0] != nil }"), "a key of a folder that left the library never takes the place of a real song")
-        #expect(library.contains("keyIndex = everything.indices.reduce"), "the key of every song is indexed once per scan, so the lookup is O(1)")
+        #expect(library.contains("keyIndex = index"), "the key of every song is indexed once per scan, so the lookup is O(1)")
+        #expect(library.components(separatedBy: "for (slot, track) in everything.enumerated() {").count - 1 == 1, "one pass per scan builds the played keys, the played bands, and the key index")
+        #expect(library.contains("if bandKeys.insert(Fuzzy.fold(track.artist)).inserted { bands += 1 }"), "a first play opens a band without a scan")
     }
 
     @Test func theCountIsSetWhenASongEnds() throws {

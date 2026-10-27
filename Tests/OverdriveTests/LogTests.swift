@@ -166,7 +166,7 @@ final class Records: @unchecked Sendable {
             "LastFM.swift": ["connected", "connect failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "settle", "now playing"],
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
-            "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result"],
+            "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up"],
             "Spectrum.swift": ["spectrum tap failed"],
@@ -199,8 +199,9 @@ final class Records: @unchecked Sendable {
         }
 
         let discovery = try source("Discovery.swift")
-        #expect(body(discovery, "func topSongs(_ count: Int) {").contains("Log.player."), "Discovery.topSongs must log the click")
-        #expect(body(discovery, "private func collect(_ count: Int) async -> [Track] {").contains("Log.player."), "Discovery.collect must log its result")
+        #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("Log.player."), "Discovery.pick must log the click")
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("Log.player."), "Discovery.walk must log its result")
+        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {").contains("Log.player."), "Discovery.start must log an empty answer")
 
         let views = try source("Views.swift")
         for signature in ["func goBack(", "func goForward(", "func press(", "func reveal(_ track", "func navigate("] {

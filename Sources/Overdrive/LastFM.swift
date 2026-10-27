@@ -141,7 +141,6 @@ final class LastFM {
         Task { await flush() }
     }
 
-    /// The artist names the user listened to most, best first.
     func topArtists(_ count: Int) async -> [String] {
         guard count > 0, !user.isEmpty else { return [] }
 
@@ -152,9 +151,6 @@ final class LastFM {
         return artists.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
     }
 
-    /// The tracks of one artist on Last.fm, most listened to first. No session key:
-    /// the method is public and holds no personal count, so the personal signal is
-    /// the choice of artist, not the choice of song.
     func topTracks(_ artist: String, _ count: Int) async -> [String] {
         guard count > 0, !artist.isEmpty else { return [] }
 
@@ -165,7 +161,6 @@ final class LastFM {
         return tracks.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
     }
 
-    /// One list, whether the service sent an array or a single item.
     nonisolated static func items(_ value: Any?, _ key: String) -> [[String: Any]] {
         guard let container = value as? [String: Any] else { return [] }
         return container[key] as? [[String: Any]] ?? (container[key] as? [String: Any]).map { [$0] } ?? []

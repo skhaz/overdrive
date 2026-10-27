@@ -187,7 +187,6 @@ struct Overdrive: App {
             CommandMenu("Discovery") {
                 DiscoveryMenu()
                     .environment(library)
-                    .environment(player)
                     .environment(discovery)
             }
 

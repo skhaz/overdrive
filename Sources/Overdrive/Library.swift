@@ -138,6 +138,7 @@ final class Library {
     private(set) var total = 0
     private(set) var neverPlayed = 0
     private(set) var played = 0
+    private(set) var bands = 0
     private(set) var version = 0
     private(set) var scans = 0
     private(set) var members = 0
@@ -187,6 +188,7 @@ final class Library {
     @ObservationIgnored private var index = Index()
     @ObservationIgnored private var everything: [Track] = []
     @ObservationIgnored private var playedKeys: Set<String> = []
+    @ObservationIgnored private var bandKeys: Set<String> = []
     @ObservationIgnored private var keyIndex: [String: Int] = [:]
     @ObservationIgnored private var byYear: [Album] = []
     @ObservationIgnored private var lookup: [String: Track] = [:]
@@ -523,13 +525,25 @@ final class Library {
         total = everything.count
         if plays.missing, plays.root != nil { plays.load() }
         let store = plays
-        playedKeys = Set(everything.lazy.map(Plays.key).filter { store.played($0) })
-        neverPlayed = total - playedKeys.count
-        played = playedKeys.count
-        keyIndex = everything.indices.reduce(into: [String: Int]()) { index, slot in
-            let key = Plays.key(everything[slot])
+        var keys: Set<String> = []
+        var names: Set<String> = []
+        var index: [String: Int] = [:]
+
+        for (slot, track) in everything.enumerated() {
+            let key = Plays.key(track)
             if index[key] == nil { index[key] = slot }
+            guard store.played(key) else { continue }
+
+            keys.insert(key)
+            names.insert(Fuzzy.fold(track.artist))
         }
+
+        playedKeys = keys
+        bandKeys = names
+        bands = names.count
+        neverPlayed = total - keys.count
+        played = keys.count
+        keyIndex = index
         lookup = Dictionary(everything.map { ($0.url.path, $0) }) { first, _ in first }
         if readerFolders != folders {
             readers = folders.compactMap { folder in
@@ -559,8 +573,6 @@ final class Library {
         byArtist[artist] ?? []
     }
 
-    /// The songs of one artist, as the tags name it, folded. Built once per scan,
-    /// so a lookup by name is O(1) and never walks the library.
     func songs(by artist: String) -> [Track] {
         bySong[Fuzzy.fold(artist)] ?? []
     }
@@ -582,9 +594,6 @@ final class Library {
         return Player.picked(everything.lazy.filter { !store.played(Plays.key($0)) }, count)
     }
 
-    /// The best played songs, in a random order. The play order lives in `Plays`
-    /// and is kept up to date by every play, so this reads O(count) songs and never
-    /// sorts or walks the library.
     func topmost(_ count: Int) -> [Track] {
         guard played >= count else { return [] }
         let index = keyIndex
@@ -594,11 +603,39 @@ final class Library {
         return tracks
     }
 
+    nonisolated static func topArtists(_ totals: [(folded: String, name: String, plays: Int)], _ count: Int) -> [(folded: String, name: String)] {
+        guard count > 0 else { return [] }
+
+        return totals.sorted {
+            $0.plays == $1.plays ? $0.folded < $1.folded : $0.plays > $1.plays
+        }.prefix(count).map { ($0.folded, $0.name) }
+    }
+
+    func topBands(_ count: Int) -> [(name: String, songs: [Track])] {
+        guard count > 0, bands > 0 else { return [] }
+        let index = keyIndex
+        let store = plays
+        var totals: [String: (name: String, plays: Int)] = [:]
+
+        for key in playedKeys {
+            guard let slot = index[key] else { continue }
+
+            let track = everything[slot]
+            let artist = Fuzzy.fold(track.artist)
+            let held = totals[artist]
+            totals[artist] = (held?.name ?? track.artist, (held?.plays ?? 0) + store.count(track))
+        }
+
+        return Library.topArtists(totals.map { ($0.key, $0.value.name, $0.value.plays) }, count)
+            .map { ($1, songs(by: $0)) }
+    }
+
     private func songPlayed(_ track: Track) {
         guard lookup[track.url.path] != nil, playedKeys.insert(Plays.key(track)).inserted else { return }
 
         neverPlayed = max(total - playedKeys.count, 0)
         played = playedKeys.count
+        if bandKeys.insert(Fuzzy.fold(track.artist)).inserted { bands += 1 }
     }
 
     func matched(_ track: Track) -> Bool {

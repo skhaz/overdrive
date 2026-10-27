@@ -1,18 +1,14 @@
 import AppKit
 
-/// Discovery from Last.fm: your top artists, and for each one the top track that
-/// your library actually holds. No cache: a click asks the internet once.
 @Observable
 final class Discovery {
-    /// How many artists are asked at a time. Small on purpose: Last.fm answers 29
-    /// when one IP spends its rate, and a discovery of 100 songs is 101 requests.
+    enum Pool: String {
+        case songs, unplayed, played, artists, bands
+    }
+
     nonisolated static let window = 4
-    /// How many top tracks of one artist are read to find a song the library has.
     nonisolated static let tracks = 10
 
-    /// The song of one artist that the library holds, from the highest-ranked title
-    /// that matches a song name by at least `Similarity.threshold`. A tie goes to the
-    /// song that comes first in the library, so the answer is stable.
     nonisolated static func owned(_ titles: [String], _ songs: [Track]) -> Track? {
         for title in titles {
             var best: (track: Track, ratio: Double)?
@@ -30,10 +26,6 @@ final class Discovery {
         return nil
     }
 
-    /// Walks the artists in the given order and stops at the first `count` songs it
-    /// can name, so a short list is never padded with songs you do not have.
-    /// `wanted` is the library lookup, already done on the calling actor; `titles`
-    /// is one request per artist, four at a time.
     nonisolated static func collect(_ count: Int, _ wanted: [(name: String, songs: [Track])],
                                     _ titles: @escaping @Sendable (String) async -> [String]) async -> [Track]
     {
@@ -43,6 +35,11 @@ final class Discovery {
         var start = 0
 
         while start < names.count, found.count < count {
+            guard !Task.isCancelled else {
+                Log.player.debug("discovery stopped", metadata: ["reason": "cancelled", "found": "\(found.count)"])
+                return found
+            }
+
             let slice = Array(names[start..<min(start + window, names.count)])
 
             let picked = await withTaskGroup(of: (index: Int, track: Track?).self) { group in
@@ -76,6 +73,8 @@ final class Discovery {
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let player: Player
+    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var work: Task<Void, Never>?
 
     init(library: Library, lastFM: LastFM, player: Player) {
         self.library = library
@@ -83,48 +82,80 @@ final class Discovery {
         self.player = player
     }
 
-    /// The picker is offered only with an API key, a signed-in user, and songs.
     var ready: Bool {
         !LastFM.key.isEmpty && !lastFM.user.isEmpty && !library.albums.isEmpty
     }
 
-    func topSongs(_ count: Int) {
-        guard ready else {
-            return Log.player.warning("discovery ignored", metadata: ["reason": "no last.fm", "songs": "\(count)"])
-        }
-        guard !running else {
-            return Log.player.debug("discovery ignored", metadata: ["reason": "running", "songs": "\(count)"])
-        }
+    func pick(_ pool: Pool, _ count: Int) {
+        generation += 1
+        let mine = generation
+        work?.cancel()
+        work = nil
+        running = false
 
-        running = true
-        Log.player.info("discovery", metadata: ["songs": "\(count)", "user": "\(lastFM.user)"])
+        Log.player.info("discovery", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
 
-        Task {
-            let tracks = await collect(count)
-            running = false
-            guard !tracks.isEmpty else { return Log.player.warning("discovery empty", metadata: ["asked": "\(count)"]) }
+        switch pool {
+        case .songs:
+            start(library.random(count), mine, pool, count)
+        case .unplayed:
+            start(library.unplayed(count), mine, pool, count)
+        case .played:
+            start(library.topmost(count), mine, pool, count)
+        case .artists, .bands:
+            guard ready else {
+                return Log.player.warning("discovery ignored", metadata: ["pool": "\(pool.rawValue)", "reason": "no last.fm", "songs": "\(count)"])
+            }
 
-            player.random(tracks)
-            NotificationCenter.default.post(name: .discovery, object: nil)
+            running = true
+            work = Task {
+                let tracks = await self.walk(pool, count)
+                guard mine == self.generation else {
+                    return Log.player.debug("discovery superseded", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
+                }
+
+                self.running = false
+                self.work = nil
+                self.start(tracks, mine, pool, count)
+            }
         }
     }
 
-    /// Walks your artists in your own order and stops at the first `count` songs it
-    /// can name, so a short list is never padded with songs you do not have.
-    private func collect(_ count: Int) async -> [Track] {
-        let names = await lastFM.topArtists(count)
+    private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {
+        guard mine == generation else {
+            return Log.player.debug("discovery superseded", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
+        }
+        guard !tracks.isEmpty else {
+            return Log.player.warning("discovery empty", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)"])
+        }
+
+        player.random(tracks)
+        NotificationCenter.default.post(name: .discovery, object: nil)
+    }
+
+    private func walk(_ pool: Pool, _ count: Int) async -> [Track] {
+        let names: [String]
+        if pool == .artists {
+            names = await lastFM.topArtists(count)
+        } else {
+            names = library.topBands(count).map(\.name)
+        }
+
         guard !names.isEmpty else {
-            Log.player.debug("discovery stopped", metadata: ["reason": "no artists"])
+            Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no artists"])
+            return []
+        }
+        guard !Task.isCancelled else {
+            Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "cancelled"])
             return []
         }
 
-        let songs = names.map { library.songs(by: $0) }
-        let wanted = zip(names, songs).map { (name: $0.0, songs: $0.1) }
+        let wanted = names.map { (name: $0, songs: library.songs(by: $0)) }
         let held = wanted.filter { !$0.songs.isEmpty }.count
         let fm = lastFM
         let found = await Discovery.collect(count, wanted) { await fm.topTracks($0, Discovery.tracks) }
 
-        Log.player.info("discovery result", metadata: ["asked": "\(count)", "artists": "\(names.count)", "held": "\(held)", "found": "\(found.count)"])
+        Log.player.info("discovery result", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "artists": "\(names.count)", "held": "\(held)", "found": "\(found.count)"])
         return found
     }
 }

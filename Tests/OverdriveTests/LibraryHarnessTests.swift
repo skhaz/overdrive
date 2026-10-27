@@ -473,6 +473,37 @@ struct LibraryHarnessTests {
         #expect(library.songs(by: artist).count == grown.count, "the index follows every scan")
     }
 
+    @Test func thePlayedBandsFollowTheCounts() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        for name in ["one", "two", "three"] { try put(folder, "Album/\(name).mp3") }
+        let library = library([folder])
+        await settle(library, [folder])
+        let plays = library.plays
+        let all = library.albums.flatMap(\.tracks)
+        let artist = all[0].artist
+
+        #expect(library.bands == 0, "a library nobody played has no band to name")
+        #expect(library.topBands(1).isEmpty)
+
+        plays.bump(all[0])
+        #expect(library.bands == 1, "a first play opens a band without a scan")
+        let bands = library.topBands(1)
+        #expect(bands.map(\.name) == [artist])
+        #expect(bands[0].songs.count == all.count, "the band carries every song the library has of it, played or not")
+        #expect(library.topBands(5).count == 1, "more bands than the library has gives what there is")
+
+        plays.bump(all[1])
+        plays.bump(all[2])
+        #expect(library.bands == 1, "the same band twice is still one band")
+        #expect(library.topBands(1)[0].songs.count == all.count)
+
+        try FileManager.default.removeItem(at: folder.appending(path: "Album/three.mp3"))
+        await settle(library, [folder])
+        #expect(library.bands == 1)
+        #expect(library.topBands(1)[0].songs.count == 2, "the songs of a band follow every scan")
+    }
+
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {
         let folder = try folder()
         defer { clean(folder) }
