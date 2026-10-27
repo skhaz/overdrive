@@ -83,58 +83,39 @@ struct LovesTests {
         #expect(kept.allSatisfy { Loves.key($0) != Loves.key(b) }, "and the cancelled song is gone, not left behind")
     }
 
-    @Test func aReadSetsTheMirror() {
-        let read = Loves.reconcile([love("Death", "Bloodcraft"), love("Krisiun", "Blood of Lions")], [], [])
+    @Test func aReadWithNothingKownDropsNothing() {
+        let keys: Set<String> = [Loves.key("Death", "Bloodcraft"), Loves.key("Krisiun", "Blood of Lions")]
 
-        #expect(read.fresh == [Loves.key("Death", "Bloodcraft"), Loves.key("Krisiun", "Blood of Lions")])
-        #expect(read.gone.isEmpty)
-        #expect(Loves.reconcile([], [], []).fresh.isEmpty, "an account with no loves mirrors nothing")
+        #expect(Loves.dropped(keys, [], []).isEmpty)
+        #expect(Loves.dropped([], [], []).isEmpty, "an account with no loves mirrors nothing")
     }
 
     @Test func aReadUnlikesWhatLastFMDropped() {
         let known: Set<String> = [Loves.key("Death", "Bloodcraft"), Loves.key("Slayer", "Raining Blood")]
-        let read = Loves.reconcile([love("Death", "Bloodcraft")], known, [])
+        let gone = Loves.dropped([Loves.key("Death", "Bloodcraft")], known, [])
 
-        #expect(read.gone == [Loves.key("Slayer", "Raining Blood")], "an unlove on the website reaches the app")
-        #expect(read.fresh == [Loves.key("Death", "Bloodcraft")])
+        #expect(gone == [Loves.key("Slayer", "Raining Blood")], "an unlove on the website reaches the app")
     }
 
     @Test func aReadNeverFightsAWishInTheAir() {
         let flying = Loves.key("Death", "Bloodcraft")
 
-        let unlove = Loves.reconcile([], [flying], [flying])
-        #expect(unlove.gone.isEmpty, "an unlove the user just asked for is not undone by the read")
-        #expect(unlove.fresh.isEmpty, "and the mirror follows the server, not the wish")
-
-        let like = Loves.reconcile([love("Death", "Bloodcraft")], [], [flying])
-        #expect(like.fresh == [flying])
-        #expect(like.gone.isEmpty)
+        #expect(Loves.dropped([], [flying], [flying]).isEmpty, "an unlove the user just asked for is not undone by the read")
+        #expect(Loves.dropped([flying], [], [flying]).isEmpty, "and a love on its way up is not read as a stranger")
     }
 
     @Test func anEmptyReadUnlikesEverythingKnown() {
         let known: Set<String> = [Loves.key("A", "B"), Loves.key("C", "D")]
 
-        #expect(Loves.reconcile([], known, []).gone == known.sorted(), "a full but empty answer is an answer")
-        #expect(Loves.reconcile([], [], []).gone.isEmpty, "nothing known, nothing to drop")
-    }
-
-    @Test func theMirrorHoldsWhatTheLibraryCannotSeeYet() {
-        let read = Loves.reconcile([love("Ghost", "Dance Macabre")], [], [])
-
-        #expect(read.fresh == [Loves.key("Ghost", "Dance Macabre")], "a loved song the library lacks stays in the mirror")
-        #expect(read.gone.isEmpty, "and it is not an unlove of anything")
+        #expect(Loves.dropped([], known, []) == known.sorted(), "a full but empty answer is an answer")
+        #expect(Loves.dropped([], [], []).isEmpty, "nothing known, nothing to drop")
     }
 
     @Test func aConfirmedWriteSurvivesAReadBehind() {
         let key = Loves.key("Death", "Bloodcraft")
 
-        let liked = Loves.reconcile([love("Slayer", "Raining Blood")], [key], [key])
-        #expect(liked.gone.isEmpty, "a love the app just confirmed is not unliked by a server that has not caught up")
-        #expect(liked.fresh == [Loves.key("Slayer", "Raining Blood")], "but the mirror still follows the server")
-
-        let unliked = Loves.reconcile([love("Death", "Bloodcraft")], [], [key])
-        #expect(unliked.gone.isEmpty, "and an unlove the app just confirmed is not put on the drop list by a stale read")
-        #expect(unliked.fresh == [key], "the mirror is the server, whatever the wish said")
+        #expect(Loves.dropped([Loves.key("Slayer", "Raining Blood")], [key], [key]).isEmpty, "a love the app just confirmed is not unliked by a server that has not caught up")
+        #expect(Loves.dropped([Loves.key("Death", "Bloodcraft")], [], [key]).isEmpty, "and an unlove the app just confirmed is not put on the drop list by a stale read")
     }
 
     @Test func aScanReAppliesTheMirrorWithoutARequest() throws {
@@ -155,24 +136,84 @@ struct LovesTests {
         #expect(!settle.isEmpty, "the local pass must be there")
         #expect(settle.contains("likes.add(added, notify: false)"), "a loved song is liked without pushing it back")
         #expect(settle.contains("likes.remove(gone, notify: false)"), "and dropped the same way")
-        #expect(settle.contains("for key in remote where !held.contains(key)"), "every loved key the mirror holds is tried, so a song that arrives later is picked up")
+        #expect(settle.contains("for key in unresolved where !held.contains(key)"), "the pass walks what the library cannot hold yet, so a song that arrives later is picked up")
         #expect(settle.contains("!likes.contains(track)"), "an already liked song is not queued again")
-        #expect(settle.contains("hold(key)"), "the scan pass uses the exact name, so it costs two dictionary reads per key")
-        #expect(settle.contains("remote.contains(pair.key)"), "a fuzzy match carries the key that matched it, not the key of the song")
-        #expect(!settle.contains("loose(") && !settle.contains("loved(folded:"), "the scan pass never pays for the fuzzy walk")
+        #expect(settle.contains("guard let track = hold(key)"), "the scan pass uses the exact name, so it costs two dictionary reads per key")
+        #expect(settle.contains("hold(key) ?? loose(key)"), "a drop resolves the same way a like did")
         #expect(body(loves, "func apply() {").contains("settle([])"), "a scan re-applies the mirror with no request")
-        #expect(body(loves, "private func pull() async {").contains("settle(read.gone, resolved)"), "and a read drops what the server let go through the same door")
+        #expect(body(loves, "private func absorb(_ keys: Set<String>, whole: Bool) {").contains("settle(gone, matched)"), "and a read drops what the server let go through the same door")
         #expect(!settle.contains("await"), "the local half never waits on the network")
+    }
+
+    @Test func aScanWalksOnlyWhatTheLibraryCannotHold() throws {
+        let loves = try source("Loves.swift")
+        let settle = body(loves, "private func settle(_ dropped: [String], _ resolved: [(key: String, track: Track)] = []) {")
+
+        #expect(settle.contains("if !primed {"), "the first pass of a launch builds the list of waiting keys")
+        #expect(settle.contains("unresolved = mirror"), "and it is the whole mirror then")
+        #expect(settle.contains("unresolved.subtract(settled)"), "a key that found its song leaves, so no scan pays for it again")
+        #expect(settle.contains("guard let track = hold(key) else { continue }"), "a key with no song waits for a later scan")
+        #expect(!settle.contains("for key in mirror"), "and no pass walks the whole mirror again")
+    }
+
+    @Test func theMirrorIsTheServerPlusOurWishesAndNeverFightsThem() throws {
+        let loves = try source("Loves.swift")
+        let mirror = body(loves, "var mirror: Set<String> {")
+        let absorb = body(loves, "private func absorb(_ keys: Set<String>, whole: Bool) {")
+
+        #expect(mirror.contains("if wish {\n                pool.insert(key)"), "an outstanding love rides on top of the server list")
+        #expect(mirror.contains("pool.remove(key)") && mirror.contains("} else {"), "an outstanding unlove is taken out of it")
+        #expect(!absorb.contains("remote.insert"), "the server list stays the server alone")
+        #expect(absorb.contains("for (key, wish) in wishes where wish == keys.contains(key) { wishes.removeValue(forKey: key) }"), "a wish clears only when the server agrees with its direction")
+        #expect(body(loves, "private func drain() async {").contains("wishes[key] = entry.love"), "a confirmed write becomes a wish, not a server fact")
+        #expect(!body(loves, "private func drain() async {").contains("remote.insert"), "and never pretends to be the server list")
+    }
+
+    @Test func aRejectedNameIsOnlyHeldBackWhereTheServerSaidNo() throws {
+        let loves = try source("Loves.swift")
+        let drain = body(loves, "private func drain() async {")
+
+        #expect(drain.contains("rejected.insert(key)"), "a name the server refuses does not go up again")
+        #expect(drain.contains("} else if entry.love {"), "only a refused love is a refused name")
+        #expect(drain.contains("wishes[key] = false"), "an unlove of a song that was not loved upstream is already where the user wants it")
+        #expect(!drain.contains("rejected.insert(key)\n            } else {\n                wishes[key] = false"), "and it never poisons a future love")
+        #expect(body(loves, "private func push() {").contains("!rejected.contains(key)"), "the automatic push respects the refusal")
+        #expect(body(loves, "private func local(_ tracks: [Track], _ love: Bool) {").contains("flight"), "a wish the user made does not")
     }
 
     @Test func theFuzzyWalkRunsOncePerKeyOnTheReadThatBringsIt() throws {
         let loves = try source("Loves.swift")
-        let pull = body(loves, "private func pull() async {")
+        let absorb = body(loves, "private func absorb(_ keys: Set<String>, whole: Bool) {")
 
-        #expect(pull.contains("read.fresh.subtracting(known).subtracting(held)"), "only a key the mirror did not have is walked")
-        #expect(pull.contains("hold(key) == nil, let track = loose(key)"), "and only when its exact name is not in the library")
-        #expect(pull.contains("loved(folded:") || body(loves, "private func loose(_ key: String) -> Track? {").contains("loved(folded:"), "the walk itself lives in one place")
+        #expect(absorb.contains("let fresh = keys.subtracting(known).subtracting(held)"), "only a key the mirror did not have is walked")
+        #expect(absorb.contains("hold(key) == nil, let track = self.loose(key)"), "and only when its exact name is not in the library")
+        #expect(absorb.contains("loved(folded:") || body(loves, "private func loose(_ key: String) -> Track? {").contains("loved(folded:"), "the walk itself lives in one place")
         #expect(!body(loves, "func apply() {").contains("loose"), "a scan never pays for it")
+    }
+
+    @Test func theFastReadIsOneRequestUntilTheCountDisagrees() throws {
+        let loves = try source("Loves.swift")
+        let newest = body(loves, "private func newest() async -> Read {")
+        let every = body(loves, "private func every() async -> Read {")
+
+        #expect(newest.contains("fetch(1, Loves.window)"), "the fast read asks for one page of the newest songs")
+        #expect(newest.contains("let added = keys.subtracting(remote)"), "and it costs what the page holds, not the whole mirror")
+        #expect(newest.contains("first.total == remote.count + added.count"), "the count the server reports is what says the cache is current")
+        #expect(newest.contains("return await every()"), "anything the count cannot explain is read in full")
+        #expect(every.contains("fetch(number, LastFM.wide)"), "a whole read takes the big pages")
+        #expect(every.contains("answer.pages <= LastFM.pages"), "and a list past the cap is not taken for the whole truth")
+        #expect(every.contains("absorb(Set(loved.map"), "only the whole list can drop a love")
+        #expect(body(loves, "private func pull(full: Bool) async -> Read {").contains("guard !full, !remote.isEmpty else { return await every() }"), "a cache with no mirror or a sync asked for in full reads everything")
+    }
+
+    @Test func aLikeMadeInTheAppIsSavedAndSentAtOnce() throws {
+        let loves = try source("Loves.swift")
+        let local = body(loves, "private func local(_ tracks: [Track], _ love: Bool) {")
+
+        #expect(local.contains("pending = next"), "a like the user makes is in the app before the network")
+        #expect(local.contains("save()"), "and it is on the disk before the request")
+        #expect(local.contains("Task { await drain() }"), "the write goes up at once")
+        #expect(body(loves, "private func push() {").contains("local(raised, true)"), "a like that predates the account goes up through the same door")
     }
 
     @Test func theLedgerRoundTrips() throws {
@@ -203,11 +244,14 @@ struct LovesTests {
 
     @Test func aFailedReadChangesNothing() throws {
         let loves = try source("Loves.swift")
-        let guardBlock = inner(loves, "guard let loved else {")
+        let newest = body(loves, "private func newest() async -> Read {")
+        let guardBlock = inner(newest, "guard let first = await fetch(1, Loves.window) else {")
 
-        #expect(guardBlock.contains("pull stopped"), "a read that is not the whole truth leaves the mirror alone")
+        #expect(guardBlock.contains("pull stopped"), "a read with no answer leaves the mirror alone")
         #expect(!guardBlock.contains("remote ="), "and never looks like an unlove")
+        #expect(!guardBlock.contains("absorb"), "and never reaches the cache")
         #expect(!guardBlock.contains("likes."), "and never touches the local list")
+        #expect(body(loves, "private func every() async -> Read {").contains("reason\": \"too many pages\""), "a list past the cap is not the whole truth either")
     }
 
     @Test func theWritesAreSpacedAndHeldOnFailure() throws {

@@ -543,16 +543,18 @@ struct LibraryHarnessTests {
         }
 
         #expect(sent.value == 1, "a like the user made goes to Last.fm once")
-        #expect(loves.remote == [Loves.key(artist, "alpha")])
-        #expect(Persist.read(Loves.Ledger.self, from: ledger)?.remote == [Loves.key(artist, "alpha")], "the mirror is on the disk")
+        #expect(loves.mirror == [Loves.key(artist, "alpha")], "the wish is on the mirror until the server reports it")
+        #expect(loves.remote.isEmpty, "and the mirror of the server alone is still empty")
+        #expect(Persist.read(Loves.Ledger.self, from: ledger)?.wishes == [Loves.key(artist, "alpha"): true], "the wish is on the disk before the server agrees")
+        #expect(Persist.read([String].self, from: Likes.file(in: folder))?.isEmpty == false, "and the like is saved in the library too, so the app keeps it with no account")
 
         await loves.sync()
         #expect(sent.value == 1, "a sync with nothing to push sends nothing")
 
         let read = Counter()
-        loves.snapshot = {
+        loves.read = { _, _ in
             read.value += 1
-            return [LastFM.Loved(artist: artist, title: "gamma"), LastFM.Loved(artist: artist, title: "beta")]
+            return LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "gamma"), LastFM.Loved(artist: artist, title: "beta")], total: 2, pages: 1)
         }
         await loves.sync()
 
@@ -560,16 +562,21 @@ struct LibraryHarnessTests {
         #expect(likes.paths.sorted() == library.tracks.map(\.url.path).sorted(), "the liked songs of the account are all in the app")
         #expect(likes.contains(song("gamma")), "a song loved on Last.fm that the library has is liked")
         #expect(sent.value == 1, "and nothing was pushed back")
-        #expect(loves.remote == Set(["alpha", "beta", "gamma"].map { Loves.key(artist, $0) }), "the mirror is the server plus the grace of one read")
+        #expect(loves.remote == Set(["beta", "gamma"].map { Loves.key(artist, $0) }), "the server list is the server alone")
+        #expect(loves.mirror == Set(["alpha", "beta", "gamma"].map { Loves.key(artist, $0) }), "our unconfirmed love rides on top of it")
         #expect(likes.contains(song("alpha")), "a love the server had not caught up with is not undone")
 
-        loves.snapshot = { [LastFM.Loved(artist: artist, title: "gamma")] }
+        loves.read = { _, _ in
+            read.value += 1
+            return LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "gamma")], total: 1, pages: 1)
+        }
         await loves.sync()
 
-        #expect(likes.paths == [song("gamma").url.path], "the read after the grace means the server won: both are gone")
-        #expect(!likes.contains(song("alpha")), "a love the account never caught up with is dropped after one read")
-        #expect(!likes.contains(song("beta")))
+        #expect(read.value == 3, "a count the cache cannot explain costs the fast page and then the whole list: \(read.value) reads")
+        #expect(likes.paths.sorted() == [song("alpha").url.path, song("gamma").url.path].sorted(), "the read after the grace keeps the love the server never confirmed")
+        #expect(!likes.contains(song("beta")), "what the server dropped is dropped here")
         #expect(loves.remote == [Loves.key(artist, "gamma")])
+        #expect(loves.mirror == Set([Loves.key(artist, "alpha"), Loves.key(artist, "gamma")]), "alpha is still our outstanding love")
         #expect(sent.value == 1, "and still nothing was pushed back")
     }
 
@@ -615,7 +622,7 @@ struct LibraryHarnessTests {
         }
 
         #expect(sent.value == 4, "three loves and the unlove that replaced one: \(sent.value) sends")
-        #expect(loves.remote == Set(["beta", "gamma"].map { Loves.key(artist, $0) }), "alpha is not loved in the end")
+        #expect(loves.mirror == Set(["beta", "gamma"].map { Loves.key(artist, $0) }), "alpha is not loved in the end")
         #expect(!likes.contains(song("alpha")), "and the app agrees with the server")
         #expect(likes.contains(song("beta")))
         #expect(Persist.read(Loves.Ledger.self, from: ledger)?.pending.isEmpty == true, "nothing is left in the queue")
@@ -651,9 +658,9 @@ struct LibraryHarnessTests {
         func song(_ title: String) -> Track? { library.tracks.first { $0.title == title } }
         let artist = song("alpha")!.artist
         let read = Counter()
-        loves.snapshot = {
+        loves.read = { _, _ in
             read.value += 1
-            return [LastFM.Loved(artist: artist, title: "alpha"), LastFM.Loved(artist: artist, title: "gamma")]
+            return LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "alpha"), LastFM.Loved(artist: artist, title: "gamma")], total: 2, pages: 1)
         }
         loves.send = { (_: Loves.Entry) in .sent }
         await loves.sync()
@@ -704,9 +711,9 @@ struct LibraryHarnessTests {
 
         let artist = library.tracks[0].artist
         let read = Counter()
-        loves.snapshot = {
+        loves.read = { _, _ in
             read.value += 1
-            return [LastFM.Loved(artist: artist, title: "bloodcrfts")]
+            return LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "bloodcrfts")], total: 1, pages: 1)
         }
         await loves.sync()
 
@@ -714,15 +721,167 @@ struct LibraryHarnessTests {
         #expect(loves.remote == [Loves.key(artist, "bloodcrfts")], "and the mirror keeps the spelling the server uses")
 
         let again = Counter()
-        loves.snapshot = {
+        let asked = Counter()
+        loves.read = { _, limit in
             again.value += 1
-            return [LastFM.Loved(artist: artist, title: "bloodcrfts")]
+            asked.value = limit
+            return LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "bloodcrfts")], total: 1, pages: 1)
         }
         await loves.sync()
 
         #expect(likes.paths == [library.tracks[0].url.path], "a second read does not lose the fuzzy match")
-        #expect(again.value == 1, "and the read ran")
+        #expect(again.value == 1, "and the read ran, exactly once")
+        #expect(asked.value == Loves.window, "a read of a current cache asks for one page, not the whole list")
         #expect(loves.remote == [Loves.key(artist, "bloodcrfts")], "with the mirror unchanged")
+    }
+
+    @Test func ALikeThatPredatesTheConnectionGoesUpOnTheFirstSync() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        try put(folder, "Album/alpha.mp3")
+        try put(folder, "Album/beta.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+
+        // The like is there before the account: notify is off, so nothing queued it.
+        likes.add([library.tracks.first { $0.title == "alpha" }!], notify: false)
+
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger)
+        let sent = Counter()
+        loves.send = { (entry: Loves.Entry) in
+            sent.value += 1
+            return .sent
+        }
+        loves.read = { _, _ in
+            LastFM.Page(tracks: [LastFM.Loved(artist: library.tracks[0].artist, title: "beta")], total: 1, pages: 1)
+        }
+        await loves.sync()
+
+        let start = ContinuousClock.now
+        while !loves.pending.isEmpty, ContinuousClock.now - start < .seconds(10) {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(sent.value == 1, "the like that was already there went up: \(sent.value) sends")
+        #expect(loves.remote == [Loves.key(library.tracks[0].artist, "beta")], "the server list is the server alone")
+        #expect(loves.mirror == Set(["alpha", "beta"].map { Loves.key(library.tracks[0].artist, $0) }), "and the mirror holds both now")
+        #expect(likes.contains(library.tracks.first { $0.title == "alpha" }!), "the local like survived")
+        #expect(likes.contains(library.tracks.first { $0.title == "beta" }!), "and the remote love came down")
+    }
+
+    @Test func AnUnloveMadeOnTheWebsiteIsNotPushedBack() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        try put(folder, "Album/alpha.mp3")
+        try put(folder, "Album/beta.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        let artist = library.tracks[0].artist
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger)
+        loves.send = { (_: Loves.Entry) in .sent }
+        loves.read = { _, _ in
+            LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "alpha"), LastFM.Loved(artist: artist, title: "beta")], total: 2, pages: 1)
+        }
+        await loves.sync()
+
+        #expect(likes.paths.sorted() == library.tracks.map(\.url.path).sorted())
+
+        // The user unlikes beta on the Last.fm site. The next read drops it locally,
+        // and the push must not raise it again: it runs after the drop.
+        loves.read = { _, _ in
+            LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "alpha")], total: 1, pages: 1)
+        }
+        loves.send = { (entry: Loves.Entry) in
+            Issue.record("pushed back: \(entry.title)")
+            return .sent
+        }
+        await loves.sync()
+
+        #expect(likes.paths == [library.tracks.first { $0.title == "alpha" }!.url.path], "the unlove left the app")
+        #expect(loves.pending.isEmpty, "and nothing was queued to send it back")
+    }
+
+    @Test func theSyncSpendsOneRequestWhileTheAccountDoesNotMove() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        for name in ["alpha", "beta", "gamma"] { try put(folder, "Album/\(name).mp3") }
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger)
+        loves.send = { (_: Loves.Entry) in .sent }
+
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let artist = song("alpha").artist
+        let phase = Counter()
+        let wide = Counter()
+        let page = Counter()
+        let lists = [["alpha", "beta"], ["gamma", "alpha", "beta"], ["gamma", "alpha"]]
+
+        loves.read = { _, limit in
+            if limit == Loves.window { page.value += 1 } else { wide.value += 1 }
+            let titles = lists[phase.value]
+            return LastFM.Page(tracks: titles.map { LastFM.Loved(artist: artist, title: $0) }, total: titles.count, pages: 1)
+        }
+
+        await loves.sync()
+        #expect(wide.value == 1 && page.value == 0, "a cache with no mirror reads the whole list once")
+        #expect(likes.paths.sorted() == [song("alpha").url.path, song("beta").url.path].sorted())
+
+        await loves.sync()
+        #expect(page.value == 1 && wide.value == 1, "an account that did not move costs one page of the newest songs")
+
+        phase.value = 1
+        await loves.sync()
+        #expect(page.value == 2 && wide.value == 1, "a love added elsewhere is one page as well")
+        #expect(likes.contains(song("gamma")), "and it arrives")
+
+        phase.value = 2
+        await loves.sync()
+        #expect(page.value == 3 && wide.value == 2, "an unlove elsewhere is the one case that costs the whole list")
+        #expect(!likes.contains(song("beta")), "and it leaves")
+
+        phase.value = 0
+        await loves.sync()
+        #expect(page.value == 4 && wide.value == 3, "a love back on the server costs the page and the list that explains it")
+        #expect(likes.contains(song("beta")), "and it arrives again")
     }
 
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {

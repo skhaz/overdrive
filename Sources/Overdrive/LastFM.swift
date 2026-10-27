@@ -198,46 +198,56 @@ final class LastFM {
         }
     }
 
-    /// Every loved track of the user, as artist and title. Nil when the answer is
-    /// not the whole truth, so a partial read can never look like an unlove.
-    func loved() async -> [LastFM.Loved]? {
+    /// One page of the loved tracks, newest first, with the count the server
+    /// reports. The order is what lets the cache be read from the top: a page that
+    /// reaches a song the cache already holds has every song above it. Nil when the
+    /// answer is not a list, so a broken page is never mistaken for an unlove.
+    func loved(page: Int = 1, limit: Int = LastFM.wide) async -> LastFM.Page? {
         guard !user.isEmpty else { return nil }
 
-        var all: [Loved] = []
-        var page = 1
-
-        while true {
-            guard let json = try? await call("user.getLovedTracks", ["user": user, "limit": "1000", "page": String(page)]) else { return nil }
-            guard let container = json["lovedtracks"] as? [String: Any] else {
-                Log.lastFM.debug("loved invalid", metadata: ["keys": Log.list(json.keys.sorted())])
-                return nil
-            }
-
-            for track in LastFM.items(container, "track") {
-                guard let title = track["name"] as? String, let artist = track["artist"] as? [String: Any], let name = artist["name"] as? String else { continue }
-
-                all.append(Loved(artist: name, title: title))
-            }
-
-            let pages = Int((container["@attr"] as? [String: Any])?["totalPages"] as? String ?? "1") ?? 1
-            guard page < pages else { break }
-            guard page < LastFM.pages else {
-                Log.lastFM.warning("loved truncated", metadata: ["pages": "\(pages)", "kept": "\(LastFM.pages)", "tracks": "\(all.count)"])
-                return nil
-            }
-
-            page += 1
+        guard let json = try? await call("user.getLovedTracks", ["user": user, "limit": String(limit), "page": String(page)]) else { return nil }
+        guard let container = json["lovedtracks"] as? [String: Any] else {
+            Log.lastFM.debug("loved invalid", metadata: ["keys": Log.list(json.keys.sorted())])
+            return nil
         }
 
-        Log.lastFM.info("loved", metadata: ["user": "\(user)", "tracks": "\(all.count)", "pages": "\(page)"])
-        return all
+        var tracks: [Loved] = []
+        tracks.reserveCapacity(LastFM.items(container, "track").count)
+
+        for track in LastFM.items(container, "track") {
+            guard let title = track["name"] as? String, let artist = track["artist"] as? [String: Any], let name = artist["name"] as? String else { continue }
+
+            tracks.append(Loved(artist: name, title: title))
+        }
+
+        let attributes = container["@attr"] as? [String: Any]
+        let total = LastFM.count(attributes?["total"]) ?? -1
+        let pages = LastFM.count(attributes?["totalPages"]) ?? 1
+
+        Log.lastFM.debug("loved page", metadata: ["page": "\(page)", "limit": "\(limit)", "tracks": "\(tracks.count)", "total": "\(total)"])
+
+        return Page(tracks: tracks, total: total, pages: pages)
     }
 
     nonisolated static let pages = 20
+    nonisolated static let wide = 1000
 
-    nonisolated struct Loved {
+    nonisolated struct Page: Sendable {
+        let tracks: [Loved]
+        let total: Int
+        let pages: Int
+    }
+
+    nonisolated struct Loved: Sendable {
         let artist: String
         let title: String
+    }
+
+    /// Last.fm writes every count as a string; a few answers give a number.
+    nonisolated static func count(_ value: Any?) -> Int? {
+        if let text = value as? String { return Int(text) }
+
+        return value as? Int
     }
 
     nonisolated static func items(_ value: Any?, _ key: String) -> [[String: Any]] {

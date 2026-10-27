@@ -109,7 +109,9 @@ Click **Liked Songs** in the sidebar, below Songs, to see all liked songs. To re
 
 If you connected your Last.fm account in Settings > Last.fm, your liked songs and your Last.fm loved tracks are the same list. A like you make in Overdrive goes to Last.fm. A love you make on the Last.fm site, or in another player, comes to Overdrive.
 
-The app syncs when it opens, once an hour, when the network comes back, and when you connect your account. To do it at once, choose **Sync Loved Tracks Now** in Settings > Last.fm. It also shows how many loved tracks Last.fm holds and how many of your wishes are still waiting to go up.
+A like you make in the app is on your disk at once and on its way to Last.fm in the same second, so it is there with or without the internet.
+
+The app syncs when it opens, once an hour, when the network comes back, and when you connect your account. A sync is one request: Last.fm lists your loved tracks newest first, so the app reads the top of the list and stops at the song it already knows, and it checks the count Last.fm reports. Only when that count says something changed below — a song you loved or unloved on the site — does it read the whole list, which costs two requests instead of one. To read the whole list at once, choose **Sync Loved Tracks Now** in Settings > Last.fm. It also shows how many loved tracks Last.fm holds and how many of your wishes are still waiting to go up.
 
 A song is matched by its artist and title, not by where the file is, so moving your music folder does not break the list. A loved song that your library does not have is ignored, and it stays on the list: the day you add the folder that holds it, Overdrive likes it, with no new read of its own. Last.fm can be a few seconds behind your own change, so the app protects a like or unlike you just made for one read: a stale answer cannot undo it. If a sync cannot read your whole loved list — no network, a partial answer, or more than 20 000 loved tracks — it changes nothing at all and tries again later, rather than treating a short answer as a list of unlikes.
 
