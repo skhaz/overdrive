@@ -888,6 +888,78 @@ struct LibraryHarnessTests {
         #expect(likes.contains(song("beta")), "and it arrives again")
     }
 
+    @Test func theHourKeepsTheLovedTracksInStepWithoutAClick() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        try put(folder, "Album/alpha.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .seconds(3600), hour: .milliseconds(30))
+
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let artist = song("alpha").artist
+        let read = Counter()
+        loves.read = { _, _ in
+            read.value += 1
+            return LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "alpha")], total: 1, pages: 1)
+        }
+
+        for _ in 0..<400 where loves.remote.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(read.value == 1, "the hour asks the account once, with no click and no reconnect: \(read.value)")
+        #expect(loves.remote == [Loves.key(artist, "alpha")], "and takes what the server holds")
+        #expect(likes.contains(song("alpha")), "so the loved song is liked with nobody touching the app")
+    }
+
+    @Test func aWishTheServerDidNotTakeGoesUpOnItsOwn() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        let library = library([folder])
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        let held = Loves.Entry(artist: "Death", title: "Bloodcraft", love: true)
+        let data = try #require(Persist.encode(Loves.Ledger(remote: [], pending: [held], dropped: [], wishes: [:]), for: ledger))
+        #expect(Persist.write(data, to: ledger))
+
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .milliseconds(20))
+        let sent = Counter()
+        loves.send = { (_: Loves.Entry) in
+            sent.value += 1
+            return sent.value == 1 ? .retry : .sent
+        }
+
+        for _ in 0..<200 where !loves.pending.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(loves.pending.isEmpty, "the wish on the disk goes up without a click and without a reconnect event")
+        #expect(sent.value == 2, "the first try is held, the second one lands")
+        #expect(Persist.read(Loves.Ledger.self, from: ledger)?.pending.isEmpty == true, "and the disk says so")
+    }
+
     @Test func aForcedSyncPagesThroughTheWholeList() async throws {
         let folder = try folder()
         let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")

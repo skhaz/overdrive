@@ -459,6 +459,11 @@ final class LastFM {
             throw error
         }
         Log.lastFM.debug("response", metadata: ["method": "\(method)", "status": "\((response as? HTTPURLResponse)?.statusCode ?? 0)", "bytes": "\(data.count)"])
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            Log.lastFM.error("http failed", metadata: ["method": "\(method)", "status": "\(http.statusCode)"])
+            throw Failure(code: http.statusCode, message: "Last.fm answered \(http.statusCode).")
+        }
+
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
 
         if let code = json["error"] as? Int {

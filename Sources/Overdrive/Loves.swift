@@ -17,6 +17,13 @@ final class Loves {
 
     nonisolated static let file = URL.applicationSupportDirectory.appending(path: "Overdrive/Loves.plist")
     nonisolated static let gap = Duration.milliseconds(300)
+    /// How often a wish the server did not take is offered again. The path monitor
+    /// sends at once on a reconnect; this is the fallback for a network that comes
+    /// back without an event, so a like is never held until the next hour.
+    nonisolated static let retry = Duration.seconds(60)
+    /// The hour that runs on its own: scrobbles and the loved tracks go up and come
+    /// down even when no scan, no reconnect, and no click happens.
+    nonisolated static let hour = Duration.seconds(3600)
     /// The songs of one fast read. Last.fm lists the loved tracks newest first, so a
     /// page that reaches a song the cache already holds carries every song above it,
     /// and the count the server reports says whether anything below changed.
@@ -104,7 +111,7 @@ final class Loves {
     @ObservationIgnored private var repair = true
     @ObservationIgnored private var flight: String?
 
-    init(library: Library, lastFM: LastFM, likes: Likes, file: URL = Loves.file) {
+    init(library: Library, lastFM: LastFM, likes: Likes, file: URL = Loves.file, retry: Duration = Loves.retry, hour: Duration = Loves.hour) {
         self.library = library
         self.lastFM = lastFM
         self.likes = likes
@@ -118,8 +125,27 @@ final class Loves {
 
         likes.changed = { [weak self] tracks, love in self?.local(tracks, love) }
         lastFM.connected = { [weak self] in Task { await self?.sync() } }
-        library.hourly = { [weak self] in Task { await self?.sync() } }
         Log.loves.info("load", metadata: ["file": "\(file.path)", "remote": "\(remote.count)", "pending": "\(pending.count)", "wishes": "\(wishes.count)"])
+
+        Task { [weak self] in
+            while true {
+                guard let self else { return }
+                if !self.pending.isEmpty, !self.syncing { await self.drain() }
+
+                do { try await Task.sleep(for: retry) } catch { return }
+            }
+        }
+
+        Task { [weak self] in
+            while true {
+                do { try await Task.sleep(for: hour) } catch { return }
+                guard let self else { return }
+
+                Log.loves.info("hourly", metadata: ["pending": "\(self.pending.count)", "remote": "\(self.remote.count)"])
+                await self.lastFM.flush()
+                await self.sync()
+            }
+        }
     }
 
     /// The first sync of a launch, after the library is there. Later scans do not ask

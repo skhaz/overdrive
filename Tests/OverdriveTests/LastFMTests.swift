@@ -8,6 +8,7 @@ final class Server: @unchecked Sendable {
         case unsent
         case down
         case error(Int)
+        case broken
         case limit(Set<String>)
         case invalid(String)
         case filtered([String: Int])
@@ -77,6 +78,8 @@ final class Server: @unchecked Sendable {
                 return .failure(URLError(.notConnectedToInternet))
             case .down:
                 return .status(503, Data("<html><body>503 Service Unavailable</body></html>".utf8))
+            case .broken:
+                return .status(500, Data("{}".utf8))
             case .error(let code):
                 return .json(["error": code, "message": "Error \(code)"])
             case .invalid(let track) where batch.contains { $0.track == track }:
@@ -255,6 +258,46 @@ struct LastFMTests {
         server.mode = .ok
         await settle(lastFM) { lastFM.pending.isEmpty }
         #expect(server.received == ["A", "B"])
+    }
+
+    @Test func keepsScrobblesWhenTheServerBreaksWithAValidBody() async {
+        let lastFM = client()
+        server.mode = .broken
+        scrobble(lastFM, ["A", "B"])
+        await settle(lastFM)
+
+        #expect(lastFM.pending.count == 2, "a 500 is not an accepted scrobble, even when the body parses")
+        #expect(lastFM.rejected.isEmpty)
+
+        server.mode = .ok
+        await settle(lastFM) { lastFM.pending.isEmpty }
+        #expect(server.received == ["A", "B"])
+    }
+
+    @Test func aLoveIsOnlySentWhenLastFmAnswersSuccessfully() async {
+        let lastFM = client()
+
+        server.mode = .broken
+        #expect(await lastFM.love("Artist", "A", true) == .retry, "a 500 with an empty body is not a confirmation")
+
+        server.mode = .error(11)
+        #expect(await lastFM.love("Artist", "A", true) == .retry, "a service that is down keeps the wish for later")
+
+        server.mode = .ok
+        #expect(await lastFM.love("Artist", "A", true) == .sent)
+    }
+
+    @Test func aRefusedNameIsDroppedAndAnExpiredSessionIsNot() async {
+        let lastFM = client()
+
+        server.mode = .error(6)
+        #expect(await lastFM.love("Artist", "A", true) == .dropped, "a name Last.fm refuses will never be accepted")
+
+        server.mode = .error(9)
+        #expect(await lastFM.love("Artist", "A", true) == .retry, "an expired session keeps the wish for after a reconnect")
+
+        lastFM.disconnect()
+        #expect(await lastFM.love("Artist", "A", true) == .retry)
     }
 
     @Test func keepsScrobblesOverTheDailyLimit() async {

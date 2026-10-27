@@ -221,7 +221,6 @@ final class Library {
     @ObservationIgnored private let loudness: Loudness
     @ObservationIgnored private let persistent: Bool
     @ObservationIgnored var loaded: ((_ complete: Bool) -> Void)?
-    @ObservationIgnored var hourly: (() -> Void)?
     let plays: Plays
 
     init(loudness: Loudness, folders: [URL]? = nil) {
@@ -316,7 +315,6 @@ final class Library {
                 if ticks.isMultiple(of: Library.full), !scanning {
                     Log.library.info("sync full scan", metadata: ["every": "\(Library.period * Library.full)"])
                     plays.flush()
-                    hourly?()
                     scan("periodic full")
                     continue
                 }
