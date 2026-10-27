@@ -2280,6 +2280,7 @@ struct SettingsView: View {
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(LastFM.self) private var lastFM
+    @Environment(Loves.self) private var loves
     @Environment(YouTube.self) private var youTube
     @State private var username = ""
     @State private var password = ""
@@ -2326,6 +2327,10 @@ struct SettingsView: View {
                     LabeledContent("Account", value: lastFM.user)
                     LabeledContent("Pending Scrobbles", value: String(lastFM.pending.count))
                     if !lastFM.rejected.isEmpty { LabeledContent("Rejected by Last.fm", value: String(lastFM.rejected.count)) }
+                    LabeledContent("Loved Tracks", value: loves.summary)
+                    Button("Sync Loved Tracks Now", action: loves.syncNow)
+                        .buttonStyle(PressableButtonStyle())
+                        .disabled(loves.syncing)
                     Button("Disconnect", action: lastFM.disconnect)
                     .buttonStyle(PressableButtonStyle(isDestructive: true))
                 }

@@ -185,6 +185,8 @@ final class Library {
         return grouped.artists
     }
 
+    @ObservationIgnored private var titleCache: [String: [String: Track]] = [:]
+    @ObservationIgnored private var titleVersion = -1
     @ObservationIgnored private var index = Index()
     @ObservationIgnored private var everything: [Track] = []
     @ObservationIgnored private var playedKeys: Set<String> = []
@@ -219,6 +221,7 @@ final class Library {
     @ObservationIgnored private let loudness: Loudness
     @ObservationIgnored private let persistent: Bool
     @ObservationIgnored var loaded: ((_ complete: Bool) -> Void)?
+    @ObservationIgnored var hourly: (() -> Void)?
     let plays: Plays
 
     init(loudness: Loudness, folders: [URL]? = nil) {
@@ -313,6 +316,7 @@ final class Library {
                 if ticks.isMultiple(of: Library.full), !scanning {
                     Log.library.info("sync full scan", metadata: ["every": "\(Library.period * Library.full)"])
                     plays.flush()
+                    hourly?()
                     scan("periodic full")
                     continue
                 }
@@ -577,6 +581,22 @@ final class Library {
         bySong[Fuzzy.fold(artist)] ?? []
     }
 
+    /// The song of an artist by its exact title, folded. The dictionary of one
+    /// artist is built the first time it is asked after a scan, so a sync of many
+    /// remote names costs only the artists it touches.
+    func hold(_ artist: String, _ title: String) -> Track? {
+        if titleVersion != scans {
+            titleVersion = scans
+            titleCache = [:]
+        }
+
+        let folded = Fuzzy.fold(artist)
+        let bucket = titleCache[folded] ?? Dictionary(songs(by: artist).map { (Fuzzy.fold($0.title), $0) }) { first, _ in first }
+        titleCache[folded] = bucket
+
+        return bucket[Fuzzy.fold(title)]
+    }
+
     func track(_ path: String) -> Track? {
         lookup[path]
     }
@@ -626,6 +646,12 @@ final class Library {
         }
 
         return picked
+    }
+
+    /// The song of a loved track: the exact name first, then the fuzzy walk, so a
+    /// Last.fm title that differs by a plural or a typo still lands on a real song.
+    func loved(_ love: LastFM.Loved) -> Track? {
+        hold(love.artist, love.title) ?? Discovery.owned([love.title], songs(by: love.artist))
     }
 
     private func songPlayed(_ track: Track) {

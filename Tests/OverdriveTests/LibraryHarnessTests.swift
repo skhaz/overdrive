@@ -504,6 +504,122 @@ struct LibraryHarnessTests {
         #expect(library.topBands(1)[0].songs.count == 2, "the songs of a band follow every scan")
     }
 
+    @Test func theLovedTracksFollowTheAccount() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        try put(folder, "Album/alpha.mp3")
+        try put(folder, "Album/beta.mp3")
+        try put(folder, "Other/gamma.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger)
+
+        // The fixtures carry no tags: every song is "Unknown Artist" and the title is
+        // the file name. The key is artist plus title, so three titles are three songs.
+        let sent = Counter()
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let artist = song("alpha").artist
+        loves.send = { (_: Loves.Entry) in
+            sent.value += 1
+            return .sent
+        }
+
+        likes.add([song("alpha")], notify: true)
+        let start = ContinuousClock.now
+        while !loves.pending.isEmpty, ContinuousClock.now - start < .seconds(10) {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(sent.value == 1, "a like the user made goes to Last.fm once")
+        #expect(loves.remote == [Loves.key(artist, "alpha")])
+        #expect(Persist.read(Loves.Ledger.self, from: ledger)?.remote == [Loves.key(artist, "alpha")], "the mirror is on the disk")
+
+        await loves.sync()
+        #expect(sent.value == 1, "a sync with nothing to push sends nothing")
+
+        let read = Counter()
+        loves.snapshot = {
+            read.value += 1
+            return [LastFM.Loved(artist: artist, title: "gamma"), LastFM.Loved(artist: artist, title: "beta")]
+        }
+        await loves.sync()
+
+        #expect(read.value == 1, "the read asked the account once")
+        #expect(likes.paths.sorted() == library.tracks.map(\.url.path).sorted(), "the liked songs of the account are all in the app")
+        #expect(likes.contains(song("gamma")), "a song loved on Last.fm that the library has is liked")
+        #expect(sent.value == 1, "and nothing was pushed back")
+        #expect(loves.remote == Set(["beta", "gamma"].map { Loves.key(artist, $0) }), "the mirror follows the server")
+        #expect(likes.contains(song("alpha")), "a love the server had not caught up with is not undone")
+
+        loves.snapshot = { [LastFM.Loved(artist: artist, title: "gamma")] }
+        await loves.sync()
+
+        #expect(likes.paths.sorted() == [song("alpha").url.path, song("gamma").url.path].sorted(), "an unlove on the account leaves the app, once")
+        #expect(!likes.contains(song("beta")))
+        #expect(likes.contains(song("alpha")), "and the grace is one read: alpha stays because the app wrote it, not the server")
+        #expect(sent.value == 1, "still nothing pushed back")
+    }
+
+    @Test func anUnlikeDuringASendDoesNotLoseTheQueue() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        for name in ["alpha", "beta", "gamma"] { try put(folder, "Album/\(name).mp3") }
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger)
+
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let sent = Counter()
+        let artist = song("alpha").artist
+
+        // The user unlikes the first song while its love is on its way to the server.
+        // The queue loses that wish under the feet of the walk, so the walk must not
+        // read past the end, and the unlove must still go up.
+        loves.send = { (entry: Loves.Entry) in
+            sent.value += 1
+            if entry.love, entry.title == "alpha" { likes.remove([song("alpha")], notify: true) }
+
+            return .sent
+        }
+
+        likes.add([song("alpha"), song("beta"), song("gamma")], notify: true)
+        let start = ContinuousClock.now
+        while !loves.pending.isEmpty, ContinuousClock.now - start < .seconds(10) {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(sent.value == 4, "three loves and the unlove that replaced one: \(sent.value) sends")
+        #expect(loves.remote == Set(["beta", "gamma"].map { Loves.key(artist, $0) }), "alpha is not loved in the end")
+        #expect(!likes.contains(song("alpha")), "and the app agrees with the server")
+        #expect(likes.contains(song("beta")))
+        #expect(Persist.read(Loves.Ledger.self, from: ledger)?.pending.isEmpty == true, "nothing is left in the queue")
+    }
+
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {
         let folder = try folder()
         defer { clean(folder) }

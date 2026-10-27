@@ -31,7 +31,7 @@ struct LogGapTests {
             "Output.swift": ["output device"],
             "YouTube.swift": ["search failed", "play failed", "stop video failed", "signed out"],
             "Overdrive.swift": ["window"],
-            "LastFM.swift": ["network", "history invalid", "top artists", "top tracks"],
+            "LastFM.swift": ["network", "history invalid", "top artists", "top tracks", "love", "love dropped", "love retry", "loved", "loved invalid", "loved truncated"],
             "Library.swift": ["unreadable attributes", "walk error"],
             "Loudness.swift": ["buffer failed", "file unreadable"],
             "Views.swift": ["editing", "copy", "played without album", "float ignored"],

@@ -59,7 +59,12 @@ final class LastFM {
                 Log.lastFM.debug("network", metadata: ["status": "\(path.status)", "expensive": "\(path.isExpensive)", "interfaces": Log.list(Set(path.availableInterfaces.map(\.name)).sorted())])
                 guard path.status == .satisfied else { return }
 
-                Task { @MainActor in await self?.flush() }
+                Task { @MainActor in
+                    guard let self else { return }
+
+                    await self.flush()
+                    self.connected?()
+                }
             }
             monitor.start(queue: .main)
         }
@@ -101,6 +106,7 @@ final class LastFM {
             user = name
             status = ""
             await flush()
+            connected?()
         } catch let failure as Failure where failure.code == 4 && username.contains("@") {
             Log.lastFM.warning("connect failed", metadata: ["reason": "email", "code": "\(failure.code)"])
             status = "Enter the Last.fm username, not the email."
@@ -159,6 +165,79 @@ final class LastFM {
         Log.lastFM.debug("top tracks", metadata: ["artist": "\(artist)", "asked": "\(count)", "got": "\(tracks.count)"])
 
         return tracks.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
+    }
+
+    /// What one love write did. Only an unknown track is given up on: an auth
+    /// failure keeps the entry, so the like the user made goes up after a reconnect.
+    enum Outcome {
+        case sent, retry, dropped
+    }
+
+    var connected: (() -> Void)?
+
+    func love(_ artist: String, _ title: String, _ love: Bool) async -> Outcome {
+        guard !session.isEmpty else { return .retry }
+        guard !artist.isEmpty, !title.isEmpty else {
+            Log.lastFM.warning("love dropped", metadata: ["reason": "no name", "artist": "\(artist)"])
+            return .dropped
+        }
+
+        do {
+            _ = try await call(love ? "track.love" : "track.unlove", ["artist": artist, "track": title], session: true)
+            Log.lastFM.info("love", metadata: ["action": "\(love ? "loved" : "unloved")", "artist": "\(artist)", "title": "\(title)"])
+            return .sent
+        } catch let failure as Failure where failure.code == 6 {
+            Log.lastFM.warning("love dropped", metadata: ["artist": "\(artist)", "title": "\(title)", "code": "\(failure.code)", "message": "\(failure.message)"])
+            return .dropped
+        } catch let failure as Failure {
+            Log.lastFM.warning("love retry", metadata: ["artist": "\(artist)", "title": "\(title)", "code": "\(failure.code)", "message": "\(failure.message)"])
+            return .retry
+        } catch {
+            Log.lastFM.warning("love retry", metadata: ["artist": "\(artist)", "title": "\(title)", "error": "\(error)"])
+            return .retry
+        }
+    }
+
+    /// Every loved track of the user, as artist and title. Nil when the answer is
+    /// not the whole truth, so a partial read can never look like an unlove.
+    func loved() async -> [LastFM.Loved]? {
+        guard !user.isEmpty else { return nil }
+
+        var all: [Loved] = []
+        var page = 1
+
+        while true {
+            guard let json = try? await call("user.getLovedTracks", ["user": user, "limit": "1000", "page": String(page)]) else { return nil }
+            guard let container = json["lovedtracks"] as? [String: Any] else {
+                Log.lastFM.debug("loved invalid", metadata: ["keys": Log.list(json.keys.sorted())])
+                return nil
+            }
+
+            for track in LastFM.items(container, "track") {
+                guard let title = track["name"] as? String, let artist = track["artist"] as? [String: Any], let name = artist["name"] as? String else { continue }
+
+                all.append(Loved(artist: name, title: title))
+            }
+
+            let pages = Int((container["@attr"] as? [String: Any])?["totalPages"] as? String ?? "1") ?? 1
+            guard page < pages else { break }
+            guard page < LastFM.pages else {
+                Log.lastFM.warning("loved truncated", metadata: ["pages": "\(pages)", "kept": "\(LastFM.pages)", "tracks": "\(all.count)"])
+                return nil
+            }
+
+            page += 1
+        }
+
+        Log.lastFM.info("loved", metadata: ["user": "\(user)", "tracks": "\(all.count)", "pages": "\(page)"])
+        return all
+    }
+
+    nonisolated static let pages = 20
+
+    nonisolated struct Loved {
+        let artist: String
+        let title: String
     }
 
     nonisolated static func items(_ value: Any?, _ key: String) -> [[String: Any]] {

@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 
 @Observable
 final class Likes {
@@ -8,6 +9,8 @@ final class Likes {
     }
 
     private(set) var paths: [String] = []
+
+    var changed: (([Track], Bool) -> Void)?
 
     @ObservationIgnored private let file: () -> URL
     @ObservationIgnored private let folder: () -> URL?
@@ -57,25 +60,46 @@ final class Likes {
     }
 
     func add(_ tracks: [Track]) {
-        Log.likes.info("add", metadata: Log.paths(tracks.map(\.url.path)))
-        var changed = false
-
-        for track in tracks where liked.insert(track.url.path).inserted {
-            paths.append(track.url.path)
-            changed = true
-        }
-
-        if changed { save() }
+        add(tracks, notify: true)
     }
 
     func remove(_ tracks: [Track]) {
-        Log.likes.info("remove", metadata: Log.paths(tracks.map(\.url.path)))
+        remove(tracks, notify: true)
+    }
+
+    /// `notify` is off only for a song the sync brought in from Last.fm, so the app
+    /// never pushes back what it just pulled.
+    func add(_ tracks: [Track], notify: Bool) {
+        Log.likes.info("add", metadata: metadata(tracks, notify))
+        var moved: [Track] = []
+        var saved = false
+
+        for track in tracks where liked.insert(track.url.path).inserted {
+            paths.append(track.url.path)
+            saved = true
+            moved.append(track)
+        }
+
+        guard saved else { return }
+        save()
+        if notify { changed?(moved, true) }
+    }
+
+    func remove(_ tracks: [Track], notify: Bool) {
+        Log.likes.info("remove", metadata: metadata(tracks, notify))
         let removed = Set(tracks.map(\.url.path))
         guard !removed.isEmpty, !liked.isDisjoint(with: removed) else { return }
 
         paths.removeAll { removed.contains($0) }
         liked.subtract(removed)
         save()
+        if notify { changed?(tracks.filter { removed.contains($0.url.path) }, false) }
+    }
+
+    private func metadata(_ tracks: [Track], _ notify: Bool) -> Logging.Logger.Metadata {
+        var fields = Log.paths(tracks.map(\.url.path))
+        fields["notify"] = "\(notify)"
+        return fields
     }
 
     private func save() {

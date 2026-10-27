@@ -20,7 +20,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Discovery:** pick 1, 10, 20, or 100 songs at random from your library, only the songs you have not played yet, the ones you played most, or the top tracks of your Last.fm artists and of your own top bands.
 - **Play counts:** every song shows how many times you played it all the way through, and you can sort any list by it. The counts travel with your music.
 - **Playlists** and **Up Next** (the list of what plays next). Up Next in the sidebar shows the song that plays and the songs that come after it. Add songs to it from the menu of a song; they go to the end of the list. Drag them to change the order, or press Delete to remove them. Click the trash button to clear the list. After you confirm, the song stops and the player starts again with no song.
-- **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar.
+- **Liked songs.** Like any song and find them all in **Liked Songs** in the sidebar. With a Last.fm account, your likes and your loved tracks stay the same list, in both directions.
 - **Continues where you stopped.** When you open the app again, it shows the same song, at the same time.
 - **Keyboard media keys** and Control Center play, pause, and change songs.
 - **Apple Music does not open by accident** while you use Overdrive.
@@ -105,6 +105,16 @@ Click the heart in the bottom bar to like the song that plays. You can also righ
 
 Click **Liked Songs** in the sidebar, below Songs, to see all liked songs. To remove a like, right-click the song and choose **Unlike Song**, or click the heart again while the song plays.
 
+#### Keep your likes in step with Last.fm
+
+If you connected your Last.fm account in Settings > Last.fm, your liked songs and your Last.fm loved tracks are the same list. A like you make in Overdrive goes to Last.fm. A love you make on the Last.fm site, or in another player, comes to Overdrive.
+
+The app syncs when it opens, once an hour, when the network comes back, and when you connect your account. To do it at once, choose **Sync Loved Tracks Now** in Settings > Last.fm. It also shows how many loved tracks Last.fm holds and how many of your wishes are still waiting to go up.
+
+A song is matched by its artist and title, not by where the file is, so moving your music folder does not break the list. Last.fm can be a few seconds behind your own change, so the app protects a like or unlike you just made for one read: a stale answer cannot undo it. If a sync cannot read your whole loved list — no network, a partial answer, or more than 20 000 loved tracks — it changes nothing at all and tries again later, rather than treating a short answer as a list of unlikes.
+
+The wishes that have not gone up yet live in `Loves.plist` inside `~/Library/Application Support/Overdrive`, so a crash or a quit loses nothing. Unlike the play counts, this file is about your account and not about a folder, so it does not travel with your music.
+
 ### Lyrics
 
 The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay next to the song, in a file with the `.cache.lyrics` extension, for one month. After that the app looks for them again and keeps the old ones if it finds nothing new. To keep the lyrics that the app finds on the internet, edit them.
@@ -133,7 +143,7 @@ Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email
 | --- | --- |
 | Folders | The folders with your music. |
 | Playback > Show Spectrum | Show or hide the bars of the song that plays, above the playback controls (default: shown). |
-| Last.fm | Connect or disconnect your Last.fm account. |
+| Last.fm | Connect or disconnect your Last.fm account, see your loved tracks, and sync them now. |
 | YouTube > Open Videos In | Show the videos in the small window (default) or in your web browser. |
 | YouTube > Window Corner | The corner of the screen for the video window. |
 | YouTube > Sign Out | Sign out of YouTube. |

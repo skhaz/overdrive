@@ -167,6 +167,7 @@ final class Records: @unchecked Sendable {
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
             "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded"],
+            "Loves.swift": ["load", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull", "arrive", "arrive ignored"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up"],
             "Spectrum.swift": ["spectrum tap failed"],
@@ -202,6 +203,11 @@ final class Records: @unchecked Sendable {
         #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("Log.player."), "Discovery.pick must log the click")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("Log.player."), "Discovery.walk must log its result")
         #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {").contains("Log.player."), "Discovery.start must log an empty answer")
+
+        let loves = try source("Loves.swift")
+        for name in ["syncNow", "arrive", "sync", "local", "drain", "pull"] {
+            #expect(body(loves, "func \(name)(").contains("Log.loves.") || body(loves, "private func \(name)(").contains("Log.loves."), "Loves.\(name) must log")
+        }
 
         let views = try source("Views.swift")
         for signature in ["func goBack(", "func goForward(", "func press(", "func reveal(_ track", "func navigate("] {

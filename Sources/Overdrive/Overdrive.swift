@@ -94,7 +94,14 @@ struct Overdrive: App {
         let player = Player(lastFM: lastFM, loudness: loudness, plays: library.plays)
         let youTube = YouTube(player: player)
         let discovery = Discovery(library: library, lastFM: lastFM, player: player)
-        library.loaded = { [unowned library] complete in player.restore(complete: complete) { library.track($0) } }
+        let likes = Likes(file: { Likes.file(in: library.folders.first) }, folder: { library.folders.first })
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes)
+        library.loaded = { [unowned library] complete in
+            player.restore(complete: complete) { library.track($0) }
+            guard complete else { return }
+
+            Task { await loves.arrive() }
+        }
 
         Task { await lastFM.flush() }
         AppleMusic.block()
@@ -126,13 +133,14 @@ struct Overdrive: App {
             return event
         }
 
-        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery)
+        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, likes: likes, loves: loves)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
     @State private var library = Overdrive.shared.library
     @State private var playlists = Playlists(directory: { Playlists.directory(in: Overdrive.shared.library.folders.first) }, folder: { Overdrive.shared.library.folders.first })
-    @State private var likes = Likes(file: { Likes.file(in: Overdrive.shared.library.folders.first) }, folder: { Overdrive.shared.library.folders.first })
+    @State private var likes = Overdrive.shared.likes
+    @State private var loves = Overdrive.shared.loves
     @State private var lastFM = Overdrive.shared.lastFM
     @State private var player = Overdrive.shared.player
     @State private var youTube = Overdrive.shared.youTube
@@ -256,6 +264,7 @@ struct Overdrive: App {
                 .environment(library)
                 .environment(player)
                 .environment(lastFM)
+                .environment(loves)
                 .environment(youTube)
         }
     }

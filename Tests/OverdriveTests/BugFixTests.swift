@@ -586,6 +586,6 @@ struct CoverFingerprintTests {
         let source = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Library.swift"), encoding: .utf8)
         #expect(Library.full == 6, "every hour a full scan runs, also when the quick check sees nothing")
         #expect(source.contains("if ticks.isMultiple(of: Library.full), !scanning {"))
-        #expect(source.contains("plays.flush()\n                    scan(\"periodic full\")"), "the hourly tick syncs the play counts to the disk")
+        #expect(source.contains("plays.flush()\n                    hourly?()\n                    scan(\"periodic full\")"), "the hourly tick syncs the play counts and the loved tracks, then scans")
     }
 }
