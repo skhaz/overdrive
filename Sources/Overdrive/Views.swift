@@ -217,6 +217,7 @@ struct SongMenu: View {
 struct DiscoveryMenu: View {
     @Environment(Library.self) private var library
     @Environment(Discovery.self) private var discovery
+    @Environment(Infinity.self) private var infinity
 
     var body: some View {
         Menu("Songs (\(library.total))") { values(library.total) { discovery.pick(.songs, $0) } }
@@ -235,6 +236,11 @@ struct DiscoveryMenu: View {
 
         Menu("Top Bands (\(library.bands))") { values(nil) { discovery.pick(.bands, $0) } }
             .disabled(!discovery.ready || discovery.work.running || library.bands == 0)
+
+        Divider()
+
+        Toggle("Infinity", systemImage: "infinity", isOn: Binding { infinity.on } set: { _ in infinity.toggle() })
+            .disabled(!discovery.ready)
     }
 
     @ViewBuilder private func values(_ pool: Int?, _ action: @escaping @MainActor (Int) -> Void) -> some View {
@@ -1364,7 +1370,7 @@ struct UpNextView: View {
     @Environment(\.active) private var active
 
     var body: some View {
-        let rows = sorted.apply(sort, token: [player.revision, player.index, library.plays.revision]) { player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0], plays: library.plays.count(player.queue[$0])) } }
+        let rows = sorted.apply(sort, token: [player.revision, player.index, player.head, library.plays.revision]) { player.queue.indices.dropFirst(player.head).map { Row(id: $0, track: player.queue[$0], plays: library.plays.count(player.queue[$0])) } }
         let now = youTube.showing == nil ? player.index : nil
 
         ZStack {
@@ -1385,7 +1391,7 @@ struct UpNextView: View {
                                 guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
 
                                 selection = []
-                                player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))
+                                player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: max(player.head + index, player.index + 1))
                             }
                     }
                     .onDeleteCommand { if active { remove(selection) } }
@@ -2140,7 +2146,7 @@ struct ContentView: View {
         case .liked: likes.paths.count
         default: nil
         }
-        let token: [AnyHashable] = [page.key, path.map(\.key), library.version, player.queue.count, player.index, list]
+        let token: [AnyHashable] = [page.key, path.map(\.key), library.version, player.queue.count, player.index, player.head, list]
         return memo.value(token) { summarize() }
     }
 
@@ -2153,7 +2159,7 @@ struct ContentView: View {
         case (nil, .section(.songs)): summary(library.tracks)
         case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
         case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
-        case (nil, .upNext): summary(player.queue.dropFirst(player.index))
+        case (nil, .upNext): summary(player.queue.dropFirst(player.head))
         case (nil, .about): ""
         }
     }

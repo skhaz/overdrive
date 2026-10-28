@@ -37,6 +37,12 @@ final class Player {
     private(set) var queue: [Track] = [] { didSet { revision += 1 } }
     private(set) var revision = 0
     private(set) var index = 0
+    /// The first song of the queue that Up Next shows, and never above `index`.
+    /// A forward jump leaves the songs it skipped in their own place, so they
+    /// stay in the list; every other move of the current song takes the head
+    /// with it. A song therefore leaves Up Next when the player played it or
+    /// passed it, never because the user clicked past it.
+    private(set) var head = 0
     private(set) var added: [Bool] = []
     var lyrics = Player.saved?.lyrics ?? true { didSet { if lyrics != oldValue { save() } } }
     private(set) var playing = false
@@ -106,6 +112,14 @@ final class Player {
     }
 
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
+
+    /// The songs after the one that plays: what Up Next still holds ahead of it.
+    var ahead: Int { Player.ahead(queue.count, index: index) }
+
+    nonisolated static func ahead(_ count: Int, index: Int) -> Int { max(count - index - 1, 0) }
+
+    /// Whether a buffer of `ahead` songs is below the `kept` songs a mode wants.
+    nonisolated static func needs(ahead: Int, kept: Int) -> Bool { ahead < kept }
     var duration: Double { current?.duration ?? 0 }
 
     @ObservationIgnored private let player = AVQueuePlayer()
@@ -118,11 +132,18 @@ final class Player {
     @ObservationIgnored private var started = Date.now
     @ObservationIgnored private var scrobbled = false
     @ObservationIgnored private var counted = false
+    @ObservationIgnored private var halved = false
     @ObservationIgnored private var announced = false
     @ObservationIgnored private var restored = false
     @ObservationIgnored var view = (page: Player.saved?.page ?? "", path: Player.saved?.path ?? [], query: Player.saved?.query ?? "")
     @ObservationIgnored var intercept: ((Remote) -> Void)?
     @ObservationIgnored var resumed: (() -> Void)?
+    /// Called once per song, at the moment it passes its half. The infinity mode
+    /// tops its buffer up here, while nothing is missing yet.
+    @ObservationIgnored var halfway: (() -> Void)?
+    /// Called when a list replaced the one that was playing, when the list
+    /// ended, and when the user cleared it, with the reason.
+    @ObservationIgnored var resets: ((String) -> Void)?
     @ObservationIgnored private var seeks = 0
     @ObservationIgnored private var failures = 0
     @ObservationIgnored private var status: NSKeyValueObservation?
@@ -240,6 +261,7 @@ final class Player {
 
     func play(_ tracks: [Track], at start: Int = 0) {
         restored = true
+        resets?("new list")
         Log.player.info("play", metadata: ["songs": "\(tracks.count)", "start": "\(start)", "shuffle": "\(shuffle)", "path": "\(tracks.indices.contains(start) ? tracks[start].url.path : "")"])
         order = tracks
         queue = tracks
@@ -252,6 +274,7 @@ final class Player {
             queue = origin.map { tracks[$0] }
             index = 0
         }
+        head = Player.head(head, index, forward: true)
 
         load()
     }
@@ -267,6 +290,7 @@ final class Player {
         queue = inserted.items
         added = inserted.marks
         index = inserted.index
+        head = Player.passed(head, inserted.kept)
 
         let set = Set(tracks)
         order.removeAll { set.contains($0) }
@@ -280,7 +304,28 @@ final class Player {
         save()
     }
 
-    nonisolated static func inserting<T: Hashable>(_ items: [T], _ marks: [Bool], at index: Int, _ new: [T]) -> (items: [T], marks: [Bool], index: Int) {
+    /// The songs at the end of the list, where the infinity mode puts what it
+    /// drew. Nothing that plays moves: the song, its place, and the head of the
+    /// list stay, so a fill never interrupts anything.
+    func append(_ tracks: [Track]) {
+        Log.player.info("append", metadata: ["songs": "\(tracks.count)", "count": "\(queue.count)", "ahead": "\(ahead)"])
+        guard !tracks.isEmpty else { return Log.player.debug("append ignored", metadata: ["reason": "no songs"]) }
+        guard current != nil else { return Log.player.debug("append ignored", metadata: ["reason": "no song"]) }
+
+        origin = []
+        queue += tracks
+        added += Array(repeating: false, count: tracks.count)
+
+        if shuffle {
+            order += tracks
+        } else {
+            order = queue
+        }
+
+        save()
+    }
+
+    nonisolated static func inserting<T: Hashable>(_ items: [T], _ marks: [Bool], at index: Int, _ new: [T]) -> (items: [T], marks: [Bool], index: Int, kept: [Int]) {
         let new = items.indices.contains(index) ? new.filter { $0 != items[index] } : new
         let set = Set(new)
         let kept = items.indices.filter { $0 == index || !set.contains(items[$0]) }
@@ -293,7 +338,7 @@ final class Player {
 
         items.insert(contentsOf: new, at: position)
         marks.insert(contentsOf: repeatElement(true, count: new.count), at: position)
-        return (items, marks, index)
+        return (items, marks, index, kept)
     }
 
     func random(_ tracks: [Track]) {
@@ -304,10 +349,11 @@ final class Player {
     }
 
     func jump(to position: Int) {
-        Log.player.info("jump", metadata: ["position": "\(position)", "count": "\(queue.count)"])
+        Log.player.info("jump", metadata: ["position": "\(position)", "index": "\(index)", "head": "\(head)", "count": "\(queue.count)"])
         guard queue.indices.contains(position) else { return }
 
         index = position
+        head = Player.head(head, position, forward: false)
         load()
     }
 
@@ -320,6 +366,7 @@ final class Player {
         queue = moved.map { queue[$0] }
         added = moved.map { added.indices.contains($0) && added[$0] }
         index = moved.firstIndex(of: index) ?? 0
+        head = moved.firstIndex(of: head) ?? head
         if !shuffle { order = queue }
 
         requeue()
@@ -328,6 +375,7 @@ final class Player {
 
     func clear() {
         origin = []
+        resets?("cleared")
         Log.player.info("clear", metadata: ["count": "\(queue.count)"])
         player.removeAllItems()
         item = nil
@@ -337,6 +385,7 @@ final class Player {
         order = []
         added = []
         index = 0
+        head = 0
         playing = false
         position = 0
         played = 0
@@ -357,6 +406,7 @@ final class Player {
         origin = []
         let (kept, current) = Player.removing(queue.count, positions, keeping: index)
         guard kept.count < queue.count else { return }
+        head = Player.passed(head, kept)
 
         let gone = Set(positions).subtracting(kept).filter(queue.indices.contains).map { queue[$0] }
         queue = kept.map { queue[$0] }
@@ -396,6 +446,21 @@ final class Player {
     nonisolated static func removing(_ count: Int, _ positions: Set<Int>, keeping index: Int) -> (kept: [Int], index: Int) {
         let kept = (0..<count).filter { $0 == index || !positions.contains($0) }
         return (kept, kept.firstIndex(of: index) ?? 0)
+    }
+
+    /// The head after the player moved. Forward, the head goes with the song that
+    /// plays, so everything the player passed leaves the list; back, or over a
+    /// song the user clicked, the head stays, so the skipped songs keep their
+    /// place in Up Next until the player really passes them.
+    nonisolated static func head(_ head: Int, _ index: Int, forward: Bool) -> Int {
+        forward ? index : Swift.min(head, index)
+    }
+
+    /// The place of the Up Next head in a list that lost songs. A head that is
+    /// still there keeps its place; one that left moves to the first song below
+    /// it, so the list keeps everything the player has not passed.
+    nonisolated static func passed(_ head: Int, _ kept: [Int]) -> Int {
+        kept.firstIndex(of: head) ?? kept.firstIndex { $0 > head } ?? max(kept.count - 1, 0)
     }
 
     nonisolated static func located(_ saved: [String], index: Int, _ lookup: (String) -> Track?) -> (tracks: [Track], index: Int?, positions: [Int]) {
@@ -500,6 +565,7 @@ final class Player {
         let reset = order.count != queue.count
         if reset { order = queue }
         index = found ?? 0
+        head = Player.head(head, index, forward: true)
         if tracks.count != session.queue.count || found == nil || reset {
             var missing: [String] = []
             for stored in session.queue where missing.count < 20 {
@@ -580,10 +646,11 @@ final class Player {
     }
 
     func next() {
-        Log.player.info("next", metadata: ["index": "\(index)"])
+        Log.player.info("next", metadata: ["index": "\(index)", "head": "\(head)"])
         guard let next = following(index, manual: true) else { return stop() }
 
         index = next
+        head = Player.head(head, next, forward: true)
         load()
     }
 
@@ -592,6 +659,7 @@ final class Player {
         guard position < 3, index > 0 else { return seek(0) }
 
         index -= 1
+        head = Player.head(head, index, forward: false)
         load()
     }
 
@@ -610,6 +678,7 @@ final class Player {
 
     private func stop() {
         Log.player.info("stop", metadata: ["songs": "\(queue.count)"])
+        resets?("list ended")
         player.removeAllItems()
         item = nil
         upcoming = nil
@@ -621,9 +690,11 @@ final class Player {
         playing = false
         position = 0
         index = 0
+        head = 0
         played = 0
         scrobbled = false
         counted = false
+        halved = false
         announced = false
         started = .now
         artwork = nil
@@ -718,6 +789,7 @@ final class Player {
         guard let next = following(index) else { return stop() }
 
         index = next
+        head = Player.head(head, next, forward: true)
         guard let upcoming else { return load() }
 
         item = upcoming
@@ -738,6 +810,7 @@ final class Player {
         }
 
         index = next
+        head = Player.head(head, next, forward: true)
         load(play: playing)
     }
 
@@ -749,6 +822,7 @@ final class Player {
         position = 0
         scrobbled = false
         counted = false
+        halved = false
         started = .now
         artwork = Artwork.image(track)
 
@@ -800,6 +874,12 @@ final class Player {
             counted = true
             plays.bump(track)
             Log.player.info("counted", metadata: ["path": "\(track.url.path)", "played": "\(played)", "duration": "\(track.duration)"])
+        }
+
+        if !halved, track.duration > 0, played * 2 >= track.duration {
+            halved = true
+            Log.player.info("halfway", metadata: ["path": "\(track.url.path)", "played": "\(played)", "duration": "\(track.duration)"])
+            halfway?()
         }
 
         if !scrobbled, track.duration >= 30, played >= min(track.duration / 2, 240) {

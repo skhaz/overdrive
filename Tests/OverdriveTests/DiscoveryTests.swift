@@ -6,8 +6,10 @@ private final class Chart: @unchecked Sendable {
     private struct State {
         var artists: [String] = []
         var tracks: [String: [String]] = [:]
+        var plays: [String: [Int]] = [:]
         var known: [String: String] = [:]
         var calls: [String] = []
+        var limits: [Int] = []
         var offline = false
         var single = false
     }
@@ -15,22 +17,33 @@ private final class Chart: @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var state = State()
 
-    static func reset(_ artists: [String], _ tracks: [String: [String]], known: [String: String] = [:], offline: Bool = false, single: Bool = false) {
-        lock.withLock { state = State(artists: artists, tracks: tracks, known: known, calls: [], offline: offline, single: single) }
+    static func reset(_ artists: [String], _ tracks: [String: [String]], plays: [String: [Int]] = [:], known: [String: String] = [:], offline: Bool = false, single: Bool = false) {
+        lock.withLock { state = State(artists: artists, tracks: tracks, plays: plays, known: known, calls: [], limits: [], offline: offline, single: single) }
     }
 
     static var calls: [String] { lock.withLock { state.calls } }
 
-    static func reply(_ method: String?, _ artist: String?) -> [String: Any]? {
+    static var limits: [Int] { lock.withLock { state.limits } }
+
+    static func reply(_ method: String?, _ artist: String?, _ limit: String?) -> [String: Any]? {
         lock.withLock {
             state.calls.append(method ?? "")
+            state.limits.append(Int(limit ?? "") ?? 0)
             guard !state.offline else { return nil }
 
             switch method {
             case "user.getTopArtists":
                 return ["topartists": ["artist": shaped(state.artists.map { ["name": $0] }, state.single)]]
             case "artist.getTopTracks":
-                return ["toptracks": ["track": shaped((state.tracks[artist ?? ""] ?? []).map { ["name": $0] }, state.single)]]
+                // the service ranks by listeners and sends at most `limit` songs;
+                // a page with no given plays is the most listened order
+                let names = (state.tracks[artist ?? ""] ?? []).prefix(Int(limit ?? "") ?? 0)
+                let given = state.plays[artist ?? ""] ?? []
+                let tracks = names.enumerated().map { index, name in
+                    ["name": name, "playcount": String(given.indices.contains(index) ? given[index] : 1000 - index)] as [String: Any]
+                }
+
+                return ["toptracks": ["track": shaped(tracks, state.single)]]
             case "artist.getInfo":
                 guard let name = state.known[artist ?? ""] else {
                     return ["error": 6, "message": "The artist you supplied could not be found"]
@@ -78,7 +91,7 @@ private final class ChartFake: URLProtocol {
             form[parts[0]] = parts.count > 1 ? parts[1] : ""
         }
 
-        guard let object = Chart.reply(form["method"], form["artist"]) else {
+        guard let object = Chart.reply(form["method"], form["artist"], form["limit"]) else {
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
         }
@@ -289,6 +302,71 @@ struct DiscoveryTests {
         #expect(titles == ["Blood of Lions", "Bloodcraft"])
     }
 
+    @Test func theMostPlayedTracksWinOverTheMostListened() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // the real answer for Calibre 12, in the order the service sent it:
+        // it ranks by listeners, so a song the whole fanbase plays is 14th here
+        let listeners = ["EMO lixo", "Underground", "Garoto suburbano", "Nossa vida 2005", "Meios de transporte", "Antimídia", "O espelho",
+                         "Existência desgraçada", "Nossa Vida", "Otário", "País sem solução", "Califórnia brasileira", "Sangue nos olhos",
+                         "Hardcore Eu Sou", "Arrastão"]
+        let plays = [12678, 12366, 10585, 6538, 8090, 7071, 6439, 4580, 6252, 5032, 4273, 4089, 4439, 7785, 5023]
+        Chart.reset([], ["Calibre 12": listeners], plays: ["Calibre 12": plays])
+
+        let lastFM = client()
+        let top = await lastFM.topTracks("Calibre 12", Discovery.tracks)
+
+        #expect(top == ["EMO lixo", "Underground", "Garoto suburbano", "Meios de transporte", "Hardcore Eu Sou"],
+                "the five most played, not the five most listened")
+        #expect(!top.contains("Nossa vida 2005"), "the fourth song of the page the service ranks is not in the top five by plays")
+        #expect(top.contains("Hardcore Eu Sou"), "a song at 14th by listeners is 5th by plays, and a page of five never showed it")
+        #expect(Chart.calls == ["artist.getTopTracks"], "one request, not one for the page and one for the ranking")
+        #expect(Chart.limits == [LastFM.chart], "the app asks for a wide page and trims it at home")
+    }
+
+    @Test func thePlayCountOfTheCutLineIsInTheLog() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let records = logRecords
+
+        Chart.reset([], ["Death": ["One", "Two", "Three"]], plays: ["Death": [300, 200, 100]])
+        let lastFM = client()
+        _ = await lastFM.topTracks("Death", 2)
+
+        #expect(records.find("lastfm", "top tracks", "window", "\(LastFM.chart)"), "the log says how wide a page the app asked for")
+        #expect(records.find("lastfm", "top tracks", "plays", "200"), "and the plays of the last track that made the cut, so a shrink is visible")
+        #expect(records.find("lastfm", "top tracks", "ranked", "One 300"), "every pick of the page carries its own count, so a wrong song is traceable")
+    }
+
+    @Test func aTrackWithNoPlayCountSortsLast() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        Chart.reset([], ["Death": ["Known", "No Count", "Also Known"]], plays: ["Death": [50, 0, 60]])
+        let lastFM = client()
+        let ranked = await lastFM.topTracks("Death", 3)
+
+        #expect(ranked == ["Also Known", "Known", "No Count"], "a track the service sent without a count is the least played of the page")
+
+        Chart.reset([], ["Death": ["Same", "Twin", "Third"]], plays: ["Death": [100, 100, 99]])
+        let tied = await lastFM.topTracks("Death", 3)
+
+        #expect(tied == ["Same", "Twin", "Third"], "two tracks with the same count keep the order the service gave them")
+    }
+
+    @Test func aShortPageIsReturnedWhole() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        Chart.reset([], ["Death": ["Only"]], plays: ["Death": [7]])
+        let lastFM = client()
+        let one = await lastFM.topTracks("Death", Discovery.tracks)
+
+        #expect(one == ["Only"], "an artist with one track on the whole service gives that one track")
+        #expect(Chart.limits == [LastFM.chart])
+
+        Chart.reset([], ["Death": []])
+        let nothing = await lastFM.topTracks("Death", Discovery.tracks)
+        #expect(nothing.isEmpty, "an artist with no track gives none, and the sort of nothing changes nothing")
+    }
+
     @Test func oneItemArrivesNotAsAList() async throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         Chart.reset(["Krisiun"], ["Krisiun": ["Blood of Lions"]], single: true)
@@ -458,7 +536,7 @@ struct DiscoveryTests {
         #expect(menu.contains("Menu(\"Top Bands (\\(library.bands))\") {"), "the band picker says how many bands have a count")
         #expect(menu.components(separatedBy: "values(nil) { discovery.pick(.artists, $0) }").count - 1 == 1)
         #expect(menu.components(separatedBy: "values(nil) { discovery.pick(.bands, $0) }").count - 1 == 1)
-        #expect(menu.components(separatedBy: ".disabled(!discovery.ready").count - 1 == 2, "off without a Last.fm account, and no second request while one is in flight")
+        #expect(menu.components(separatedBy: ".disabled(!discovery.ready").count - 1 == 3, "both pickers and the endless mode are off without a Last.fm account, and no second request while one is in flight")
         #expect(menu.contains(".disabled(!discovery.ready || discovery.work.running)"), "the artist picker")
         #expect(menu.contains(".disabled(!discovery.ready || discovery.work.running || library.bands == 0)"), "the band picker")
         #expect(menu.contains("|| library.bands == 0)"), "nothing played disables the band picker")
@@ -491,6 +569,8 @@ struct DiscoveryTests {
 
         #expect(Discovery.window == 4, "Last.fm answers 29 when one IP spends its rate")
         #expect(Discovery.tracks == 5, "the five most played songs of an artist are the pool a title comes from")
+        #expect(LastFM.chart == 20, "a page of five is ranked by listeners, so the plays of the songs below it are never seen")
+        #expect(try source("LastFM.swift").contains("max(count, LastFM.chart)"), "the app never asks for a narrower page than it wants songs from")
         #expect(!discovery.contains("attempts"), "the candidates are known before the first draw, so nothing is drawn again and nothing is retried")
         #expect(body(discovery, "nonisolated static func choose(").contains("guard candidates.count > 1 else {"), "one candidate is taken at once, and only more than one is drawn")
         #expect(body(discovery, "nonisolated static func choose(").contains("$0.track.id == track.id"), "two titles that are the same song enter the draw once")

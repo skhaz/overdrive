@@ -86,8 +86,8 @@ struct ViewStructureTests {
         let list = region(source, from: "struct UpNextView: View {")
 
         #expect(source.contains("row(\"Up Next\", \"list.bullet\", .upNext)"))
-        #expect(list.contains("player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))"), "a drag must reorder only the songs after the one that plays")
-        #expect(list.contains("player.queue.indices.dropFirst(player.index)"), "Up Next shows the song that plays and the songs that follow, not the played ones")
+        #expect(list.contains("player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: max(player.head + index, player.index + 1))"), "a drag reorders the list it shows, and never moves a song ahead of the one that plays")
+        #expect(list.contains("player.queue.indices.dropFirst(player.head)"), "Up Next shows the head and the songs after it, so a song the user clicked past keeps its place")
         #expect(list.contains("delete: { remove(selection) }"), "Delete must remove the selected songs")
     }
 

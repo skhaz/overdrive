@@ -164,9 +164,10 @@ final class Records: @unchecked Sendable {
             "Picture.swift": ["covers process failed", "covers"],
             "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved"],
             "LastFM.swift": ["connected", "connect failed", "http failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "scrobble skipped", "settle", "now playing", "artist page", "open artist"],
-            "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted"],
+            "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted", "halfway", "append", "append ignored"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
             "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded", "discovery waiting", "discovery note", "artists drawn", "artist drawn"],
+            "Infinity.swift": ["infinity", "infinity ignored", "infinity kept", "infinity waiting", "infinity full", "infinity dropped", "infinity empty", "infinity cycle", "infinity filled", "infinity drew"],
             "Loves.swift": ["load", "tick", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull wide", "pull fast", "pull", "apply", "push", "arrive", "arrive ignored", "prune", "prune skipped"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up", "discard"],
@@ -206,6 +207,11 @@ final class Records: @unchecked Sendable {
         #expect(body(discovery, "private func waited(_ mine: Int, _ pool: Pool) {").contains("Log.player."), "Discovery.waited must log the spinner")
         #expect(body(discovery, "func dismissNote() {").contains("Log.player."), "Discovery.dismissNote must log the dismissal")
         #expect(body(discovery, "nonisolated static func collect(").contains("Log.player."), "Discovery.collect must log every artist it draws")
+
+        let infinity = try source("Infinity.swift")
+        for name in ["toggle", "off", "stopped", "passed", "fill", "draw"] {
+            #expect(body(infinity, "func \(name)(").contains("Log.player.") || body(infinity, "private func \(name)(").contains("Log.player."), "Infinity.\(name) must log")
+        }
 
         let lastFM = try source("LastFM.swift")
         for name in ["artistURL", "openArtist"] {

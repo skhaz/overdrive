@@ -117,27 +117,35 @@ final class Discovery {
         return Match(track: candidates[index].track, title: candidates[index].title, candidates: candidates.count)
     }
 
-    /// `count` names of the pool, drawn at random and never repeated. The draw
-    /// is a partial shuffle, so every name of the pool can be one of them.
+    /// `count` names of the pool, drawn at random and never repeated: the empty
+    /// ones are out, and a name the service sent twice is one name.
     nonisolated static func draw(_ pool: [String], _ count: Int, using pick: (Int) -> Int) -> [String] {
-        guard count > 0, !pool.isEmpty else { return [] }
-
         var names: [String] = []
         var seen: Set<String> = []
-        names.reserveCapacity(min(count, pool.count))
+        names.reserveCapacity(pool.count)
 
         for name in pool where !name.isEmpty {
             if seen.insert(name).inserted { names.append(name) }
         }
 
-        var drawn: [String] = []
-        drawn.reserveCapacity(min(count, names.count))
-        var remaining = names.count
+        return drawn(names, count, using: pick)
+    }
+
+    /// `count` items of the pool, drawn at random and never repeated. The draw
+    /// is a partial shuffle, so every item of the pool can be one of them, and
+    /// a pool smaller than the count gives all of it.
+    nonisolated static func drawn<T>(_ pool: [T], _ count: Int, using pick: (Int) -> Int) -> [T] {
+        guard count > 0, !pool.isEmpty else { return [] }
+
+        var items = pool
+        var drawn: [T] = []
+        drawn.reserveCapacity(min(count, items.count))
+        var remaining = items.count
 
         while remaining > 0, drawn.count < count {
             let index = min(max(pick(remaining), 0), remaining - 1)
-            names.swapAt(index, remaining - 1)
-            drawn.append(names[remaining - 1])
+            items.swapAt(index, remaining - 1)
+            drawn.append(items[remaining - 1])
             remaining -= 1
         }
 

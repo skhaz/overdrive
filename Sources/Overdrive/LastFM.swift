@@ -162,14 +162,34 @@ final class LastFM {
         return artists.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
     }
 
+    /// The service ranks the tracks of an artist by the number of people who
+    /// listened to them, not by the number of plays, and a small page hides the
+    /// songs that are played most by few. So the app asks for a wide page and
+    /// keeps the most played of what came back.
+    nonisolated static let chart = 20
+
+    /// The `count` most played tracks of an artist, in the order the service
+    /// ranks them when two have the same number of plays.
     func topTracks(_ artist: String, _ count: Int) async -> [String] {
         guard count > 0, !artist.isEmpty else { return [] }
 
-        guard let json = try? await call("artist.getTopTracks", ["artist": artist, "limit": String(count), "autocorrect": "1"]) else { return [] }
+        let window = max(count, LastFM.chart)
+        guard let json = try? await call("artist.getTopTracks", ["artist": artist, "limit": String(window), "autocorrect": "1"]) else { return [] }
         let tracks = LastFM.items(json["toptracks"], "track")
-        Log.lastFM.debug("top tracks", metadata: ["artist": "\(artist)", "asked": "\(count)", "got": "\(tracks.count)"])
 
-        return tracks.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
+        let ranked = tracks.enumerated().compactMap { index, track -> (name: String, plays: Int, at: Int)? in
+            guard let name = track["name"] as? String, !name.isEmpty else { return nil }
+
+            return (name, Int(track["playcount"] as? String ?? "") ?? (track["playcount"] as? Int) ?? 0, index)
+        }
+        .sorted { one, two in
+            one.plays != two.plays ? one.plays > two.plays : one.at < two.at
+        }
+
+        let picked = Array(ranked.prefix(count))
+        Log.lastFM.debug("top tracks", metadata: ["artist": "\(artist)", "window": "\(window)", "got": "\(picked.count)", "plays": "\(picked.last?.plays ?? 0)", "ranked": Log.list(picked.map { "\($0.name) \($0.plays)" })])
+
+        return picked.map { $0.name }
     }
 
     /// The page of an artist under the name the app has, for a name that

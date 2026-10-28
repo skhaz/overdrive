@@ -94,6 +94,9 @@ struct Overdrive: App {
         let player = Player(lastFM: lastFM, loudness: loudness, plays: library.plays)
         let youTube = YouTube(player: player)
         let discovery = Discovery(library: library, lastFM: lastFM, player: player)
+        let infinity = Infinity(library: library, lastFM: lastFM, player: player, discovery: discovery)
+        player.halfway = { [weak infinity] in infinity?.passed() }
+        player.resets = { [weak infinity] reason in infinity?.stopped(reason) }
         let likes = Likes(file: { Likes.file(in: library.folders.first) }, folder: { library.folders.first })
         let loves = Loves(library: library, lastFM: lastFM, likes: likes)
         library.loaded = { [unowned library] complete in
@@ -135,7 +138,7 @@ struct Overdrive: App {
             return event
         }
 
-        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, likes: likes, loves: loves)
+        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, infinity: infinity, likes: likes, loves: loves)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
@@ -147,6 +150,7 @@ struct Overdrive: App {
     @State private var player = Overdrive.shared.player
     @State private var youTube = Overdrive.shared.youTube
     @State private var discovery = Overdrive.shared.discovery
+    @State private var infinity = Overdrive.shared.infinity
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
@@ -157,6 +161,7 @@ struct Overdrive: App {
                 .environment(likes)
                 .environment(lastFM)
                 .environment(discovery)
+                .environment(infinity)
                 .environment(youTube)
                 .modifier(Reopen(delegate: delegate))
         }
@@ -203,6 +208,7 @@ struct Overdrive: App {
                 DiscoveryMenu()
                     .environment(library)
                     .environment(discovery)
+                    .environment(infinity)
             }
 
             CommandMenu("Song") {

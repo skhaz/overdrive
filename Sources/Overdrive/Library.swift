@@ -638,6 +638,28 @@ final class Library {
         return tracks
     }
 
+    /// The artists that can still add a song: one entry per artist of the whole
+    /// library, never of the search, with the songs of its own that are not in
+    /// `served`. An artist whose songs all played leaves the pool, so a mode
+    /// that draws from it cannot repeat a song before the library is empty.
+    func pool(excluding served: Set<Track.ID>) -> [(name: String, songs: [Track])] {
+        Library.pool(Array(bySong.values), excluding: served)
+    }
+
+    nonisolated static func pool(_ groups: [[Track]], excluding served: Set<Track.ID>) -> [(name: String, songs: [Track])] {
+        var pools: [(name: String, songs: [Track])] = []
+        pools.reserveCapacity(groups.count)
+
+        for songs in groups {
+            let fresh = served.isEmpty ? songs : songs.filter { !served.contains($0.id) }
+            guard let first = fresh.first else { continue }
+
+            pools.append((first.artist, fresh))
+        }
+
+        return pools
+    }
+
     nonisolated static func topArtists(_ totals: [(folded: String, plays: Int)], _ count: Int) -> [String] {
         guard count > 0 else { return [] }
 
