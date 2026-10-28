@@ -175,12 +175,15 @@ struct RandomTests {
         #expect(library.contains("if held == 0 { bands += 1 }"), "a first play opens a band without a scan")
     }
 
-    @Test func theCountIsSetWhenASongEnds() throws {
+    @Test func aPlayIsCountedOncePerSong() throws {
         let player = try source("Player.swift")
         let finished = try body(player, "private func finished(_ ended: AVPlayerItem?) {")
+        let tick = try body(player, "private func tick(_ seconds: Double) {")
 
-        #expect(finished.contains("if let track = current { plays.bump(track) }"), "a song that played to the end counts one play")
-        #expect(player.components(separatedBy: "plays.bump").count - 1 == 1, "only a full play counts a song")
+        #expect(tick.contains("if !counted, Player.counts(played, track.duration) {"), "a song counts when 80% of it really played")
+        #expect(finished.contains("if let track = current, !counted {"), "a song that reaches its end counts even when its stated length is wrong")
+        #expect(player.components(separatedBy: "plays.bump").count - 1 == 2, "the play is counted once, at 80% or at the end, never twice")
+        #expect(player.contains("counted = false"), "a new song starts uncounted")
         let moved = try #require(finished.range(of: "guard let next = following(index)")?.lowerBound)
         #expect(try #require(finished.range(of: "plays.bump")?.upperBound) < moved, "the count is taken before the player moves to the next song")
         #expect(player.contains("plays: Plays) {"), "the player gets the counts of the library at boot")

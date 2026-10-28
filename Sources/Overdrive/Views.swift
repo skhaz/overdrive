@@ -97,7 +97,7 @@ struct Selected: ViewModifier {
         guard active else { return }
 
         lyrics.selected = picked != nil
-        if let track = picked ?? player.current { lyrics.show(track) }
+        if let track = player.current ?? picked { lyrics.show(track) }
     }
 }
 
@@ -1164,34 +1164,47 @@ struct ArtistList: View {
     @State private var selected: String?
 
     var body: some View {
+        let sections = Library.sections(artists.map(\.name))
+        let order = sections.flatMap(\.indices)
+
         ScrollViewReader { proxy in
             List(selection: $selected) {
-                ForEach(artists.indices, id: \.self) { index in
-                    let artist = artists[index]
-
-                    Button { go(.artist(artist.name)) } label: {
-                        HStack {
-                            Cover(track: artist.albums[0].tracks[0]).frame(width: 40)
-                            Text(artist.name)
-                            Spacer()
-                            Text(count(artist.albums.count, "album") + " · " + count(artist.albums.reduce(0) { $0 + $1.tracks.count }, "song")).foregroundStyle(.secondary)
-                            Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+                ForEach(sections, id: \.letter) { section in
+                    SwiftUI.Section {
+                        ForEach(section.indices, id: \.self) { index in
+                            row(artists[index])
                         }
-                        .contentShape(.rect)
+                    } header: {
+                        Text(section.letter)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.isHeader)
                     }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button("Copy Artist") { copy([artist.name]) }
-                    }
-                    .tag(artist.name)
-                    }
+                }
             }
-            .modifier(Keys(count: artists.count, selected: { artists[$0].name == selected }, select: { index in
-                selected = artists[index].name
-                proxy.scrollTo(index)
-            }, enter: { go(.artist(artists[$0].name)) }))
-
+            .modifier(Keys(count: order.count, selected: { artists[order[$0]].name == selected }, select: { position in
+                selected = artists[order[position]].name
+                proxy.scrollTo(order[position])
+            }, enter: { go(.artist(artists[order[$0]].name)) }))
         }
+    }
+
+    private func row(_ artist: (name: String, albums: [Album])) -> some View {
+        Button { go(.artist(artist.name)) } label: {
+            HStack {
+                Cover(track: artist.albums[0].tracks[0]).frame(width: 40)
+                Text(artist.name)
+                Spacer()
+                Text(count(artist.albums.count, "album") + " · " + count(artist.albums.reduce(0) { $0 + $1.tracks.count }, "song")).foregroundStyle(.secondary)
+                Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Copy Artist") { copy([artist.name]) }
+        }
+        .tag(artist.name)
     }
 }
 

@@ -171,6 +171,42 @@ final class Library {
         }
     }
 
+    /// The letter of the index that a name belongs to: its folded first
+    /// character in uppercase, or `#` for a name that does not start with a
+    /// letter.
+    nonisolated static func letter(_ name: String) -> String {
+        guard let first = Fuzzy.fold(name).first, first.isLetter else { return "#" }
+
+        return String(first).uppercased()
+    }
+
+    /// The names grouped by index letter: the letters in order, then `#`, and
+    /// the names of a section in the Finder order. Each section holds the
+    /// positions of its names in the list it was given.
+    nonisolated static func sections(_ names: [String]) -> [(letter: String, indices: [Int])] {
+        let ordered = names.indices.sorted { one, two in
+            let first = letter(names[one]), second = letter(names[two])
+            if first != second {
+                if first == "#" { return false }
+                if second == "#" { return true }
+                return first.localizedStandardCompare(second) == .orderedAscending
+            }
+
+            return names[one].localizedStandardCompare(names[two]) == .orderedAscending
+        }
+
+        var sections: [(letter: String, indices: [Int])] = []
+        for index in ordered {
+            let key = letter(names[index])
+            if sections.last?.letter == key {
+                sections[sections.count - 1].indices.append(index)
+            } else {
+                sections.append((key, [index]))
+            }
+        }
+        return sections
+    }
+
     private static func savedFolders() -> [URL] {
         (UserDefaults.standard.stringArray(forKey: key) ?? []).map { URL(filePath: StoredPath.decode($0)) }
     }

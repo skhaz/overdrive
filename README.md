@@ -43,7 +43,7 @@ Drag a music folder to the window, or choose Overdrive > Settings > Folders > Ad
 
 ### Find and play
 
-- Use the sidebar to see **Albums**, **Artists**, or **Songs**.
+- Use the sidebar to see **Albums**, **Artists**, or **Songs**. The **Artists** list has a header for each letter of the alphabet, in order.
 - Type in the search field to find an artist, an album, or a song. The search stays until you clear it with Escape, Command-K, or the clear button.
 - To go back to the previous screen, click the back arrow at the top, press Command-[, or swipe to the right on the trackpad. To go forward again, click the forward arrow, press Command-], or swipe to the left. The side buttons of a mouse also work.
 - Double-click a song to play it. On an album, click **Play** or **Shuffle**.
@@ -72,7 +72,7 @@ A song matches a Last.fm title by name: the app compares the letters and digits 
 
 ### How many times a song played
 
-Every song shows how many times you played it all the way through. The number is in the **Plays** column of **Songs**, **Up Next**, your playlists, and **Liked Songs**, and next to the time of each song in an open album. Click **Plays** to sort by it: once for the least played first, again for the most played first, a third time for the order of the list. **Never Played** in Discovery is the same count: a song with a number above zero never shows there.
+Every song shows how many times you played it. A play counts when you hear about 80% of the song, so a song you skip halfway does not count, and a song that reaches its end always counts. The number is in the **Plays** column of **Songs**, **Up Next**, your playlists, and **Liked Songs**, and next to the time of each song in an open album. Click **Plays** to sort by it: once for the least played first, again for the most played first, a third time for the order of the list. **Never Played** in Discovery is the same count: a song with a number above zero never shows there.
 
 The counts live in a **Plays.plist** file at the root of your first music folder, so they move with your music. A count is for a song, not for a place on the disk: the file knows a song by its name, album, and artist. If you change the album or the artist of a song, its count starts again at zero. The app writes the counts once an hour and when you quit, so a crash can lose the plays of the last hour.
 
@@ -119,7 +119,7 @@ The wishes that have not gone up yet live in `Loves.plist` inside `~/Library/App
 
 ### Lyrics
 
-The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself, and **Save Lyrics** (Command-S) writes them at once. If the app cannot write the file, it asks **Save** or **Discard** when you click **Done**, so an edit is never lost without a question. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay next to the song, in a file with the `.cache.lyrics` extension, for one month. After that the app looks for them again and keeps the old ones if it finds nothing new. To keep the lyrics that the app finds on the internet, edit them.
+The lyrics show at the right side when a song plays, and they always show the song that plays: picking another song in a list does not change them. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself, and **Save Lyrics** (Command-S) writes them at once. If the app cannot write the file, it asks **Save** or **Discard** when you click **Done**, so an edit is never lost without a question. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay next to the song, in a file with the `.cache.lyrics` extension, for one month. After that the app looks for them again and keeps the old ones if it finds nothing new. To keep the lyrics that the app finds on the internet, edit them.
 
 To hide the lyrics, click the lyrics button in the toolbar (Option-Command-Y). Click it again to show them. While the lyrics are hidden, the app does not look for them. The app remembers your choice.
 

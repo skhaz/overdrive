@@ -193,11 +193,11 @@ struct ViewStructureTests {
         #expect(source.contains("(player.current != nil || lyrics.selected) && lyrics.track != nil && navigation.lyrics"), "the docked lyrics need a current or a selected song, and a song list")
     }
 
-    @Test func theLyricsFollowTheSelectedSong() throws {
+    @Test func theLyricsFollowThePlayingSong() throws {
         let selected = region(try source(), from: "struct Selected")
 
-        #expect(selected.contains("let picked = album == nil && tracks.count == 1 ? tracks[0] : nil"), "one selected song shows its lyrics")
-        #expect(selected.contains("if let track = picked ?? player.current { lyrics.show(track) }"), "without one selected song the lyrics show the current song")
+        #expect(selected.contains("let picked = album == nil && tracks.count == 1 ? tracks[0] : nil"), "one selected song is picked")
+        #expect(selected.contains("if let track = player.current ?? picked { lyrics.show(track) }"), "the song that plays keeps the lyrics, whatever the selection is; a selected song shows only while nothing plays")
         #expect(selected.contains("lyrics.selected = picked != nil"), "the top screen tells if one song is selected")
     }
 

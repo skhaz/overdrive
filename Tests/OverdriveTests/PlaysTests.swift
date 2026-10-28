@@ -19,6 +19,14 @@ struct PlaysTests {
         counts.map { Plays.Rank(key: $0.0, count: $0.1) }
     }
 
+    @Test func aPlayCountsAtEightyPercentOfTheSong() {
+        #expect(Player.counts(80, 100), "80% of a song is a play")
+        #expect(Player.counts(240, 300))
+        #expect(Player.counts(79, 100) == false, "a song left at three quarters is not a play")
+        #expect(Player.counts(0, 0) == false, "a song without a stated length counts at its end, not before")
+        #expect(Player.counts(0, 100) == false)
+    }
+
     @Test func theBestPlayedPickGoesDownTheOrder() {
         let best = Plays.top(ranks([("a", 9), ("b", 5), ("c", 5), ("d", 1)]), 3) { _ in true }
 

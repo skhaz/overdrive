@@ -117,6 +117,7 @@ final class Player {
     @ObservationIgnored private var played = 0.0
     @ObservationIgnored private var started = Date.now
     @ObservationIgnored private var scrobbled = false
+    @ObservationIgnored private var counted = false
     @ObservationIgnored private var announced = false
     @ObservationIgnored private var restored = false
     @ObservationIgnored var view = (page: Player.saved?.page ?? "", path: Player.saved?.path ?? [], query: Player.saved?.query ?? "")
@@ -134,6 +135,13 @@ final class Player {
     @ObservationIgnored private var volumeLog: Task<Void, Never>?
     @ObservationIgnored private var announcedState = ""
     nonisolated static let delay = Duration.seconds(1)
+    nonisolated static let threshold = 0.8
+
+    /// A play counts when the song really played this much of itself: the time
+    /// between ticks, so a seek spends nothing.
+    nonisolated static func counts(_ played: Double, _ duration: Double) -> Bool {
+        duration > 0 && played >= duration * Player.threshold
+    }
 
     init(lastFM: LastFM, loudness: Loudness, plays: Plays) {
         self.lastFM = lastFM
@@ -507,6 +515,7 @@ final class Player {
 
         played = session.played ?? 0
         scrobbled = session.scrobbled ?? false
+        counted = Player.counts(played, track.duration)
         if let started = session.started { self.started = Date(timeIntervalSince1970: started) }
 
         Task {
@@ -609,6 +618,7 @@ final class Player {
         index = 0
         played = 0
         scrobbled = false
+        counted = false
         announced = false
         started = .now
         update()
@@ -695,7 +705,10 @@ final class Player {
         guard let ended, ended === item else { return Log.player.trace("stale item event", metadata: ["kind": "end"]) }
 
         Log.player.info("finished", metadata: ["path": "\(current?.url.path ?? "")"])
-        if let track = current { plays.bump(track) }
+        if let track = current, !counted {
+            counted = true
+            plays.bump(track)
+        }
         guard let next = following(index) else { return stop() }
 
         index = next
@@ -729,6 +742,7 @@ final class Player {
         played = 0
         position = 0
         scrobbled = false
+        counted = false
         started = .now
         artwork = Artwork.image(track)
 
@@ -775,6 +789,12 @@ final class Player {
 
         failures = 0
         played += delta
+
+        if !counted, Player.counts(played, track.duration) {
+            counted = true
+            plays.bump(track)
+            Log.player.info("counted", metadata: ["path": "\(track.url.path)", "played": "\(played)", "duration": "\(track.duration)"])
+        }
 
         if !scrobbled, track.duration >= 30, played >= min(track.duration / 2, 240) {
             scrobbled = true
