@@ -231,10 +231,10 @@ struct DiscoveryMenu: View {
         Divider()
 
         Menu("Last.fm Artists") { values(nil) { discovery.pick(.artists, $0) } }
-            .disabled(!discovery.ready || discovery.running)
+            .disabled(!discovery.ready || discovery.work.running)
 
         Menu("Top Bands (\(library.bands))") { values(nil) { discovery.pick(.bands, $0) } }
-            .disabled(!discovery.ready || discovery.running || library.bands == 0)
+            .disabled(!discovery.ready || discovery.work.running || library.bands == 0)
     }
 
     @ViewBuilder private func values(_ pool: Int?, _ action: @escaping @MainActor (Int) -> Void) -> some View {
@@ -1340,6 +1340,7 @@ struct UpNextView: View {
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
     @Environment(Likes.self) private var likes
+    @Environment(Discovery.self) private var discovery
     @State private var selection: Set<Row.ID> = []
     @State private var sort = Sort()
     @State private var sorted = Sorted<Row>()
@@ -1349,64 +1350,96 @@ struct UpNextView: View {
         let rows = sorted.apply(sort, token: [player.revision, player.index, library.plays.revision]) { player.queue.indices.dropFirst(player.index).map { Row(id: $0, track: player.queue[$0], plays: library.plays.count(player.queue[$0])) } }
         let now = youTube.showing == nil ? player.index : nil
 
-        if rows.isEmpty {
-            ContentUnavailableView("No Songs", systemImage: "list.bullet", description: Text("Play a song or an album to fill Up Next."))
-                .modifier(Selected(tracks: []))
-        } else {
-            ScrollViewReader { proxy in
-                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "up-next")) {
-                    TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track), added: added($0)) }
-                    TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.id == now) }
-                    TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.id == now) }
-                    TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.id == now).monospacedDigit() }.width(70)
-                    TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
-                } rows: {
-                    ForEach(rows) { TableRow($0).draggable(String($0.id)) }
-                        .dropDestination(for: String.self) { index, ids in
-                            guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
+        ZStack {
+            if rows.isEmpty {
+                ContentUnavailableView("No Songs", systemImage: "list.bullet", description: Text("Play a song or an album to fill Up Next."))
+                    .modifier(Selected(tracks: []))
+            } else {
+                ScrollViewReader { proxy in
+                    Table(of: Row.self, selection: $selection, sortOrder: order($sort, "up-next")) {
+                        TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.id == now, liked: likes.contains($0.track), added: added($0)) }
+                        TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.id == now) }
+                        TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.id == now) }
+                        TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.id == now).monospacedDigit() }.width(70)
+                        TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
+                    } rows: {
+                        ForEach(rows) { TableRow($0).draggable(String($0.id)) }
+                            .dropDestination(for: String.self) { index, ids in
+                                guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
 
-                            selection = []
-                            player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))
-                        }
-                }
-                .onDeleteCommand { if active { remove(selection) } }
-                .onChange(of: active) { if !active { sort = Sort() } }
-                .id("\(sort.rawValue)\u{1F}\(library.edits)")
-                .contextMenu(forSelectionType: Row.ID.self) { ids in
-                    let target = targets(ids, selection)
-                    let picked = rows.filter { target.contains($0.id) }
-
-                    if !picked.isEmpty {
-                        Button("Remove from Up Next", role: .destructive) { remove(target) }
-                            .keyboardShortcut(.delete)
-                            .disabled(target == [player.index] && rows.count > 1)
-                            .buttonStyle(PressableButtonStyle(isDestructive: true))
-                        Button("Clear Up Next", role: .destructive) { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
-                            .buttonStyle(PressableButtonStyle(isDestructive: true))
-                        Divider()
-
-                        if picked.count == 1 {
-                            GoMenu(track: picked[0].track)
-                        }
-
-                        CopyMenu(tracks: picked.map(\.track))
-                        FileMenu(urls: picked.map(\.track.url))
+                                selection = []
+                                player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: player.index + max(index, 1))
+                            }
                     }
-                } primaryAction: { ids in
-                    if let row = rows.first(where: { ids.contains($0.id) }) { start(row.id) }
+                    .onDeleteCommand { if active { remove(selection) } }
+                    .onChange(of: active) { if !active { sort = Sort() } }
+                    .id("\(sort.rawValue)\u{1F}\(library.edits)")
+                    .contextMenu(forSelectionType: Row.ID.self) { ids in
+                        let target = targets(ids, selection)
+                        let picked = rows.filter { target.contains($0.id) }
+
+                        if !picked.isEmpty {
+                            Button("Remove from Up Next", role: .destructive) { remove(target) }
+                                .keyboardShortcut(.delete)
+                                .disabled(target == [player.index] && rows.count > 1)
+                                .buttonStyle(PressableButtonStyle(isDestructive: true))
+                            Button("Clear Up Next", role: .destructive) { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
+                                .buttonStyle(PressableButtonStyle(isDestructive: true))
+                            Divider()
+
+                            if picked.count == 1 {
+                                GoMenu(track: picked[0].track)
+                            }
+
+                            CopyMenu(tracks: picked.map(\.track))
+                            FileMenu(urls: picked.map(\.track.url))
+                        }
+                    } primaryAction: { ids in
+                        if let row = rows.first(where: { ids.contains($0.id) }) { start(row.id) }
+                    }
+                    .onChange(of: player.index, initial: true) {
+                        if player.queue.indices.contains(player.index) { selection = [player.index] }
+                    }
+                    .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
+                        selection = [rows[index].id]
+                        proxy.scrollTo(rows[index].id)
+                    }, enter: { start(rows[$0].id) }, extend: { index in
+                        selection.insert(rows[index].id)
+                        proxy.scrollTo(rows[index].id)
+                    }, delete: { remove(selection) }, selectAll: { selection = Set(rows.map(\.id)) }))
+                    .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
                 }
-                .onChange(of: player.index, initial: true) {
-                    if player.queue.indices.contains(player.index) { selection = [player.index] }
-                }
-                .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
-                    selection = [rows[index].id]
-                    proxy.scrollTo(rows[index].id)
-                }, enter: { start(rows[$0].id) }, extend: { index in
-                    selection.insert(rows[index].id)
-                    proxy.scrollTo(rows[index].id)
-                }, delete: { remove(selection) }, selectAll: { selection = Set(rows.map(\.id)) }))
-                .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
             }
+
+            if discovery.work.spinning {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .accessibilityLabel("Loading Songs")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: discovery.work.spinning)
+        .overlay(alignment: .bottom) { note }
+    }
+
+    /// Why the last discovery added nothing, until the user clears it.
+    @ViewBuilder private var note: some View {
+        if let text = discovery.work.note {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                Text(text)
+                Button(action: discovery.dismissNote) {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+            }
+            .font(.callout)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.regularMaterial, in: .capsule)
+            .padding(.bottom, 12)
         }
     }
 
@@ -1974,8 +2007,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
             if let current = player.current { reveal(current) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .discovery)) { _ in
-            Log.navigation.info("discovery", metadata: ["songs": "\(player.queue.count)", "page": "\(page.key)"])
+        .onReceive(NotificationCenter.default.publisher(for: .discovery)) { note in
+            let stage = note.object as? String ?? Discovery.done
+            Log.navigation.info("discovery", metadata: ["stage": "\(stage)", "songs": "\(player.queue.count)", "page": "\(page.key)"])
             lyrics.settle { navigation.open(.upNext, leaving: tracker.position) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatLyrics)) { _ in

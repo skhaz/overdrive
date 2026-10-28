@@ -8,6 +8,16 @@ final class Discovery {
 
     nonisolated static let window = 4
     nonisolated static let tracks = 5
+
+    /// The milliseconds a network pick may run before the Up Next list shows its
+    /// spinner. A faster answer never flickers one.
+    nonisolated static let spinAfter: UInt64 = 200
+
+    /// The two stages a discovery announces: the pick the user chose, and the
+    /// songs that arrived. The screen opens on both, so a pick that spends
+    /// requests is on screen while it works.
+    nonisolated static let opening = "open"
+    nonisolated static let done = "done"
     nonisolated static let pool = 5
     nonisolated static let least = 20
     nonisolated static let most = 200
@@ -179,13 +189,72 @@ final class Discovery {
         return found
     }
 
-    private(set) var running = false
+    /// What a discovery that spends requests leaves on screen: the menus are
+    /// dimmed while it runs, the list spins after `Discovery.spinAfter`, and a
+    /// pick that added nothing says why. One value, so a late answer of the pick
+    /// before cannot write over the pick that replaced it.
+    nonisolated struct Work {
+        private(set) var running = false
+        private(set) var spinning = false
+        private(set) var note: String?
+        private(set) var generation = 0
+
+        /// A new pick retires the one before it and opens its screen at once.
+        mutating func begin() -> Int {
+            generation += 1
+            running = true
+            spinning = false
+            note = nil
+
+            return generation
+        }
+
+        /// The list may spin now, but only for the pick that is still current.
+        mutating func spin(_ mine: Int) -> Bool {
+            guard mine == generation, running else { return false }
+
+            spinning = true
+            return true
+        }
+
+        /// The pick is over: songs went in the list, or the note says why they
+        /// did not. False when a newer pick took over, which keeps its state.
+        mutating func end(_ mine: Int, _ note: String?) -> Bool {
+            guard mine == generation else { return false }
+
+            running = false
+            spinning = false
+            self.note = note
+
+            return true
+        }
+
+        mutating func dismiss() {
+            note = nil
+        }
+    }
+
+    /// Why a network pick added no song, in the words the list shows.
+    enum Cause {
+        case noChart, noBands, noSongs, noMatch
+    }
+
+    nonisolated static func reason(_ cause: Cause, _ artists: Int) -> String {
+        switch cause {
+        case .noChart: "Last.fm sent no artist. Check the account and the connection."
+        case .noBands: "No band has a play count yet."
+        case .noSongs: "None of those \(artists) artists is in your library."
+        case .noMatch: "The top \(tracks) of those artists matched no song of yours."
+        }
+    }
+
+    /// The pick that is on its way, and what the Up Next list shows for it.
+    private(set) var work = Work()
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let player: Player
-    @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var work: Task<Void, Never>?
+    @ObservationIgnored private var job: Task<Void, Never>?
 
     init(library: Library, lastFM: LastFM, player: Player) {
         self.library = library
@@ -202,75 +271,101 @@ final class Discovery {
             return Log.player.warning("discovery ignored", metadata: ["pool": "\(pool.rawValue)", "reason": "no last.fm", "songs": "\(count)"])
         }
 
-        generation += 1
-        let mine = generation
-        work?.cancel()
-        work = nil
-        running = false
+        job?.cancel()
+        job = nil
+        let mine = work.begin()
 
         Log.player.info("discovery", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
 
         switch pool {
         case .songs:
-            start(library.random(count), mine, pool, count)
+            start(library.random(count), mine, pool, count, nil)
         case .unplayed:
-            start(library.unplayed(count), mine, pool, count)
+            start(library.unplayed(count), mine, pool, count, nil)
         case .played:
-            start(library.topmost(count), mine, pool, count)
+            start(library.topmost(count), mine, pool, count, nil)
         case .artists, .bands:
-            running = true
-            work = Task {
-                let tracks = await self.walk(pool, count)
-                guard mine == self.generation else {
-                    return Log.player.debug("discovery superseded", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
+            NotificationCenter.default.post(name: .discovery, object: Discovery.opening)
+            job = Task {
+                let watch = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(Discovery.spinAfter))
+                    self?.waited(mine, pool)
                 }
+                defer { watch.cancel() }
 
-                self.running = false
-                self.work = nil
-                self.start(tracks, mine, pool, count)
+                let found = await self.walk(pool, count)
+                self.start(found.tracks, mine, pool, count, found.note)
             }
         }
     }
 
-    private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {
-        guard mine == generation else {
+    /// The list may show its spinner: the pick is still the current one.
+    private func waited(_ mine: Int, _ pool: Pool) {
+        guard work.spin(mine) else { return }
+
+        Log.player.debug("discovery waiting", metadata: ["pool": "\(pool.rawValue)", "ms": "\(Discovery.spinAfter)"])
+    }
+
+    func dismissNote() {
+        guard work.note != nil else { return }
+
+        work.dismiss()
+        Log.player.info("discovery note", metadata: ["reason": "dismissed"])
+    }
+
+    private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {
+        guard work.end(mine, tracks.isEmpty ? why : nil) else {
             return Log.player.debug("discovery superseded", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
         }
+        job = nil
+
         guard !tracks.isEmpty else {
-            return Log.player.warning("discovery empty", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)"])
+            return Log.player.warning("discovery empty", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "note": "\(why ?? "")"])
         }
 
         player.random(tracks)
-        NotificationCenter.default.post(name: .discovery, object: nil)
+        NotificationCenter.default.post(name: .discovery, object: Discovery.done)
     }
 
-    private func walk(_ pool: Pool, _ count: Int) async -> [Track] {
+    private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {
         let wanted: [(name: String, songs: [Track])]
 
         switch pool {
         case .artists:
             let chart = await lastFM.topArtists(Discovery.reach(count))
+            guard !chart.isEmpty else {
+                Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no artists"])
+                return ([], Discovery.reason(.noChart, 0))
+            }
+
             let drawn = Discovery.draw(chart, count, using: { Int.random(in: 0..<$0) })
             Log.player.info("artists drawn", metadata: ["asked": "\(count)", "chart": "\(chart.count)", "drawn": "\(drawn.count)"])
             wanted = drawn.map { (name: $0, songs: library.songs(by: $0)) }
         default:
             wanted = library.topBands(count)
+            guard !wanted.isEmpty else {
+                Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no bands"])
+                return ([], Discovery.reason(.noBands, 0))
+            }
         }
 
-        guard !wanted.isEmpty else {
-            Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no artists"])
-            return []
-        }
         guard !Task.isCancelled else {
             Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "cancelled"])
-            return []
+            return ([], nil)
         }
 
         let held = wanted.filter { !$0.songs.isEmpty }.count
+        guard held > 0 else {
+            Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no songs", "artists": "\(wanted.count)"])
+            return ([], Discovery.reason(.noSongs, wanted.count))
+        }
+
         let fm = lastFM
         let found = await Discovery.collect(count, wanted) { await fm.topTracks($0, Discovery.tracks) }
 
         Log.player.info("discovery result", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "artists": "\(wanted.count)", "held": "\(held)", "found": "\(found.count)"])
-        return found
+        guard found.isEmpty else { return (found, nil) }
+
+        return ([], Discovery.reason(.noMatch, held))
     }
 }

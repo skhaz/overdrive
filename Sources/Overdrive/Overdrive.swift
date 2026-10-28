@@ -156,6 +156,7 @@ struct Overdrive: App {
                 .environment(playlists)
                 .environment(likes)
                 .environment(lastFM)
+                .environment(discovery)
                 .environment(youTube)
                 .modifier(Reopen(delegate: delegate))
         }

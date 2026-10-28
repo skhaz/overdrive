@@ -334,7 +334,7 @@ struct DiscoveryTests {
 
         #expect(discovery.contains("!LastFM.key.isEmpty && !lastFM.user.isEmpty && !library.albums.isEmpty"), "no key, no user, or no songs means the submenu is off")
         #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("if pool == .artists || pool == .bands, !ready"), "a click that cannot work is refused before any request")
-        #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "!ready")!.lowerBound < body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "generation += 1")!.lowerBound,
+        #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "!ready")!.lowerBound < body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "work.begin()")!.lowerBound,
                 "a refused click must not retire the discovery that is in flight")
     }
 
@@ -343,22 +343,102 @@ struct DiscoveryTests {
 
         #expect(!discovery.contains("Persist."), "the discovery is never written to the disk")
         #expect(!discovery.contains("Date(") && !discovery.contains("ContinuousClock"), "no lifetime, no cache")
-        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("await lastFM.topArtists(Discovery.reach(count))"), "the artists come from a fresh request, wider than the list so the draw is a draw")
-        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("wanted = library.topBands(count)"), "the bands come from the local play counts")
-        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").components(separatedBy: "library.songs(by:").count - 1 == 1,
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").contains("await lastFM.topArtists(Discovery.reach(count))"), "the artists come from a fresh request, wider than the list so the draw is a draw")
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").contains("wanted = library.topBands(count)"), "the bands come from the local play counts")
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").components(separatedBy: "library.songs(by:").count - 1 == 1,
                 "one lookup per artist: the band picker brings its own songs, so nothing is looked up twice")
-        #expect(discovery.contains("player.random(tracks)\n        NotificationCenter.default.post(name: .discovery, object: nil)"), "the picked songs replace Up Next and the screen follows")
+        #expect(discovery.contains("player.random(tracks)\n        NotificationCenter.default.post(name: .discovery, object: Discovery.done)"), "the picked songs replace Up Next and the screen follows")
     }
 
     @Test func theNewestDiscoveryRetiresTheOneBeforeIt() throws {
         let discovery = try source("Discovery.swift")
         let pick = body(discovery, "func pick(_ pool: Pool, _ count: Int) {")
 
-        #expect(pick.contains("generation += 1\n        let mine = generation"), "every click takes a new generation")
-        #expect(pick.contains("work?.cancel()"), "an answer in flight is cancelled, so its requests stop")
-        #expect(pick.components(separatedBy: "guard mine == self.generation else {").count - 1 == 1, "a late answer is dropped")
-        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {").contains("guard mine == generation else {"), "a local pick that lost the race does nothing")
+        #expect(pick.contains("let mine = work.begin()"), "every click takes a new generation and opens its screen")
+        #expect(pick.contains("job?.cancel()"), "an answer in flight is cancelled, so its requests stop")
+        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("guard work.end(mine, tracks.isEmpty ? why : nil) else {"), "a pick that lost the race changes nothing")
         #expect(discovery.contains("\"discovery superseded\""), "a dropped answer leaves a trace")
+        let walk = body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {")
+
+        #expect(walk.components(separatedBy: "guard !Task.isCancelled else {").count - 1 == 1, "a cancelled walk stops asking")
+        #expect(walk.components(separatedBy: "return ([], Discovery.reason(").count - 1 == 4, "every way a network pick adds no song brings its own reason")
+    }
+
+    @Test func everyEmptyAnswerHasItsReasonInWords() {
+        #expect(Discovery.reason(.noChart, 0) == "Last.fm sent no artist. Check the account and the connection.")
+        #expect(Discovery.reason(.noBands, 0) == "No band has a play count yet.")
+        #expect(Discovery.reason(.noSongs, 65) == "None of those 65 artists is in your library.")
+        #expect(Discovery.reason(.noMatch, 65) == "The top 5 of those artists matched no song of yours.", "the count is the artists that were asked, not the titles")
+
+        for cause in [Discovery.Cause.noChart, .noBands, .noSongs, .noMatch] {
+            #expect(!Discovery.reason(cause, 3).isEmpty, "\(cause) must say something to the user")
+        }
+    }
+
+    @Test func theWorkStateOpensTheScreenAtOnceAndClosesItOnAnswer() {
+        var work = Discovery.Work()
+
+        #expect(!work.running && !work.spinning && work.note == nil, "nothing on its way at launch")
+
+        let mine = work.begin()
+        #expect(work.running, "the menus dim while the pick runs")
+        #expect(!work.spinning, "no spinner before the grace")
+        #expect(work.note == nil, "a new pick clears the note of the one before")
+        #expect(mine == 1)
+
+        let spun = work.spin(mine)
+        #expect(spun, "the list may spin after the grace")
+        #expect(work.spinning)
+
+        let landed = work.end(mine, nil)
+        #expect(landed, "the answer lands")
+        #expect(!work.running && !work.spinning && work.note == nil, "the spinner and the dim leave together, and a good pick leaves no note")
+
+        let next = work.begin()
+        let empty = work.end(next, "no song")
+        #expect(empty, "a pick that added nothing says why")
+        #expect(work.note == "no song")
+
+        let stale = work.end(mine, nil)
+        #expect(!stale, "the pick that lost the race cannot write over the note of the current one")
+        #expect(work.note == "no song")
+
+        work.begin()
+        work.end(3, nil)
+        let late = work.spin(3)
+        #expect(!late, "a watch task that arrived after its pick is over cannot spin a finished one")
+        #expect(!work.spinning)
+
+        var noted = Discovery.Work()
+        noted.begin()
+        noted.end(1, "nothing matched")
+        noted.dismiss()
+        #expect(noted.note == nil, "the user can clear the note")
+        #expect(!noted.running, "and dismissing it does not start a pick")
+    }
+
+    @Test func theSpinnerWaitsTwoHundredMillisecondsAndThePickOpensTheScreen() throws {
+        let discovery = try source("Discovery.swift")
+        let pick = body(discovery, "func pick(_ pool: Pool, _ count: Int) {")
+
+        #expect(Discovery.spinAfter == 200, "a faster answer never shows a spinner")
+        #expect(pick.contains("NotificationCenter.default.post(name: .discovery, object: Discovery.opening)"), "the screen opens when the user clicks, not when the answer arrives")
+        #expect(pick.range(of: "object: Discovery.opening")!.lowerBound < pick.range(of: "job = Task {")!.lowerBound, "and it opens before the first request")
+        #expect(pick.contains("try? await Task.sleep(for: .milliseconds(Discovery.spinAfter))"), "the spinner comes only after the grace")
+        #expect(pick.contains("self?.waited(mine, pool)"), "and it asks the pick that started it, by generation")
+        #expect(pick.contains("defer { watch.cancel() }"), "an answer that lands first kills the watch task")
+        #expect(pick.components(separatedBy: "NotificationCenter.default.post").count - 1 == 1, "the local pools open no screen, they answer at once")
+
+        let views = try source("Views.swift")
+        let upNext = screen("UpNextView", views)
+
+        #expect(upNext.contains("if discovery.work.spinning {"), "the list shows the spinner while the pick is on its way")
+        #expect(upNext.contains("ProgressView()"), "the native macOS spinner")
+        #expect(upNext.contains("ZStack {"), "over the middle of the list, not in its place")
+        #expect(upNext.contains("if let text = discovery.work.note {"), "and a message when the pick added nothing")
+        #expect(upNext.contains("Button(action: discovery.dismissNote)"), "the user can clear the message")
+        #expect(views.contains("let stage = note.object as? String ?? Discovery.done"), "the screen tells the two stages apart in the log")
+
     }
 
     @Test func everyPoolPlaysThroughOneDoor() throws {
@@ -367,7 +447,8 @@ struct DiscoveryTests {
 
         #expect(pick.components(separatedBy: "start(").count - 1 == 4, "songs, never played, most played, and the two network pools")
         #expect(pick.components(separatedBy: "player.random").count - 1 == 0, "only start plays, so no pool can skip the rule")
-        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {").contains("guard !tracks.isEmpty else {"), "an empty answer leaves the player alone")
+        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("guard !tracks.isEmpty else {"), "an empty answer leaves the player alone")
+        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains(#""note": "\(why ?? "")""#), "an empty answer says its reason in the log")
     }
 
     @Test func theLastFMPickersAreInTheDiscoveryMenu() throws {
@@ -378,8 +459,8 @@ struct DiscoveryTests {
         #expect(menu.components(separatedBy: "values(nil) { discovery.pick(.artists, $0) }").count - 1 == 1)
         #expect(menu.components(separatedBy: "values(nil) { discovery.pick(.bands, $0) }").count - 1 == 1)
         #expect(menu.components(separatedBy: ".disabled(!discovery.ready").count - 1 == 2, "off without a Last.fm account, and no second request while one is in flight")
-        #expect(menu.contains(".disabled(!discovery.ready || discovery.running)"), "the artist picker")
-        #expect(menu.contains(".disabled(!discovery.ready || discovery.running || library.bands == 0)"), "the band picker")
+        #expect(menu.contains(".disabled(!discovery.ready || discovery.work.running)"), "the artist picker")
+        #expect(menu.contains(".disabled(!discovery.ready || discovery.work.running || library.bands == 0)"), "the band picker")
         #expect(menu.contains("|| library.bands == 0)"), "nothing played disables the band picker")
         #expect(menu.contains("Divider()"), "the local pickers are apart from the ones that spend a request")
         #expect(!menu.contains("Persist."), "the menu reads nothing from the disk")
@@ -517,7 +598,9 @@ struct DiscoveryTests {
         #expect(String(app[menu...].prefix(600)).contains(".environment(lastFM)"), "the Song menu builds GoMenu, which reads the account: without it the app traps at launch")
 
         let content = try #require(app.range(of: "ContentView()")).upperBound
-        #expect(String(app[content...].prefix(600)).contains(".environment(lastFM)"), "the main window builds GoMenu too")
+        let window = String(app[content...].prefix(600))
+        #expect(window.contains(".environment(lastFM)"), "the main window builds GoMenu too")
+        #expect(window.contains(".environment(discovery)"), "and it builds Up NextView, which reads the discovery for its spinner and its note")
     }
 
     @Test func theLastFMPageIsOfferedOnlyWithAnAccount() throws {
@@ -538,6 +621,13 @@ struct DiscoveryTests {
 
     private func source(_ name: String) throws -> String {
         try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/\(name)"), encoding: .utf8)
+    }
+
+    private func screen(_ name: String, _ source: String) -> String {
+        guard let start = source.range(of: "struct \(name): View {") else { return "" }
+        let rest = source[start.lowerBound...]
+
+        return String(rest[..<(rest.range(of: "\n}\n")?.lowerBound ?? rest.endIndex)])
     }
 
     private func body(_ source: String, _ signature: String) -> String {
