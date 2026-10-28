@@ -609,10 +609,15 @@ final class Player {
     }
 
     private func stop() {
-        Log.player.info("stop")
+        Log.player.info("stop", metadata: ["songs": "\(queue.count)"])
         player.removeAllItems()
         item = nil
         upcoming = nil
+        status = nil
+        queue = []
+        order = []
+        added = []
+        origin = []
         playing = false
         position = 0
         index = 0
@@ -621,6 +626,7 @@ final class Player {
         counted = false
         announced = false
         started = .now
+        artwork = nil
         update()
         save()
     }

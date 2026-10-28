@@ -95,6 +95,24 @@ struct UpNextTests {
         #expect(!clear.contains("pause()"), "clearing resets the player, it does not pause it")
     }
 
+    @Test func theEndOfTheListLeavesNothingBehind() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(contentsOf: root.appending(path: "Sources/Overdrive/Player.swift"), encoding: .utf8)
+        let start = try #require(source.range(of: "    private func stop() {"))
+        let rest = source[start.upperBound...]
+        let stop = String(rest[..<rest.range(of: "\n    }\n")!.lowerBound])
+
+        for line in ["queue = []", "order = []", "added = []", "origin = []", "index = 0", "player.removeAllItems()", "item = nil", "update()", "save()"] {
+            #expect(stop.contains(line), "the end of a list leaves no old song behind: \(line)")
+        }
+        #expect(source.contains("guard let next = following(index) else { return stop() }"), "the last song that ends empties the list")
+        #expect(source.contains("guard let next = following(index, manual: true) else { return stop() }"), "and Next on the last song does the same")
+
+        let finished = try #require(source.range(of: "    private func finished(_ ended: AVPlayerItem?) {"))
+        let tail = String(source[finished.upperBound...])
+        #expect(tail.prefix(1200).contains("stop()"), "the natural end of the queue goes through the same door")
+    }
+
     @Test func theUpNextPageKeepsItsKey() {
         #expect(Page(key: Page.upNext.key) == .upNext)
         #expect(Page.upNext.title == "Up Next")
