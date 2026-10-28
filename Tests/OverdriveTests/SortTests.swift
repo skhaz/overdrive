@@ -15,32 +15,6 @@ struct SortTests {
         Album(id: "\(artist)/\(title)", title: title, artist: artist, year: year, tracks: [])
     }
 
-    @Test func theNamesAreSeparatedByLetter() {
-        #expect(Library.letter("Motörhead") == "M", "an accent scores nothing, so the letter is the plain one")
-        #expect(Library.letter("Ávila") == "A")
-        #expect(Library.letter("311") == "#", "a name that does not start with a letter has no letter")
-        #expect(Library.letter("") == "#")
-
-        let sections = Library.sections(["Zeta", "alpha", "Beta", "311", "", "Air"])
-        #expect(sections.map(\.letter) == ["A", "B", "Z", "#"], "the letters come in order, then the rest")
-        #expect(sections[0].indices == [5, 1], "a section keeps the Finder order, and its positions name the songs of the list it was given")
-        #expect(sections[1].indices == [2])
-        #expect(sections[2].indices == [0])
-        #expect(Set(sections[3].indices) == [3, 4])
-        #expect(Library.sections([]).isEmpty)
-    }
-
-    @Test func theArtistsPageShowsALetterForEachSection() throws {
-        let views = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
-        let list = String(views[views.range(of: "struct ArtistList")!.lowerBound...])
-        let body = String(list[..<(list.range(of: "struct GoMenu")?.lowerBound ?? list.endIndex)])
-
-        #expect(body.contains("Library.sections(artists.map(\\.name))"), "the Artists list is separated by letter")
-        #expect(body.contains("SwiftUI.Section {"), "a native section header, which is all macOS offers: there is no section index here (`listSectionIndexVisibility` is unavailable on macOS)")
-        #expect(body.contains("ForEach(sections, id: \\.letter)"), "one section per letter")
-        #expect(body.contains("let order = sections.flatMap(\\.indices)"), "the arrows walk the list in the order on screen")
-    }
-
     @Test func theSortIsSavedAsText() {
         #expect(Sort(.title).rawValue == "title")
         #expect(Sort(.time, ascending: false).rawValue == "-time")

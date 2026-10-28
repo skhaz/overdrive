@@ -43,7 +43,7 @@ Drag a music folder to the window, or choose Overdrive > Settings > Folders > Ad
 
 ### Find and play
 
-- Use the sidebar to see **Albums**, **Artists**, or **Songs**. The **Artists** list has a header for each letter of the alphabet, in order.
+- Use the sidebar to see **Albums**, **Artists**, or **Songs**.
 - Type in the search field to find an artist, an album, or a song. The search stays until you clear it with Escape, Command-K, or the clear button.
 - To go back to the previous screen, click the back arrow at the top, press Command-[, or swipe to the right on the trackpad. To go forward again, click the forward arrow, press Command-], or swipe to the left. The side buttons of a mouse also work.
 - Double-click a song to play it. On an album, click **Play** or **Shuffle**.
