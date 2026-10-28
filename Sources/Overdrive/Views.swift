@@ -249,6 +249,14 @@ func count(_ number: Int, _ noun: String) -> String {
     "\(number) \(noun)\(number == 1 ? "" : "s")"
 }
 
+/// The rows a context menu acts on. A right-click inside the selection means the
+/// whole selection; outside it, only the clicked row. SwiftUI hands the menu the
+/// rows it has drawn, so a Select All arrives as the visible rows alone: the
+/// selection itself is what the menu must read.
+nonisolated func targets(_ ids: Set<Int>, _ selection: Set<Int>) -> Set<Int> {
+    ids.isEmpty || !ids.isSubset(of: selection) ? ids : selection
+}
+
 func summary(_ tracks: some Collection<Track>) -> String {
     count(tracks.count, "song") + " · " + tracks.reduce(0) { $0 + $1.duration }.time
 }
@@ -1259,7 +1267,7 @@ struct SongTable: View {
             .onChange(of: active) { if !active { sort = Sort() } }
             .id(sort)
             .contextMenu(forSelectionType: Row.ID.self) { ids in
-                let picked = rows.filter { ids.contains($0.id) }
+                let picked = rows.filter { targets(ids, selection).contains($0.id) }
 
                 if !picked.isEmpty {
                     TrackMenu(tracks: picked.map(\.track))
@@ -1362,12 +1370,13 @@ struct UpNextView: View {
                 .onChange(of: active) { if !active { sort = Sort() } }
                 .id("\(sort.rawValue)\u{1F}\(library.edits)")
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
-                    let picked = rows.filter { ids.contains($0.id) }
+                    let target = targets(ids, selection)
+                    let picked = rows.filter { target.contains($0.id) }
 
                     if !picked.isEmpty {
-                        Button("Remove from Up Next", role: .destructive) { remove(ids) }
+                        Button("Remove from Up Next", role: .destructive) { remove(target) }
                             .keyboardShortcut(.delete)
-                            .disabled(ids == [player.index] && rows.count > 1)
+                            .disabled(target == [player.index] && rows.count > 1)
                             .buttonStyle(PressableButtonStyle(isDestructive: true))
                         Button("Clear Up Next", role: .destructive) { NotificationCenter.default.post(name: .clearUpNext, object: nil) }
                             .buttonStyle(PressableButtonStyle(isDestructive: true))
@@ -1456,9 +1465,11 @@ struct PlaylistView: View {
                     if active { removing = rows.filter { selection.contains($0.id) } }
                 }
                 .onChange(of: active) { if !active { sort = Sort() } }
+                .onChange(of: playlists.paths[name]) { selection = [] }
                 .id("\(sort.rawValue)\u{1F}\(library.edits)")
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
-                    let picked = rows.filter { ids.contains($0.id) }
+                    let target = targets(ids, selection)
+                    let picked = rows.filter { target.contains($0.id) }
 
                     if !picked.isEmpty {
                         TrackMenu(tracks: picked.map(\.track), exclude: name)
@@ -1467,7 +1478,7 @@ struct PlaylistView: View {
                             .buttonStyle(PressableButtonStyle(isDestructive: true))
                         Button("Duplicate") {
                             selection = []
-                            playlists.duplicate(Set(ids), in: name)
+                            playlists.duplicate(target, in: name)
                         }
                         .buttonStyle(PressableButtonStyle())
                         Divider()
@@ -1557,9 +1568,10 @@ struct LikedView: View {
                     ForEach(rows) { TableRow($0) }
                 }
                 .onChange(of: active) { if !active { sort = Sort() } }
+                .onChange(of: likes.paths) { selection = [] }
                 .id("\(sort.rawValue)\u{1F}\(library.edits)")
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
-                    let picked = rows.filter { ids.contains($0.id) }
+                    let picked = rows.filter { targets(ids, selection).contains($0.id) }
 
                     if !picked.isEmpty {
                         TrackMenu(tracks: picked.map(\.track))

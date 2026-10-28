@@ -103,6 +103,19 @@ struct UpNextTests {
         #expect(Navigation(page: .upNext).lyrics)
     }
 
+    @Test func aContextMenuActsOnTheWholeSelection() {
+        #expect(targets([3, 4], [3, 4, 5, 6]) == [3, 4, 5, 6], "SwiftUI hands the menu only the drawn rows of a Select All, so the menu reads the selection itself")
+        #expect(targets([2], [2]) == [2])
+        #expect(targets([9], [3, 4]) == [9], "a right-click outside the selection acts on the clicked row")
+        #expect(targets([], [3, 4]) == [], "a right-click on the empty area acts on nothing")
+    }
+
+    @Test func everyTableMenuReadsTheSelection() throws {
+        let views = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
+
+        #expect(views.components(separatedBy: "targets(ids, selection)").count - 1 == 4, "Songs, Liked Songs, playlists, and Up Next act on the selection, never on the rows SwiftUI drew")
+    }
+
     @Test func theSongMenuHasOneAddAction() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let views = try String(contentsOf: root.appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
