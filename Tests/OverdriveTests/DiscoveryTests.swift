@@ -6,6 +6,7 @@ private final class Chart: @unchecked Sendable {
     private struct State {
         var artists: [String] = []
         var tracks: [String: [String]] = [:]
+        var known: [String: String] = [:]
         var calls: [String] = []
         var offline = false
         var single = false
@@ -14,8 +15,8 @@ private final class Chart: @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var state = State()
 
-    static func reset(_ artists: [String], _ tracks: [String: [String]], offline: Bool = false, single: Bool = false) {
-        lock.withLock { state = State(artists: artists, tracks: tracks, calls: [], offline: offline, single: single) }
+    static func reset(_ artists: [String], _ tracks: [String: [String]], known: [String: String] = [:], offline: Bool = false, single: Bool = false) {
+        lock.withLock { state = State(artists: artists, tracks: tracks, known: known, calls: [], offline: offline, single: single) }
     }
 
     static var calls: [String] { lock.withLock { state.calls } }
@@ -30,6 +31,14 @@ private final class Chart: @unchecked Sendable {
                 return ["topartists": ["artist": shaped(state.artists.map { ["name": $0] }, state.single)]]
             case "artist.getTopTracks":
                 return ["toptracks": ["track": shaped((state.tracks[artist ?? ""] ?? []).map { ["name": $0] }, state.single)]]
+            case "artist.getInfo":
+                guard let name = state.known[artist ?? ""] else {
+                    return ["error": 6, "message": "The artist you supplied could not be found"]
+                }
+                let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
+                let encoded = name.addingPercentEncoding(withAllowedCharacters: allowed) ?? name
+
+                return ["artist": ["name": name, "url": "https://www.last.fm/music/" + encoded]]
             default:
                 return ["error": 3, "message": "Invalid Method"]
             }
@@ -279,7 +288,7 @@ struct DiscoveryTests {
 
         #expect(!discovery.contains("Persist."), "the discovery is never written to the disk")
         #expect(!discovery.contains("Date(") && !discovery.contains("ContinuousClock"), "no lifetime, no cache")
-        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("await lastFM.topArtists(count)"), "the artists come from a fresh request")
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("await lastFM.topArtists(Discovery.reach(count))"), "the artists come from a fresh request, wider than the list so the draw is a draw")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("wanted = library.topBands(count)"), "the bands come from the local play counts")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").components(separatedBy: "library.songs(by:").count - 1 == 1,
                 "one lookup per artist: the band picker brings its own songs, so nothing is looked up twice")
@@ -345,7 +354,8 @@ struct DiscoveryTests {
         let walk = body(discovery, "nonisolated static func collect(_ count: Int, _ wanted: [(name: String, songs: [Track])],")
 
         #expect(Discovery.window == 4, "Last.fm answers 29 when one IP spends its rate")
-        #expect(Discovery.tracks == 10, "ten top tracks of an artist is enough to find a song the library has")
+        #expect(Discovery.tracks == 5, "the five most played songs of an artist are the pool a title is drawn from")
+        #expect(Discovery.attempts == 10, "a title the library lacks is drawn again, ten times at most, then the artist is skipped")
         #expect(walk.contains("min(start + min(window, count - found.count), names.count)"), "a discovery of one song asks one artist, not a whole window")
         #expect(walk.contains("start += slice.count"), "the walk advances by the artists it asked, so none is skipped")
         #expect(walk.contains("found.count < count"), "the walk stops as soon as the list is full")
@@ -369,6 +379,119 @@ struct DiscoveryTests {
             return []
         }
         #expect(counter.value == 12, "nothing matches, so every artist is asked, four at a time and never skipped")
+    }
+
+    @Test func theArtistsAreDrawnFromAWiderPool() {
+        #expect(Discovery.reach(1) == 20, "one song is drawn from twenty artists, not from the one at the top")
+        #expect(Discovery.reach(4) == 20)
+        #expect(Discovery.reach(10) == 50)
+        #expect(Discovery.reach(100) == 200, "the service caps the page, so the pool stops there")
+    }
+
+    @Test func everyArtistOfThePoolCanBeDrawn() {
+        let chart = ["A", "B", "C", "D", "E"]
+
+        for target in chart.indices {
+            #expect(Discovery.draw(chart, 1, using: { _ in target }) == [chart[target]], "the draw reaches the whole pool, not its head")
+        }
+        let head = Discovery.draw(chart, 3, using: { _ in 0 })
+        #expect(head.count == 3 && head[0] == "A", "each draw takes one name out of the pool")
+        #expect(Discovery.draw(chart, 3, using: { $0 - 1 }) == ["E", "D", "C"], "and the last name of what is left")
+        #expect(Discovery.draw(chart, 5, using: { _ in 2 }).count == 5)
+        #expect(Set(Discovery.draw(chart, 5, using: { _ in 2 })).count == 5, "an artist never comes twice in one discovery")
+        #expect(Discovery.draw(chart, 9, using: { _ in 0 }).count == 5, "the pool has no more names than it has")
+        #expect(Discovery.draw(["A", "A", "B"], 2, using: { _ in 0 }) == ["A", "B"], "a name the chart repeats is drawn once")
+        #expect(Discovery.draw(chart, 0, using: { _ in 0 }).isEmpty)
+        #expect(Discovery.draw([], 3, using: { _ in 0 }).isEmpty)
+    }
+
+    @Test func oneTitleIsDrawnAtRandomAndOnlyFromTheLibrary() {
+        let titles = ["Nope", "Two", "Three"]
+        let held = songs(["One", "Two", "Three", "Four", "Five"])
+        var picks = [0, 1]
+
+        let match = Discovery.choose(titles, held, attempts: 10, using: { _ in picks.removeFirst() })
+
+        #expect(match?.track.title == "Two", "the first title the library lacks is skipped, the next draw finds a song")
+        #expect(match?.title == "Two")
+        #expect(match?.draws == 2, "the count says how many draws it took")
+        #expect(Discovery.choose(titles, held, attempts: 1, using: { _ in 2 })?.track.title == "Three", "a draw that lands on a song of the library plays it")
+        #expect(Discovery.choose(["Nope"], held, attempts: 10, using: { _ in 0 }) == nil, "a title the library lacks is never picked")
+        #expect(Discovery.choose([], held, attempts: 10, using: { _ in 0 }) == nil, "no title from the internet, no song")
+        #expect(Discovery.choose(titles, [], attempts: 10, using: { _ in 0 }) == nil, "an artist with no song in the library is skipped")
+    }
+
+    @Test func anArtistIsSkippedAfterTenMisses() {
+        let draws = Counter()
+        let match = Discovery.choose(["Nope", "Nada"], songs(["One"]), attempts: Discovery.attempts) { _ in
+            draws.hit()
+            return 0
+        }
+
+        #expect(match == nil)
+        #expect(draws.value == 10, "ten draws with no song of the library, then the artist is skipped")
+    }
+
+    @Test func theWalkDrawsOneTitlePerArtist() async {
+        let wanted = [("A", songs(["One"], "A")), ("B", songs(["Three"], "B"))]
+        let picked = await Discovery.collect(1, wanted, attempts: 1, draw: { _ in 1 }) { name in
+            name == "A" ? ["One", "Nope"] : ["Nope", "Three"]
+        }
+
+        #expect(picked.map(\.title) == ["Three"], "the drawn title is the second one, and only B holds it")
+    }
+
+    @Test func theArtistPageIsPercentEncoded() {
+        #expect(LastFM.artistPage("Motörhead")?.absoluteString == "https://www.last.fm/music/Mot%C3%B6rhead")
+        #expect(LastFM.artistPage("AC/DC")?.absoluteString == "https://www.last.fm/music/AC%2FDC", "a slash is part of the name, not of the path")
+        #expect(LastFM.artistPage("Calibre 12")?.absoluteString == "https://www.last.fm/music/Calibre%2012")
+        #expect(LastFM.artistPage("") == nil, "no name, no page")
+    }
+
+    @Test func theArtistPageFollowsTheSpellingOfLastFM() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        Chart.reset([], [:], known: ["calibre 12": "Calibre 12", "ac/dc": "AC/DC"])
+
+        let lastFM = client()
+        let page = try #require(await lastFM.artistURL("calibre 12"))
+
+        #expect(page.known, "the name the app has is not the name the service keeps")
+        #expect(page.url.absoluteString == "https://www.last.fm/music/Calibre%2012", "the page is the one of the spelling that Last.fm answers")
+        #expect(Chart.calls == ["artist.getInfo"], "one request, and the spelling comes from the service")
+
+        let slash = try #require(await lastFM.artistURL("ac/dc"))
+        #expect(slash.url.absoluteString == "https://www.last.fm/music/AC%2FDC")
+    }
+
+    @Test func anArtistLastFMDoesNotKnowFallsBackToItsPage() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        Chart.reset([], [:], offline: false)
+
+        let lastFM = client()
+        let page = try #require(await lastFM.artistURL("Banda Que Nao Existe"))
+
+        #expect(!page.known, "the service answered that the artist does not exist")
+        #expect(page.url.absoluteString == "https://www.last.fm/music/Banda%20Que%20Nao%20Existe", "the 404 page of the service, under the name the app has")
+        #expect(Chart.calls == ["artist.getInfo"])
+
+        Chart.reset([], [:], offline: true)
+        let offline = try #require(await lastFM.artistURL("Death"))
+        #expect(!offline.known, "an answer that never comes is not an artist")
+        #expect(offline.url.absoluteString == "https://www.last.fm/music/Death", "the browser still gets a page")
+    }
+
+    @Test func theLastFMPageIsOfferedOnlyWithAnAccount() throws {
+        let views = try source("Views.swift")
+        let menu = body(views, "struct GoMenu: View {")
+
+        #expect(menu.contains("Button(\"Go to Last.fm\") { lastFM.openArtist(track.artist) }"), "the song menu opens the artist page")
+        #expect(menu.contains(".disabled(lastFM.user.isEmpty)"), "no account, no Last.fm page")
+        #expect(menu.contains("@Environment(LastFM.self) private var lastFM"), "the menu reads the account")
+
+        let lastFM = try source("LastFM.swift")
+        #expect(body(lastFM, "func openArtist(_ artist: String) {").contains("guard !user.isEmpty else {"), "a click without an account spends no request")
+        #expect(body(lastFM, "func openArtist(_ artist: String) {").contains("NSWorkspace.shared.open"), "the default browser opens the page")
+        #expect(body(lastFM, "func artistURL(_ artist: String) async -> (url: URL, known: Bool)? {").contains("call(\"artist.getInfo\""), "the spelling comes from the API before the browser opens")
     }
 
     // MARK: - helpers

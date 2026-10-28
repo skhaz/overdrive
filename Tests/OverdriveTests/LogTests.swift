@@ -163,10 +163,10 @@ final class Records: @unchecked Sendable {
             "Cache.swift": ["query failed", "statement failed", "begin failed", "save failed", "open failed", "discard"],
             "Picture.swift": ["covers process failed", "covers"],
             "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved"],
-            "LastFM.swift": ["connected", "connect failed", "http failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "scrobble skipped", "settle", "now playing"],
+            "LastFM.swift": ["connected", "connect failed", "http failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "scrobble skipped", "settle", "now playing", "artist page", "open artist"],
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
-            "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded"],
+            "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded", "artists drawn", "artist drawn"],
             "Loves.swift": ["load", "tick", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull wide", "pull fast", "pull", "apply", "push", "arrive", "arrive ignored", "prune", "prune skipped"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up", "discard"],
@@ -203,6 +203,12 @@ final class Records: @unchecked Sendable {
         #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("Log.player."), "Discovery.pick must log the click")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> [Track] {").contains("Log.player."), "Discovery.walk must log its result")
         #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int) {").contains("Log.player."), "Discovery.start must log an empty answer")
+        #expect(body(discovery, "nonisolated static func collect(").contains("Log.player."), "Discovery.collect must log every artist it draws")
+
+        let lastFM = try source("LastFM.swift")
+        for name in ["artistURL", "openArtist"] {
+            #expect(body(lastFM, "func \(name)(").contains("Log.lastFM."), "LastFM.\(name) must log")
+        }
 
         let loves = try source("Loves.swift")
         for name in ["syncNow", "arrive", "sync", "local", "drain", "pull"] {

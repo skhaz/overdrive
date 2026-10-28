@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import Network
@@ -169,6 +170,59 @@ final class LastFM {
         Log.lastFM.debug("top tracks", metadata: ["artist": "\(artist)", "asked": "\(count)", "got": "\(tracks.count)"])
 
         return tracks.compactMap { $0["name"] as? String }.prefix(count).map { $0 }
+    }
+
+    /// The page of an artist under the name the app has, for a name that
+    /// Last.fm does not know: the service answers 404 there.
+    nonisolated static func artistPage(_ name: String) -> URL? {
+        guard !name.isEmpty else { return nil }
+
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
+        guard let encoded = name.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+
+        return URL(string: "https://www.last.fm/music/" + encoded)
+    }
+
+    /// The page of an artist under the spelling that Last.fm keeps: the API
+    /// answers the name it knows (`autocorrect=1`). A name it does not know, or
+    /// an answer that never comes, falls back to the page of the name the app
+    /// has, which is the 404 page of the service.
+    func artistURL(_ artist: String) async -> (url: URL, known: Bool)? {
+        guard let fallback = LastFM.artistPage(artist) else {
+            Log.lastFM.debug("artist page", metadata: ["artist": "\(artist)", "reason": "no name"])
+            return nil
+        }
+
+        do {
+            let info = (try await call("artist.getInfo", ["artist": artist, "autocorrect": "1"]))["artist"] as? [String: Any]
+            guard let text = info?["url"] as? String, let url = URL(string: text) else {
+                Log.lastFM.warning("artist page", metadata: ["artist": "\(artist)", "url": "\(fallback.absoluteString)", "known": "false", "reason": "no url"])
+                return (fallback, false)
+            }
+
+            Log.lastFM.debug("artist page", metadata: ["artist": "\(artist)", "name": "\(info?["name"] as? String ?? artist)", "url": "\(text)", "known": "true"])
+            return (url, true)
+        } catch let failure as Failure {
+            Log.lastFM.warning("artist page", metadata: ["artist": "\(artist)", "url": "\(fallback.absoluteString)", "known": "false", "reason": "api", "code": "\(failure.code)"])
+            return (fallback, false)
+        } catch {
+            Log.lastFM.warning("artist page", metadata: ["artist": "\(artist)", "url": "\(fallback.absoluteString)", "known": "false", "reason": "network"])
+            return (fallback, false)
+        }
+    }
+
+    func openArtist(_ artist: String) {
+        guard !user.isEmpty else {
+            return Log.lastFM.debug("open artist", metadata: ["artist": "\(artist)", "reason": "no account"])
+        }
+
+        Log.lastFM.info("open artist", metadata: ["artist": "\(artist)"])
+        Task {
+            guard let page = await artistURL(artist) else { return }
+
+            Log.lastFM.info("open artist", metadata: ["artist": "\(artist)", "url": "\(page.url.absoluteString)", "known": "\(page.known)"])
+            NSWorkspace.shared.open(page.url)
+        }
     }
 
     /// What one love write did. Only an unknown track is given up on: an auth

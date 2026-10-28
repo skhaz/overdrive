@@ -61,12 +61,12 @@ The **Discovery** menu at the top of the screen has five pickers, each with 1, 1
 - **Songs** picks that many songs at random from your whole library.
 - **Never Played** picks only the songs you have not played yet.
 - **Most Played** picks from the songs you played, and takes the ones with the highest count.
-- **Last.fm Artists** asks Last.fm for the artists you listened to most, and for each one takes the top track that your library really has.
+- **Last.fm Artists** asks Last.fm for the artists you listened to most, takes a group of them at random, and for each one draws a song from its five most played that your library really has.
 - **Top Bands** does the same, but it picks the bands by your own play counts instead of what Last.fm thinks you like.
 
 The app puts the chosen songs in Up Next and plays the first one right away, then opens the Up Next page so you see the list. What was in Up Next before goes away. A new discovery replaces the one before it, also while one is still on its way: an answer that arrives late is dropped, and the list you chose last is the one that plays. Each local picker shows how many songs it can pick from, and a value that needs more songs than that is dimmed, so you never get a shorter list than you asked for. The pick never follows the search: it reads the whole library.
 
-The two Last.fm pickers need the Last.fm key built into the app and your account connected in Settings > Last.fm. Without either one they are dimmed, and **Top Bands** is also dimmed while no song has a count. Every click asks the internet again; the app keeps nothing from Last.fm on the disk. It asks for four artists at a time, so a discovery of 100 songs is many requests, and Last.fm answers too many requests from one address for a short while with an error. When that happens the list is simply shorter, or empty, and the app changes nothing and says so in the log. While one of them is on its way, both are dimmed, so you do not spend two searches at once.
+The two Last.fm pickers need the Last.fm key built into the app and your account connected in Settings > Last.fm. Without either one they are dimmed, and **Top Bands** is also dimmed while no song has a count. Every click asks the internet again; the app keeps nothing from Last.fm on the disk. The artists are drawn at random from five times the number of songs you asked for, so the same names do not always win. For each artist the app asks for the five most played songs and draws one; when the song it draws is not in your library, it draws again, ten times at most, and then moves on to the next artist, so every song of the list is one you have. It asks for four artists at a time, so a discovery of 100 songs is many requests, and Last.fm answers too many requests from one address for a short while with an error. When that happens the list is simply shorter, or empty, and the app changes nothing and says so in the log. While one of them is on its way, both are dimmed, so you do not spend two searches at once.
 
 A song matches a Last.fm title by name: the app compares the letters and digits of the two names, so accents, case, punctuation, and spacing make no difference, and it takes the title when the names are at least 80% alike. A long suffix is a different song: "Come As You Are" does not match "Come As You Are (Remastered)", and "Sandman" does not match "Enter Sandman", while "Sandman" does match "Sandmen". The app plays the name your library has, not the name Last.fm sent.
 
@@ -84,6 +84,7 @@ Right-click a song, an album, or the bottom bar. You can:
 - **Add to Playlist**.
 - **Watch Video on YouTube**.
 - **Go to Album** or **Go to Artist**.
+- **Go to Last.fm** opens the artist page in your browser. The app asks Last.fm for the spelling it keeps, so the page is the right one even when your tags spell the name differently; when Last.fm does not know the artist, it opens the Last.fm page of that name, which says the artist was not found. Without a connected account the item is dimmed.
 - **Copy** the song name, the artist, the album, or "Artist - Song Name".
 - See the **Information** of the song file. Click an item to copy it.
 - **Open in Mp3tag** or **Show in Finder**.
