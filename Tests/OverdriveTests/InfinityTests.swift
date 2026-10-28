@@ -39,6 +39,15 @@ struct InfinityTests {
         #expect(Infinity.pause(on: true, flight: false, ahead: 0, kept: Infinity.keep) == .now, "and so does an empty list")
     }
 
+    @Test func aReplacedFillLandsOnNothing() {
+        #expect(Infinity.holds(1, current: 1, on: true), "the fill that is still the one in flight may play its songs")
+        #expect(!Infinity.holds(1, current: 2, on: true), "a mode that was turned off and on again does not want the songs of the old fill")
+        #expect(!Infinity.holds(2, current: 1, on: true), "and a run that has not begun yet is no answer")
+        #expect(!Infinity.holds(1, current: 1, on: false), "a mode that left takes nothing, not even its own run")
+        #expect(Infinity.Stage.start.rawValue == "start", "the two stages name themselves in the log")
+        #expect(Infinity.Stage.halfway.rawValue == "halfway")
+    }
+
     @Test func aFillThatFoundNoArtistStartsTheLibraryOver() {
         #expect(Infinity.cycles(pool: 0, served: 20), "every song of the library played, so the cycle begins again")
         #expect(!Infinity.cycles(pool: 3, served: 20), "artists are left, so the fill asks them")
@@ -132,21 +141,26 @@ struct InfinityTests {
 
     @Test func theModeStartsThroughTheOneDoorAndStopsWithTheList() throws {
         let infinity = try source("Infinity.swift")
-        let fill = body(infinity, "private func fill(at why: String) async {")
+        let fill = body(infinity, "private func fill(at stage: Stage, _ run: Int) async {")
 
         #expect(fill.contains("player.random(songs)"), "the start plays the first song, as every discovery pool does")
         #expect(fill.contains("player.append(songs)"), "and a refill only adds to the end")
-        #expect(fill.range(of: "guard on else {")!.lowerBound < fill.range(of: "player.random(songs)")!.lowerBound,
-                "an answer that arrived after the mode stopped touches no player")
-        #expect(fill.contains("starting = false"), "the start mark clears, so the next list does stop the mode")
+        #expect(fill.contains("if stage == .start {"), "the two stages are a type, not a string the caller guesses")
+        #expect(fill.range(of: "guard Infinity.holds(run, current: self.run, on: on) else {")!.lowerBound < fill.range(of: "player.random(songs)")!.lowerBound,
+                "an answer that arrived after the mode stopped, or after a newer fill began, touches no player")
+        #expect(fill.contains("if run == self.run {"), "only the current fill clears its own handle, so a replaced one cannot free the flight of its successor")
+        #expect(fill.range(of: "starting = false")!.lowerBound > fill.range(of: "if run == self.run {")!.lowerBound, "and only inside that guard")
         #expect(body(infinity, "func stopped(_ reason: String) {").contains("guard !starting else {"), "the mode survives the list it just started")
         #expect(body(infinity, "func toggle() {").contains("starting = true"), "and it marks that start")
         #expect(body(infinity, "func toggle() {").contains("guard discovery.ready else {"), "a click with no account is refused before any request")
+        #expect(body(infinity, "func off(_ reason: String) {").contains("run += 1"), "leaving the mode retires the fill in flight by number, not only by cancel")
         let passed = body(infinity, "func passed() {")
 
         #expect(passed.contains("Infinity.pause(on: on, flight: flight != nil, ahead: player.ahead, kept: Infinity.keep)"), "the tick asks the rule, it does not invent one")
         #expect(passed.components(separatedBy: "flight = Task").count - 1 == 1, "one door starts a fill")
+        #expect(passed.contains("run += 1\n            flight = Task { await self.fill(at: .halfway, self.run) }"), "and it takes a new run before the task begins")
         #expect(passed.range(of: "case .off:\n            return") != nil, "and an off mode returns from it without a log line of its own")
+        #expect(infinity.components(separatedBy: "run += 1").count - 1 == 3, "toggle, off, and passed are the three places a run changes")
         #expect(body(infinity, "func off(_ reason: String) {").contains("flight?.cancel()"), "stopping cancels the fill in flight")
         #expect(body(infinity, "func off(_ reason: String) {").contains("served = []"), "and forgets what it played, for the next time")
         #expect(!body(infinity, "func off(_ reason: String) {").contains("player.remove"), "the songs already in the list stay: the user keeps what they heard")

@@ -23,6 +23,12 @@ final class Infinity {
         pool == 0 && served > 0
     }
 
+    /// What one fill is for: the first list of the mode, or a top-up of the one
+    /// that plays.
+    enum Stage: String {
+        case start, halfway
+    }
+
     /// Why a tick of the clock did not, or did, start a fill.
     enum Pause {
         case off, filling, full, now
@@ -38,6 +44,13 @@ final class Infinity {
         return .now
     }
 
+    /// Whether the answer of one fill still belongs to the mode: a fill that was
+    /// replaced by a newer one, or that outlived a toggle off and on, lands on
+    /// nothing. The mode may be on again and still not want the old songs.
+    nonisolated static func holds(_ run: Int, current: Int, on: Bool) -> Bool {
+        on && run == current
+    }
+
     private(set) var on = false
 
     @ObservationIgnored private let library: Library
@@ -47,6 +60,7 @@ final class Infinity {
     @ObservationIgnored private var served: Set<Track.ID> = []
     @ObservationIgnored private var starting = false
     @ObservationIgnored private var flight: Task<Void, Never>?
+    @ObservationIgnored private var run = 0
 
     init(library: Library, lastFM: LastFM, player: Player, discovery: Discovery) {
         self.library = library
@@ -69,8 +83,9 @@ final class Infinity {
         on = true
         starting = true
         served = []
-        Log.player.info("infinity", metadata: ["state": "on", "batch": "\(Infinity.batch)", "keep": "\(Infinity.keep)"])
-        flight = Task { await self.fill(at: "start") }
+        run += 1
+        Log.player.info("infinity", metadata: ["state": "on", "batch": "\(Infinity.batch)", "keep": "\(Infinity.keep)", "run": "\(run)"])
+        flight = Task { await self.fill(at: .start, self.run) }
     }
 
     /// The mode leaves, and the songs it already put in the list stay: the user
@@ -79,6 +94,7 @@ final class Infinity {
         flight?.cancel()
         flight = nil
         starting = false
+        run += 1
 
         guard on else { return }
 
@@ -108,32 +124,39 @@ final class Infinity {
         case .full:
             return Log.player.debug("infinity full", metadata: ["ahead": "\(player.ahead)", "keep": "\(Infinity.keep)"])
         case .now:
-            flight = Task { await self.fill(at: "halfway") }
+            run += 1
+            flight = Task { await self.fill(at: .halfway, self.run) }
         }
     }
 
-    private func fill(at why: String) async {
+    private func fill(at stage: Stage, _ run: Int) async {
         defer {
-            flight = nil
-            starting = false
+            // only the fill that is still the current one clears its own state,
+            // so a replaced fill never drops the handle of the one after it
+            if run == self.run {
+                flight = nil
+                starting = false
+            }
         }
 
         let songs = await draw()
-        guard on else { return Log.player.debug("infinity dropped", metadata: ["at": "\(why)", "reason": "stopped", "songs": "\(songs.count)"]) }
+        guard Infinity.holds(run, current: self.run, on: on) else {
+            return Log.player.debug("infinity dropped", metadata: ["at": "\(stage.rawValue)", "run": "\(run)", "current": "\(self.run)", "songs": "\(songs.count)"])
+        }
 
         guard !songs.isEmpty else {
-            Log.player.warning("infinity empty", metadata: ["at": "\(why)", "served": "\(served.count)"])
+            Log.player.warning("infinity empty", metadata: ["at": "\(stage.rawValue)", "served": "\(served.count)"])
             return off("nothing to draw")
         }
 
-        if why == "start" {
+        if stage == .start {
             player.random(songs)
         } else {
             player.append(songs)
         }
 
         served.formUnion(songs.map(\.id))
-        Log.player.info("infinity filled", metadata: ["at": "\(why)", "songs": "\(songs.count)", "served": "\(served.count)", "ahead": "\(player.ahead)"])
+        Log.player.info("infinity filled", metadata: ["at": "\(stage.rawValue)", "songs": "\(songs.count)", "served": "\(served.count)", "ahead": "\(player.ahead)"])
     }
 
     /// The next batch of songs. An artist whose candidates the mode already
