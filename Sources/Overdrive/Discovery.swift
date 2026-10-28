@@ -107,14 +107,14 @@ final class Discovery {
         return Match(track: candidates[index].track, title: candidates[index].title, candidates: candidates.count)
     }
 
-    /// The entries of a pool that hold a song the user has not denied. Every door
-    /// of a picker reads this, so no path slips past the veto, and an artist whose
-    /// every song is denied costs no request and never enters a list.
-    static func allowed(_ pool: [(name: String, songs: [Track])], skipping skips: Skips) -> [(name: String, songs: [Track])] {
+    /// The entries of a pool that hold a song the user has not banned. Every door
+    /// of a picker reads this, so no path slips past the ban, and an artist whose
+    /// every song is banned costs no request and never enters a list.
+    static func allowed(_ pool: [(name: String, songs: [Track])], banning bans: Bans) -> [(name: String, songs: [Track])] {
         guard !pool.isEmpty else { return pool }
 
         return pool.compactMap { entry in
-            let held = skips.allowed(entry.songs)
+            let held = bans.allowed(entry.songs)
             guard !held.isEmpty else { return nil }
 
             return (entry.name, held)
@@ -212,7 +212,7 @@ final class Discovery {
         case .noBands: "No band has a play count yet."
         case .noSongs: "None of those \(artists) artists is in your library."
         case .noMatch: "The top \(tracks) of those artists matched no song of yours."
-        case .noArtists: "No artist of your library is left to ask. Deny fewer songs, or turn the mode off and on."
+        case .noArtists: "No artist of your library is left to ask. Unban a few songs, or turn the mode off and on."
         }
     }
 
@@ -222,10 +222,10 @@ final class Discovery {
     private(set) var work = Work()
 
     /// The songs one local picker draws: the library as the scan holds it, and
-    /// without the songs the user denied. The unfiltered path is the common one,
-    /// so an empty denylist costs nothing and the reservoir sample stays one pass.
+    /// without the songs the user banned. The unfiltered path is the common one,
+    /// so an empty banlist costs nothing and the reservoir sample stays one pass.
     private func picked(_ pool: Pool, _ count: Int) -> [Track] {
-        guard skips.count > 0 else {
+        guard bans.count > 0 else {
             switch pool {
             case .songs: return library.random(count)
             case .unplayed: return library.unplayed(count)
@@ -235,7 +235,8 @@ final class Discovery {
         }
 
         let store = library.plays
-        let songs = skips.allowed(library.tracks).filter { track in
+        let allowed = bans.allowed(library.tracks)
+        let songs = allowed.filter { track in
             switch pool {
             case .songs: true
             case .unplayed: !store.played(Plays.key(track))
@@ -243,8 +244,22 @@ final class Discovery {
             }
         }
 
+        if allowed.count < library.tracks.count {
+            Log.player.info("discovery banned", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "left": "\(allowed.count)", "of": "\(library.tracks.count)"])
+        }
+
         return Player.picked(songs, count)
     }
+
+    /// What a pick does to the list: replace it, or add to its end. The app hands
+    /// both to `Player`; a test reads them, so a proof of what a discovery plays
+    /// costs no audio.
+    struct Delivery {
+        var replace: ([Track]) -> Void
+        var append: ([Track]) -> Void
+    }
+
+    var delivery: Delivery
 
     /// The list every network task fills, and the screen that shows it.
     func open(_ stage: String) {
@@ -294,18 +309,19 @@ final class Discovery {
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let player: Player
-    @ObservationIgnored private let skips: Skips
+    @ObservationIgnored private let bans: Bans
     @ObservationIgnored private var job: Task<Void, Never>?
 
-    init(library: Library, lastFM: LastFM, player: Player, skips: Skips) {
+    init(library: Library, lastFM: LastFM, player: Player, bans: Bans) {
         self.library = library
         self.lastFM = lastFM
         self.player = player
-        self.skips = skips
+        self.bans = bans
+        delivery = Delivery(replace: player.random, append: player.append)
     }
 
     var ready: Bool {
-        !LastFM.key.isEmpty && !lastFM.user.isEmpty && !library.albums.isEmpty
+        !lastFM.key.isEmpty && !lastFM.user.isEmpty && !library.albums.isEmpty
     }
 
     func pick(_ pool: Pool, _ count: Int) {
@@ -340,18 +356,14 @@ final class Discovery {
         }
     }
 
-    /// The one door every pool goes through, and the one place the veto of the
-    /// user is applied: no picker of this menu, local or from the internet, can
-    /// put a denied song in the list. A song the user denied stays in the
-    /// library and plays whenever they choose it; it only never comes out of a
-    /// discovery.
-    private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {
-        let tracks = skips.allowed(picked)
-
-        if tracks.count < picked.count {
-            Log.player.info("discovery denied", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "dropped": "\(picked.count - tracks.count)"])
-        }
-
+    /// The one door every pool goes through. The ban of the user is applied where
+    /// a pool of songs is built (`Discovery.picked` for the local pools,
+    /// `Discovery.allowed` for the ones from the internet and for Infinity), not
+    /// here: a second filter at the end would only shrink a pick that already came
+    /// back short, so nothing could ever see it, and a rule no test can reach is
+    /// not a rule. What the door guarantees is that no picker of this menu, local
+    /// or from the internet, can put a banned song in the list.
+    private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {
         guard finish(mine, tracks.isEmpty ? why : nil) else {
             return Log.player.debug("discovery superseded", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
         }
@@ -361,7 +373,7 @@ final class Discovery {
             return Log.player.warning("discovery empty", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "note": "\(why ?? "")"])
         }
 
-        player.random(tracks)
+        delivery.replace(tracks)
         open(Work.done)
     }
 
@@ -377,10 +389,10 @@ final class Discovery {
             }
 
             let drawn = Discovery.draw(chart, count, using: { Int.random(in: 0..<$0) })
-            wanted = Discovery.allowed(drawn.map { (name: $0, songs: library.songs(by: $0)) }, skipping: skips)
-            Log.player.info("artists drawn", metadata: ["asked": "\(count)", "chart": "\(chart.count)", "drawn": "\(drawn.count)", "held": "\(wanted.count)", "denied": "\(skips.count)"])
+            wanted = Discovery.allowed(drawn.map { (name: $0, songs: library.songs(by: $0)) }, banning: bans)
+            Log.player.info("artists drawn", metadata: ["asked": "\(count)", "chart": "\(chart.count)", "drawn": "\(drawn.count)", "held": "\(wanted.count)", "banned": "\(bans.count)"])
         default:
-            wanted = Discovery.allowed(library.topBands(count), skipping: skips)
+            wanted = Discovery.allowed(library.topBands(count), banning: bans)
             guard !wanted.isEmpty else {
                 Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no bands"])
                 return ([], Discovery.reason(.noBands, 0))

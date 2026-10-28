@@ -161,12 +161,12 @@ struct InfinityTests {
         let infinity = try source("Infinity.swift")
         let fill = body(infinity, "private func fill(at stage: Infinity.Stage, _ mine: Int) async {")
 
-        #expect(fill.contains("player.random(songs)"), "the start plays the first song, as every discovery pool does")
+        #expect(fill.contains("discovery.delivery.replace(songs)"), "the start plays the first song, as every discovery pool does")
         #expect(fill.contains("discovery.open(Work.done)"), "and the start opens Up Next, so the user sees what the mode chose")
-        #expect(fill.contains("player.append(songs)"), "a refill only adds to the end")
-        #expect(fill.contains("player.random(songs)\n            discovery.open(Work.done)"), "only the start opens the screen, a refill leaves the list where the user is")
+        #expect(fill.contains("discovery.delivery.append(songs)"), "a refill only adds to the end")
+        #expect(fill.contains("discovery.delivery.replace(songs)\n            discovery.open(Work.done)"), "only the start opens the screen, a refill leaves the list where the user is")
         #expect(fill.contains("if stage == .start {"), "the two stages are a type, not a string the caller guesses")
-        #expect(fill.range(of: "guard discovery.finish(mine, note) else {")!.lowerBound < fill.range(of: "player.random(songs)")!.lowerBound,
+        #expect(fill.range(of: "guard discovery.finish(mine, note) else {")!.lowerBound < fill.range(of: "discovery.delivery.replace(songs)")!.lowerBound,
                 "an answer that arrived after a newer task began touches no player")
         #expect(body(infinity, "func toggle() {").contains("let mine = discovery.begin()"),
                 "the start takes the shared token of a task the user asked for, so the menus dim and the spinner may show")
@@ -183,8 +183,8 @@ struct InfinityTests {
         #expect(passed.range(of: "case .off:\n            return") != nil, "and an off mode returns from it without a log line of its own")
         #expect(body(infinity, "func off(_ reason: String) {").contains("flight?.cancel()"), "leaving the mode cancels the fill in flight")
 
-        #expect(body(infinity, "private func draw() async -> [Track] {").contains("Discovery.allowed(library.pool(excluding: served), skipping: skips)"),
-                "a denied song never enters the pool of a fill, so it never costs a request")
+        #expect(body(infinity, "private func draw() async -> [Track] {").contains("Discovery.allowed(library.pool(excluding: served), banning: bans)"),
+                "a banned song never enters the pool of a fill, so it never costs a request")
         #expect(!infinity.contains("player.remove"), "the mode never takes songs out of the list: it only adds")
         #expect(body(infinity, "func off(_ reason: String) {").contains("flight?.cancel()"), "stopping cancels the fill in flight")
         #expect(body(infinity, "func off(_ reason: String) {").contains("served = []"), "and forgets what it played, for the next time")
@@ -227,7 +227,7 @@ struct InfinityTests {
         #expect(String(app[menu...].prefix(400)).contains(".environment(infinity)"), "the menu builds the toggle that reads it, or the app traps at launch")
 
         let song = try #require(app.range(of: "CommandMenu(\"Song\") {")).upperBound
-        #expect(String(app[song...].prefix(500)).contains(".environment(skips)"), "the Song menu builds the veto item, so it needs the list too")
+        #expect(String(app[song...].prefix(500)).contains(".environment(bans)"), "the Song menu builds the ban item, so it needs the list too")
 
         #expect(app.contains("player.resets = { [weak infinity] reason in infinity?.stopped(reason) }"), "and when a list takes its place")
         #expect(String(app[app.range(of: "let infinity = ")!.lowerBound...].prefix(300)).contains("discovery: discovery"), "the mode borrows the readiness rule of the pickers, so it is offered on the same terms")

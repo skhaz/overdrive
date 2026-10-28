@@ -6,7 +6,7 @@ import Foundation
 /// start, and 20 more every time the songs ahead of the one that plays fall
 /// below 20. Nothing it does interrupts the song that plays: a top-up is a quiet
 /// task, so no spinner, no dim, no screen change, and no note. The mode stops
-/// when the user stops, and it never picks a song the user denied (`Skips`).
+/// when the user stops, and it never picks a song the user banned (`Bans`).
 @Observable
 final class Infinity {
     /// The songs one fill adds, and the buffer it keeps ahead of the song that
@@ -60,18 +60,18 @@ final class Infinity {
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let player: Player
     @ObservationIgnored private let discovery: Discovery
-    @ObservationIgnored private let skips: Skips
+    @ObservationIgnored private let bans: Bans
     @ObservationIgnored private var served: Set<Track.ID> = []
     @ObservationIgnored private var starting = false
     @ObservationIgnored private var flight: Task<Void, Never>?
     @ObservationIgnored private var token: Int?
 
-    init(library: Library, lastFM: LastFM, player: Player, discovery: Discovery, skips: Skips) {
+    init(library: Library, lastFM: LastFM, player: Player, discovery: Discovery, bans: Bans) {
         self.library = library
         self.lastFM = lastFM
         self.player = player
         self.discovery = discovery
-        self.skips = skips
+        self.bans = bans
     }
 
     /// The menu item: the mode turns on with a fresh list of songs and off again
@@ -167,10 +167,10 @@ final class Infinity {
         }
 
         if stage == .start {
-            player.random(songs)
+            discovery.delivery.replace(songs)
             discovery.open(Work.done)
         } else {
-            player.append(songs)
+            discovery.delivery.append(songs)
         }
 
         served.formUnion(songs.map(\.id))
@@ -178,16 +178,16 @@ final class Infinity {
     }
 
     /// The next batch of songs. An artist whose candidates the mode already
-    /// played, and one whose songs the user denied, are out of the pool before a
+    /// played, and one whose songs the user banned, are out of the pool before a
     /// request goes, so every song here is new and wanted. When the library has
     /// nothing new left, the cycle starts again.
     private func draw() async -> [Track] {
-        var pool = Discovery.allowed(library.pool(excluding: served), skipping: skips)
+        var pool = Discovery.allowed(library.pool(excluding: served), banning: bans)
 
         if Infinity.cycles(pool: pool.count, served: served.count) {
             Log.player.info("infinity cycle", metadata: ["served": "\(served.count)", "reason": "library empty"])
             served = []
-            pool = Discovery.allowed(library.pool(excluding: served), skipping: skips)
+            pool = Discovery.allowed(library.pool(excluding: served), banning: bans)
         }
 
         guard !pool.isEmpty else { return [] }
@@ -196,7 +196,7 @@ final class Infinity {
         let fm = lastFM
         let songs = await Discovery.collect(Infinity.batch, wanted) { await fm.topTracks($0, Discovery.tracks) }
 
-        Log.player.info("infinity drew", metadata: ["artists": "\(wanted.count)", "songs": "\(songs.count)", "pool": "\(pool.count)", "denied": "\(skips.count)"])
+        Log.player.info("infinity drew", metadata: ["artists": "\(wanted.count)", "songs": "\(songs.count)", "pool": "\(pool.count)", "banned": "\(bans.count)"])
         return songs
     }
 }

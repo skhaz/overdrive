@@ -20,7 +20,7 @@ struct RandomTests {
     }
 
     private func discoveryRegion(_ source: String) throws -> String {
-        try body(source, "private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {")
+        try body(source, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {")
     }
 
     private func handler(_ source: String, _ notification: String) throws -> String {
@@ -138,7 +138,7 @@ struct RandomTests {
         let views = try source("Views.swift")
         let discovery = try source("Discovery.swift")
 
-        #expect(try discoveryRegion(discovery).contains("player.random(tracks)\n        open(Work.done)"), "the pick replaces Up Next, then the screen follows it")
+        #expect(try discoveryRegion(discovery).contains("delivery.replace(tracks)\n        open(Work.done)"), "the pick replaces Up Next through the one door, then the screen follows it")
         #expect(try body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("let mine = begin()"), "a pick that spends requests opens Up Next at once, so the user sees it working")
         #expect(views.contains("static let discovery = Notification.Name(\"discovery\")"))
 

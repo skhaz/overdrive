@@ -286,7 +286,7 @@ struct TrackMenu: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
-    @Environment(Skips.self) private var skips
+    @Environment(Bans.self) private var bans
     @Environment(YouTube.self) private var youTube
 
     var body: some View {
@@ -298,10 +298,7 @@ struct TrackMenu: View {
             Button((liked ? "Unlike " : "Like ") + (tracks.count == 1 ? "Song" : "Songs"), systemImage: liked ? "heart.slash" : "heart") { likes.toggle(tracks) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
 
-            let denied = tracks.allSatisfy(skips.contains)
-            Button((denied ? "Pick Again in Discovery" : "Never Pick in Discovery") + (tracks.count == 1 ? " Song" : " Songs"), systemImage: denied ? "arrow.uturn.backward" : "nosign") {
-                NotificationCenter.default.post(name: .denySongs, object: tracks)
-            }
+            BanMenu(tracks: tracks)
 
             if tracks.count == 1 {
                 Button("Watch Video on YouTube") { youTube.watch(tracks[0]) }
@@ -894,7 +891,7 @@ extension Notification.Name {
     static let saveLyrics = Notification.Name("saveLyrics")
     static let floatLyrics = Notification.Name("floatLyrics")
     static let clearUpNext = Notification.Name("clearUpNext")
-    static let denySongs = Notification.Name("denySongs")
+    static let banSongs = Notification.Name("banSongs")
     static let discovery = Notification.Name("discovery")
     static let find = Notification.Name("find")
 }
@@ -1404,39 +1401,54 @@ struct ClearUpNext: ViewModifier {
     }
 }
 
-/// The veto of the user is never set by one click: the song menu asks first,
-/// and the answer goes to `Skips`, which every discovery reads.
-struct DenySongs: ViewModifier {
-    @Environment(Skips.self) private var skips
+/// The one definition of the ban item. Every list that shows a song installs it,
+/// so a song can be banned from anywhere the user can see it and no list can
+/// forget it.
+struct BanMenu: View {
+    let tracks: [Track]
+    @Environment(Bans.self) private var bans
+
+    var body: some View {
+        if !tracks.isEmpty {
+            let banned = tracks.allSatisfy(bans.contains)
+
+            Button(Bans.label(tracks.count, banned: banned), systemImage: banned ? "arrow.uturn.backward" : "nosign") {
+                NotificationCenter.default.post(name: .banSongs, object: tracks)
+            }
+        }
+    }
+}
+
+/// The ban of the user is never set by one click: the song menu asks first,
+/// and the answer goes to `Bans`, which every discovery reads.
+struct BanSongs: ViewModifier {
+    @Environment(Bans.self) private var bans
     @State private var showing = false
     @State private var pending: [Track] = []
 
-    private var denied: Bool { !pending.isEmpty && pending.allSatisfy(skips.contains) }
-    private var label: String {
-        let songs = pending.count == 1 ? "Song" : "Songs"
-        return (denied ? "Pick " : "Never Pick ") + songs + " in Discovery"
-    }
+    private var banned: Bool { !pending.isEmpty && pending.allSatisfy(bans.contains) }
+    private var label: String { Bans.label(pending.count, banned: banned) }
 
     func body(content: Content) -> some View {
         content
             .confirmationDialog(label, isPresented: $showing) {
-                Button(label, role: denied ? nil : .destructive) {
-                    Log.skips.info("deny confirmed", metadata: ["songs": "\(pending.count)", "state": denied ? "allowed" : "denied"])
-                    denied ? skips.remove(pending) : skips.add(pending)
+                Button(label, role: banned ? nil : .destructive) {
+                    Log.bans.info("ban confirmed", metadata: ["songs": "\(pending.count)", "state": banned ? "unbanned" : "banned"])
+                    banned ? bans.remove(pending) : bans.add(pending)
                     pending = []
                 }
                 Button("Cancel", role: .cancel) {
-                    Log.skips.info("deny cancelled", metadata: ["songs": "\(pending.count)"])
+                    Log.bans.info("ban cancelled", metadata: ["songs": "\(pending.count)"])
                     pending = []
                 }
             } message: {
-                Text(denied
+                Text(banned
                      ? "The song goes back in every discovery of your library."
-                     : "The song stays in your library and plays when you choose it, and no discovery picks it again.")
+                     : "The song stays in your library, in every list, and plays when you choose it. No discovery and no Infinity picks it again.")
             }
-            .onReceive(NotificationCenter.default.publisher(for: .denySongs)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .banSongs)) { note in
                 guard let tracks = note.object as? [Track], !tracks.isEmpty else {
-                    return Log.skips.debug("deny ignored", metadata: ["reason": "no song"])
+                    return Log.bans.debug("ban ignored", metadata: ["reason": "no song"])
                 }
 
                 pending = tracks
@@ -1489,6 +1501,7 @@ struct UpNextView: View {
                         let picked = rows.filter { target.contains($0.id) }
 
                         if !picked.isEmpty {
+                            TrackMenu(tracks: picked.map(\.track))
                             Button("Remove from Up Next", role: .destructive) { remove(target) }
                                 .keyboardShortcut(.delete)
                                 .disabled(target == [player.index] && rows.count > 1)
@@ -1756,28 +1769,28 @@ struct LikedView: View {
 }
 
 /// The songs the user took out of every discovery. The list is the way back in:
-/// Delete or the context menu removes the veto, never the song, the file, or
+/// Delete or the context menu removes the ban, never the song, the file, or
 /// anything else.
-struct DeniedView: View {
+struct BannedView: View {
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(YouTube.self) private var youTube
-    @Environment(Skips.self) private var skips
+    @Environment(Bans.self) private var bans
     @State private var selection: Set<Row.ID> = []
     @State private var sort = Sort()
     @State private var sorted = Sorted<Row>()
     @Environment(\.active) private var active
 
     var body: some View {
-        let rows = sorted.apply(sort, library.rows(skips.paths))
+        let rows = sorted.apply(sort, library.rows(bans.paths))
         let now = youTube.showing ?? player.current
 
-        if skips.paths.isEmpty {
-            ContentUnavailableView("Nothing Is Denied", systemImage: "nosign", description: Text("Right-click a song and choose Never Pick in Discovery. Those songs come here, and no discovery picks them again."))
+        if bans.paths.isEmpty {
+            ContentUnavailableView("Nothing Is Banned", systemImage: "nosign", description: Text("Right-click a song and choose Ban Song in Discovery. Those songs come here, and no discovery picks them again."))
                 .modifier(Selected(tracks: []))
         } else {
             ScrollViewReader { proxy in
-                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "denied")) {
+                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "banned")) {
                     TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.track == now) }
                     TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.track == now) }
                     TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.track == now) }
@@ -1787,13 +1800,13 @@ struct DeniedView: View {
                     ForEach(rows) { TableRow($0) }
                 }
                 .onChange(of: active) { if !active { sort = Sort() } }
-                .onChange(of: skips.paths) { selection = [] }
+                .onChange(of: bans.paths) { selection = [] }
                 .id("\(sort.rawValue)\u{1F}\(library.edits)")
                 .contextMenu(forSelectionType: Row.ID.self) { ids in
                     let picked = rows.filter { targets(ids, selection).contains($0.id) }
 
                     if !picked.isEmpty {
-                        Button("Pick Again in Discovery") { remove(picked.map(\.track)) }
+                        Button(Bans.label(picked.count, banned: true)) { remove(picked.map(\.track)) }
                             .keyboardShortcut(.delete, modifiers: [])
                         Divider()
 
@@ -1830,7 +1843,7 @@ struct DeniedView: View {
 
     private func remove(_ tracks: [Track]) {
         selection = []
-        skips.remove(tracks)
+        bans.remove(tracks)
     }
 }
 
@@ -1999,7 +2012,7 @@ struct ContentView: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
-    @Environment(Skips.self) private var skips
+    @Environment(Bans.self) private var bans
     @Environment(YouTube.self) private var youTube
     @Environment(\.openWindow) private var openWindow
     @State private var lyrics = Lyrics(enabled: Player.saved?.lyrics ?? true)
@@ -2029,7 +2042,7 @@ struct ContentView: View {
                         }
 
                         row("Liked Songs", "heart", .liked)
-                        row("Never Picked", "nosign", .denied)
+                        row("Banned Songs", "nosign", .banned)
                         row("Up Next", "list.bullet", .upNext)
 
                         SwiftUI.Section {
@@ -2194,7 +2207,7 @@ struct ContentView: View {
             lyrics.settle { navigation.push(route, leaving: tracker.position) }
         })
         .modifier(ClearUpNext(clearing: $clearing))
-        .modifier(DenySongs())
+        .modifier(BanSongs())
         .modifier(Find { window in focusSearch(window, selecting: true) })
         .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
             if let current = player.current { reveal(current) }
@@ -2255,7 +2268,7 @@ struct ContentView: View {
             lyrics.flush()
             playlists.load()
             likes.load()
-            skips.load()
+            bans.load()
         }
         .onChange(of: lyrics.floating) {
             if lyrics.floating {
@@ -2299,7 +2312,7 @@ struct ContentView: View {
         let list: Int? = switch page {
         case .playlist(let name): playlists.paths[name]?.count
         case .liked: likes.paths.count
-        case .denied: skips.count
+        case .banned: bans.count
         default: nil
         }
         let token: [AnyHashable] = [page.key, path.map(\.key), library.version, player.queue.count, player.index, player.head, list]
@@ -2315,7 +2328,7 @@ struct ContentView: View {
         case (nil, .section(.songs)): summary(library.tracks)
         case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
         case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
-        case (nil, .denied): summary(library.rows(skips.paths).map(\.track))
+        case (nil, .banned): summary(library.rows(bans.paths).map(\.track))
         case (nil, .upNext): summary(player.queue.dropFirst(player.head))
         case (nil, .about): ""
         }
@@ -2332,7 +2345,7 @@ struct ContentView: View {
                 case .section(.artists): ArtistList(artists: library.artists)
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
-                case .denied: DeniedView()
+                case .banned: BannedView()
                 case .upNext: UpNextView()
                 case .about: AboutView()
                 case .section(.songs):
@@ -2404,7 +2417,7 @@ struct ContentView: View {
         player.refresh { library.track($0) }
         likes.load()
         playlists.load()
-        skips.load()
+        bans.load()
         navigation.refresh(library.albums)
         guard let saved, !library.albums.isEmpty else { return }
 
@@ -2413,7 +2426,7 @@ struct ContentView: View {
         let target = Page(key: Player.saved?.page ?? "") ?? .section(.albums)
         Log.navigation.info("restore", metadata: ["page": "\(target.key)", "current": "\(page.key)", "routes": Log.list(routes.map(\.key))])
         switch target {
-        case .liked, .denied, .playlist, .upNext:
+        case .liked, .banned, .playlist, .upNext:
             break
         default:
             navigation.restore(routes, on: target)
@@ -2567,7 +2580,7 @@ struct SettingsView: View {
             }
 
             SwiftUI.Section {
-                if LastFM.key.isEmpty {
+                if lastFM.key.isEmpty {
                     Text("This build has no Last.fm API key.").foregroundStyle(.secondary)
                 } else if lastFM.session.isEmpty {
                     TextField("Username", text: $username)

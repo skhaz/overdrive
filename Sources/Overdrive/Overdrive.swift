@@ -93,9 +93,9 @@ struct Overdrive: App {
         let library = Library(loudness: loudness)
         let player = Player(lastFM: lastFM, loudness: loudness, plays: library.plays)
         let youTube = YouTube(player: player)
-        let skips = Skips(file: { Skips.file(in: library.folders.first) }, folder: { library.folders.first })
-        let discovery = Discovery(library: library, lastFM: lastFM, player: player, skips: skips)
-        let infinity = Infinity(library: library, lastFM: lastFM, player: player, discovery: discovery, skips: skips)
+        let bans = Bans(file: { Bans.file(in: library.folders.first) }, folder: { library.folders.first })
+        let discovery = Discovery(library: library, lastFM: lastFM, player: player, bans: bans)
+        let infinity = Infinity(library: library, lastFM: lastFM, player: player, discovery: discovery, bans: bans)
         player.buffer = { [weak infinity] in infinity?.passed() }
         player.resets = { [weak infinity] reason in infinity?.stopped(reason) }
         let likes = Likes(file: { Likes.file(in: library.folders.first) }, folder: { library.folders.first })
@@ -139,7 +139,7 @@ struct Overdrive: App {
             return event
         }
 
-        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, infinity: infinity, skips: skips, likes: likes, loves: loves)
+        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, infinity: infinity, bans: bans, likes: likes, loves: loves)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
@@ -152,7 +152,7 @@ struct Overdrive: App {
     @State private var youTube = Overdrive.shared.youTube
     @State private var discovery = Overdrive.shared.discovery
     @State private var infinity = Overdrive.shared.infinity
-    @State private var skips = Overdrive.shared.skips
+    @State private var bans = Overdrive.shared.bans
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
@@ -164,7 +164,7 @@ struct Overdrive: App {
                 .environment(lastFM)
                 .environment(discovery)
                 .environment(infinity)
-                .environment(skips)
+                .environment(bans)
                 .environment(youTube)
                 .modifier(Reopen(delegate: delegate))
         }
@@ -220,7 +220,7 @@ struct Overdrive: App {
                     .environment(player)
                     .environment(playlists)
                     .environment(likes)
-                    .environment(skips)
+                    .environment(bans)
                     .environment(lastFM)
                     .environment(youTube)
             }

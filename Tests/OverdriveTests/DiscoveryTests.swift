@@ -410,7 +410,7 @@ struct DiscoveryTests {
     @Test func thePickerIsOfferedOnlyWithCredentialsAndSongs() throws {
         let discovery = try source("Discovery.swift")
 
-        #expect(discovery.contains("!LastFM.key.isEmpty && !lastFM.user.isEmpty && !library.albums.isEmpty"), "no key, no user, or no songs means the submenu is off")
+        #expect(discovery.contains("!lastFM.key.isEmpty && !lastFM.user.isEmpty && !library.albums.isEmpty"), "no key, no user, or no songs means the submenu is off")
         #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("if pool == .artists || pool == .bands, !ready"), "a click that cannot work is refused before any request")
         #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "!ready")!.lowerBound < body(discovery, "func pick(_ pool: Pool, _ count: Int) {").range(of: "begin()")!.lowerBound,
                 "a refused click must not retire the discovery that is in flight")
@@ -422,10 +422,10 @@ struct DiscoveryTests {
         #expect(!discovery.contains("Persist."), "the discovery is never written to the disk")
         #expect(!discovery.contains("Date(") && !discovery.contains("ContinuousClock"), "no lifetime, no cache")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").contains("await lastFM.topArtists(Discovery.reach(count))"), "the artists come from a fresh request, wider than the list so the draw is a draw")
-        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").contains("wanted = Discovery.allowed(library.topBands(count), skipping: skips)"), "the bands come from the local play counts, without the songs the user denied")
+        #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").contains("wanted = Discovery.allowed(library.topBands(count), banning: bans)"), "the bands come from the local play counts, without the songs the user denied")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").components(separatedBy: "library.songs(by:").count - 1 == 1,
                 "one lookup per artist: the band picker brings its own songs, so nothing is looked up twice")
-        #expect(discovery.contains("player.random(tracks)\n        open(Work.done)"), "the picked songs replace Up Next and the screen follows")
+        #expect(discovery.contains("delivery.replace(tracks)\n        open(Work.done)"), "the picked songs replace Up Next and the screen follows")
     }
 
     @Test func theNewestDiscoveryRetiresTheOneBeforeIt() throws {
@@ -434,7 +434,7 @@ struct DiscoveryTests {
 
         #expect(pick.contains("let mine = begin()"), "every click takes a new generation and opens its screen")
         #expect(pick.contains("job?.cancel()"), "an answer in flight is cancelled, so its requests stop")
-        #expect(body(discovery, "private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("guard finish(mine, tracks.isEmpty ? why : nil) else {"), "a pick that lost the race changes nothing")
+        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("guard finish(mine, tracks.isEmpty ? why : nil) else {"), "a pick that lost the race changes nothing")
         #expect(discovery.contains("\"discovery superseded\""), "a dropped answer leaves a trace")
         let walk = body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {")
 
@@ -525,10 +525,10 @@ struct DiscoveryTests {
         let pick = body(discovery, "func pick(_ pool: Pool, _ count: Int) {")
 
         #expect(pick.components(separatedBy: "start(").count - 1 == 4, "songs, never played, most played, and the two network pools")
-        #expect(pick.components(separatedBy: "picked(.").count - 1 == 3, "the three local pools draw their songs through the veto, so a denied song never reaches a list")
-        #expect(pick.components(separatedBy: "player.random").count - 1 == 0, "only start plays, so no pool can skip the rule")
-        #expect(body(discovery, "private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("guard !tracks.isEmpty else {"), "an empty answer leaves the player alone")
-        #expect(body(discovery, "private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains(#""note": "\(why ?? "")""#), "an empty answer says its reason in the log")
+        #expect(pick.components(separatedBy: "picked(.").count - 1 == 3, "the three local pools draw their songs through the ban, so a banned song never reaches a list")
+        #expect(pick.components(separatedBy: "delivery.replace").count - 1 == 0, "only start plays, so no pool can skip the rule")
+        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("guard !tracks.isEmpty else {"), "an empty answer leaves the player alone")
+        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains(#""note": "\(why ?? "")""#), "an empty answer says its reason in the log")
     }
 
     @Test func theLastFMPickersAreInTheDiscoveryMenu() throws {

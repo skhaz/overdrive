@@ -10,6 +10,10 @@ final class LastFM {
         var credentials = URL.applicationSupportDirectory.appending(path: "Overdrive/lastfm.plist")
         var store = URL.applicationSupportDirectory.appending(path: "Overdrive/Scrobbles.plist")
         var transport = URLSession.shared
+        /// The build-time credentials, overridable so a test can drive the real
+        /// request path without a bundle.
+        var key = LastFM.key
+        var secret = LastFM.secret
         var retry: Duration = .seconds(60)
         var settle: TimeInterval = 120
         var monitor = true
@@ -26,8 +30,15 @@ final class LastFM {
     }
 
     static let limit: TimeInterval = 14 * 86400
-    static let key = Bundle.main.object(forInfoDictionaryKey: "LastFMKey") as? String ?? ""
-    static let secret = Bundle.main.object(forInfoDictionaryKey: "LastFMSecret") as? String ?? ""
+
+    /// The credentials built into the bundle. A client uses these unless its
+    /// `Configuration` names others, so the app reads the bundle once and a test
+    /// can still exercise the signed path.
+    nonisolated static let key = Bundle.main.object(forInfoDictionaryKey: "LastFMKey") as? String ?? ""
+    nonisolated static let secret = Bundle.main.object(forInfoDictionaryKey: "LastFMSecret") as? String ?? ""
+
+    var key: String { configuration.key }
+    var secret: String { configuration.secret }
 
     private static let unsent: Set<URLError.Code> = [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
                                                      .internationalRoamingOff, .dataNotAllowed, .secureConnectionFailed]
@@ -515,10 +526,10 @@ final class LastFM {
     private func call(_ method: String, _ parameters: [String: String], session: Bool = false) async throws -> [String: Any] {
         var parameters = parameters
         parameters["method"] = method
-        parameters["api_key"] = LastFM.key
+        parameters["api_key"] = key
         if session { parameters["sk"] = self.session }
 
-        let signature = parameters.sorted { $0.key < $1.key }.map { $0.key + $0.value }.joined() + LastFM.secret
+        let signature = parameters.sorted { $0.key < $1.key }.map { $0.key + $0.value }.joined() + secret
         parameters["api_sig"] = Insecure.MD5.hash(data: Data(signature.utf8)).map { String(format: "%02x", $0) }.joined()
         parameters["format"] = "json"
 
