@@ -65,7 +65,7 @@ struct ViewStructureTests {
                         library.query = ""
                     }
         """), "a page change must clear the search, except the page the search opens")
-        #expect(text.contains(".modifier(QueryFocus(navigation: $navigation, tracker: tracker, placed: placed, remember: remember, search: $search))"), "the window installs the search rules")
+        #expect(text.contains(".modifier(QueryFocus(navigation: $navigation, lyrics: lyrics, tracker: tracker, placed: placed, remember: remember, search: $search))"), "the window installs the search rules")
         #expect(try source().contains("navigation.filter(.section(.albums), to: text, leaving: tracker.position)"), "a click on an artist name must keep its search")
     }
 
@@ -96,6 +96,50 @@ struct ViewStructureTests {
         #expect(list.contains("player.queue.indices.dropFirst(player.head)"), "Up Next shows the head and the songs after it, so a song the user clicked past keeps its place")
         #expect(list.contains("delete: { remove(selection) }"), "Delete must remove the selected songs")
     }
+
+    /// An `.environment(x)` applied in the body of a view does NOT reach the
+    /// modifiers applied in that same body: they sit outside it. A helper that
+    /// reads such an object traps on the first render, with no compiler error and
+    /// no test failing until the window opens. This is the check for that.
+    @Test func noHelperOfTheWindowReadsWhatTheWindowOwns() throws {
+        let text = try source()
+        let body = region(text, from: "struct ContentView: View {")
+
+        // the objects the window owns as its own state and injects in its body
+        let owned = Set(["lyrics", "navigation", "tracker", "search", "memo", "panel", "saved", "swipe", "navigator", "name", "deleting", "clearing", "monitor", "focus"])
+        var injected: Set<String> = []
+
+        for match in body.matches(of: /\.environment\(([^)\s]+)\)/) {
+            injected.insert(String(match.output.1))
+        }
+
+        #expect(injected.contains("lyrics"), "the window injects its own lyrics object in its body")
+
+        let helpers = Set(body.matches(of: /\.modifier\(([A-Z][A-Za-z]*)\(/).map { String($0.output.1) })
+        #expect(!helpers.isEmpty, "the window installs helpers of its own")
+
+        for helper in helpers.sorted() {
+            let start = try #require(text.range(of: "struct \(helper): "))
+            let rest = text[start.lowerBound...]
+            let decl = String(rest[..<(try #require(rest.range(of: "\n}\n")).lowerBound)])
+
+            for match in decl.matches(of: /@Environment\(([A-Z][A-Za-z]*)\.self\)/) {
+                let type = String(match.output.1)
+                let name = type.prefix(1).lowercased() + type.dropFirst()
+                #expect(!injected.contains(lower(name)) || !owned.contains(name),
+                        "\(helper) reads \(type) from the environment, but the window injects it in its own body: pass it in instead")
+            }
+        }
+
+        #expect(body.contains("QueryFocus(navigation: $navigation, lyrics: lyrics, tracker: tracker"),
+                "the search helper receives the lyrics and the tracker of the window by hand")
+        let focus = region(text, from: "private struct QueryFocus: ViewModifier {")
+
+        #expect(!focus.contains("@Environment(Lyrics.self)"), "and never from the environment of the window itself")
+        #expect(focus.contains("let lyrics: Lyrics"), "the helper holds what it is given")
+    }
+
+    private func lower(_ text: String) -> String { text }
 
     @Test func theLyricsButtonHidesTheLyrics() throws {
         let source = try source()

@@ -501,9 +501,13 @@ struct LyricsView: View {
 /// rules are the same, they only live somewhere smaller.
 private struct QueryFocus: ViewModifier {
     @Environment(Library.self) private var library
-    @Environment(Lyrics.self) private var lyrics
     @Environment(Playlists.self) private var playlists
     @Binding var navigation: Navigation
+    /// The lyrics of the window, passed in by hand: the window owns them as its
+    /// own state and injects them in its own body, which is inside every modifier
+    /// of that body, so reading them from the environment here traps on the first
+    /// render. `ViewStructureTests` keeps that rule.
+    let lyrics: Lyrics
     let tracker: Tracker
 
     let placed: () -> Void
@@ -2182,7 +2186,7 @@ struct ContentView: View {
                 panel?.hide()
             }
         }
-        .modifier(QueryFocus(navigation: $navigation, tracker: tracker, placed: placed, remember: remember, search: $search))
+        .modifier(QueryFocus(navigation: $navigation, lyrics: lyrics, tracker: tracker, placed: placed, remember: remember, search: $search))
         .environment(\.tracker, tracker)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .frame(minWidth: 820, minHeight: 520)
