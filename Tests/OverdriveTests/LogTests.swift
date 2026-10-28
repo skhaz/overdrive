@@ -173,7 +173,7 @@ final class Records: @unchecked Sendable {
             "Spectrum.swift": ["spectrum tap failed"],
             "AppleMusic.swift": ["blocked apple music"],
             "LyricsPanel.swift": ["panel shown", "panel hidden"],
-            "Views.swift": ["drop ignored", "drop", "create cancelled", "delete cancelled", "clear cancelled", "shown", "gesture", "gesture ignored", "discovery", "open in mp3tag", "show in finder", "save command"],
+            "Views.swift": ["drop ignored", "drop", "create cancelled", "delete cancelled", "clear cancelled", "shown", "gesture", "gesture ignored", "discovery", "scroll instant", "open in mp3tag", "show in finder", "save command"],
         ]
         for (file, names) in events {
             let text = try source(file)

@@ -405,7 +405,7 @@ import Testing
 
 @MainActor
 struct SyncedLyricsScrollTests {
-    @Test func aNewSongOrARepeatScrollsToTheTop() {
+    private func view() -> (NSScrollView, SyncedLyrics.Coordinator, [SyncedLine]) {
         let text = LyricsTextView(usingTextLayoutManager: false)
         text.isVerticallyResizable = true
         text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
@@ -415,13 +415,71 @@ struct SyncedLyricsScrollTests {
         coordinator.text = text
         let lines = (0..<100).map { SyncedLine(time: Double($0 + 1), text: "Line \($0)") }
 
-        coordinator.load(lines, current: 99)
         text.setFrameSize(NSSize(width: 200, height: 3000))
+        return (scroll, coordinator, lines)
+    }
+
+    @Test func aNewSongOrARepeatScrollsToTheTop() {
+        let (scroll, coordinator, lines) = view()
+
+        coordinator.load(lines, current: 99)
         coordinator.center(animated: false)
         #expect(scroll.contentView.bounds.origin.y > 0)
 
         coordinator.highlight(nil)
         coordinator.center(animated: false)
         #expect(scroll.contentView.bounds.origin.y == 0, "the lyrics stayed at the end when the song started again")
+    }
+
+    @Test func onlyTheLineThatPlaysNextGlides() {
+        #expect(SyncedLyrics.Coordinator.glides(3, 4, playing: true), "the line after this one is the song moving on")
+        #expect(SyncedLyrics.Coordinator.glides(4, 3, playing: true), "and a click on the line above seeks back one line")
+        #expect(!SyncedLyrics.Coordinator.glides(3, 4, playing: false), "a paused song glides nothing: a restore can land one line in")
+        #expect(!SyncedLyrics.Coordinator.glides(nil, 40, playing: true), "a position that comes back with the session never glides")
+        #expect(!SyncedLyrics.Coordinator.glides(40, nil, playing: true), "nor does a song that starts again")
+        #expect(!SyncedLyrics.Coordinator.glides(3, 5, playing: true), "a gap of silence of two lines or more lands at once")
+        #expect(!SyncedLyrics.Coordinator.glides(3, 20, playing: true), "a seek of many lines lands at once")
+        #expect(!SyncedLyrics.Coordinator.glides(3, 3, playing: true), "the same line changes nothing")
+        #expect(!SyncedLyrics.Coordinator.glides(nil, nil, playing: true))
+    }
+
+    @Test func aRestoredSessionShowsItsLineAtOnce() {
+        let (scroll, coordinator, lines) = view()
+
+        // The lyrics of the song come first, the position of the session after.
+        coordinator.load(lines, current: nil)
+        coordinator.center(animated: false)
+        #expect(scroll.contentView.bounds.origin.y == 0, "the line is not known yet, so the top shows")
+
+        let position = 40
+        let glide = SyncedLyrics.Coordinator.glides(coordinator.current, position, playing: false)
+
+        coordinator.highlight(position)
+        coordinator.center(animated: glide)
+
+        #expect(!glide, "the position that a session restores is not a line that played next")
+        #expect(scroll.contentView.bounds.origin.y > 0, "so the line that is already singing is there on the same call, not seconds later")
+    }
+
+    @Test func theViewAsksTheCoordinatorBeforeItScrolls() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(contentsOf: root.appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
+        let start = try #require(source.range(of: "    func updateNSView(_ scroll: NSScrollView, context: Context) {")).upperBound
+        let rest = source[start...]
+        let update = String(rest[..<rest.range(of: "\n    }\n")!.lowerBound])
+
+        #expect(update.contains("let glide = Coordinator.glides(coordinator.current, current, playing: playing)"), "the rule lives in one place, and the view only asks")
+        #expect(update.contains("coordinator.center(animated: glide)"), "so a jump that is not the next line is never animated")
+        #expect(!update.contains("animated: true"), "nothing in the view decides to animate on its own")
+        #expect(update.range(of: "coordinator.highlight(current)")!.lowerBound > update.range(of: "let glide =")!.lowerBound,
+                "the glide is read before the current line moves, or it compares the new line with itself")
+        #expect(source.contains("Log.lyrics.debug(\"scroll instant\""), "every instant jump leaves a trace, so a restore that lands in the wrong place is visible in the log")
+
+        let panel = try String(contentsOf: root.appending(path: "Sources/Overdrive/LyricsPanel.swift"), encoding: .utf8)
+
+        for host in [source, panel] {
+            #expect(host.components(separatedBy: "SyncedLyrics(lines: lines, current: current, playing: live && player.playing)").count - 1 == 1,
+                    "both lyric views hand the same song, line, and play state to the scroller")
+        }
     }
 }

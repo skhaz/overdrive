@@ -454,7 +454,7 @@ struct LyricsView: View {
 
                 Group {
                     if !editing, !lines.isEmpty {
-                        SyncedLyrics(lines: lines, current: current) { player.seek($0) }
+                        SyncedLyrics(lines: lines, current: current, playing: live && player.playing) { player.seek($0) }
                     } else {
                         TextEditor(text: Binding { lyrics.text } set: { lyrics.edit($0) })
                             .focused($typing)
@@ -487,6 +487,7 @@ struct LyricsView: View {
 struct SyncedLyrics: NSViewRepresentable {
     let lines: [SyncedLine]
     let current: Int?
+    let playing: Bool
     let seek: (Double) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -524,8 +525,14 @@ struct SyncedLyrics: NSViewRepresentable {
             coordinator.load(lines, current: current)
             coordinator.center(animated: false)
         } else if coordinator.current != current {
+            let glide = Coordinator.glides(coordinator.current, current, playing: playing)
+
+            if !glide {
+                Log.lyrics.debug("scroll instant", metadata: ["from": "\(coordinator.current.map { "\($0)" } ?? "none")", "to": "\(current.map { "\($0)" } ?? "none")", "lines": "\(lines.count)"])
+            }
+
             coordinator.highlight(current)
-            coordinator.center(animated: true)
+            coordinator.center(animated: glide)
         }
     }
 
@@ -568,6 +575,16 @@ struct SyncedLyrics: NSViewRepresentable {
             }
 
             current = index
+        }
+
+        /// Only the line that plays next in a song that plays glides. A restored
+        /// session, a seek, a new song, and a repeat land where they belong at
+        /// once, so the window never shows the lyrics travelling to the line that
+        /// is already singing.
+        nonisolated static func glides(_ from: Int?, _ to: Int?, playing: Bool) -> Bool {
+            guard playing, let from, let to else { return false }
+
+            return abs(from - to) == 1
         }
 
         func center(animated: Bool) {

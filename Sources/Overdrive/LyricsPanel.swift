@@ -145,7 +145,7 @@ struct FloatingLyrics: View {
 
                 Group {
                     if !editing, !lines.isEmpty {
-                        SyncedLyrics(lines: lines, current: current) { player.seek($0) }
+                        SyncedLyrics(lines: lines, current: current, playing: live && player.playing) { player.seek($0) }
                     } else {
                         TextEditor(text: Binding { lyrics.text } set: { lyrics.edit($0) })
                             .font(.body)
