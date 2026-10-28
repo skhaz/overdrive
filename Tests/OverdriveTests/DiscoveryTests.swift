@@ -480,6 +480,16 @@ struct DiscoveryTests {
         #expect(offline.url.absoluteString == "https://www.last.fm/music/Death", "the browser still gets a page")
     }
 
+    @Test func everyHostOfTheSongMenuCarriesTheAccount() throws {
+        let app = try source("Overdrive.swift")
+
+        let menu = try #require(app.range(of: "CommandMenu(\"Song\") {")).upperBound
+        #expect(String(app[menu...].prefix(600)).contains(".environment(lastFM)"), "the Song menu builds GoMenu, which reads the account: without it the app traps at launch")
+
+        let content = try #require(app.range(of: "ContentView()")).upperBound
+        #expect(String(app[content...].prefix(600)).contains(".environment(lastFM)"), "the main window builds GoMenu too")
+    }
+
     @Test func theLastFMPageIsOfferedOnlyWithAnAccount() throws {
         let views = try source("Views.swift")
         let menu = body(views, "struct GoMenu: View {")
