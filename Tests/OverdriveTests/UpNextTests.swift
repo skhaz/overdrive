@@ -222,7 +222,7 @@ struct UpNextTests {
     @Test func everyTableMenuReadsTheSelection() throws {
         let views = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
 
-        #expect(views.components(separatedBy: "targets(ids, selection)").count - 1 == 4, "Songs, Liked Songs, playlists, and Up Next act on the selection, never on the rows SwiftUI drew")
+        #expect(views.components(separatedBy: "targets(ids, selection)").count - 1 == 5, "Songs, Liked Songs, playlists, Up Next, and the never-picked list act on the selection, never on the rows SwiftUI drew")
     }
 
     // MARK: - helpers

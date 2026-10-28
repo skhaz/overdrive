@@ -1755,6 +1755,85 @@ struct LikedView: View {
     }
 }
 
+/// The songs the user took out of every discovery. The list is the way back in:
+/// Delete or the context menu removes the veto, never the song, the file, or
+/// anything else.
+struct DeniedView: View {
+    @Environment(Library.self) private var library
+    @Environment(Player.self) private var player
+    @Environment(YouTube.self) private var youTube
+    @Environment(Skips.self) private var skips
+    @State private var selection: Set<Row.ID> = []
+    @State private var sort = Sort()
+    @State private var sorted = Sorted<Row>()
+    @Environment(\.active) private var active
+
+    var body: some View {
+        let rows = sorted.apply(sort, library.rows(skips.paths))
+        let now = youTube.showing ?? player.current
+
+        if skips.paths.isEmpty {
+            ContentUnavailableView("Nothing Is Denied", systemImage: "nosign", description: Text("Right-click a song and choose Never Pick in Discovery. Those songs come here, and no discovery picks them again."))
+                .modifier(Selected(tracks: []))
+        } else {
+            ScrollViewReader { proxy in
+                Table(of: Row.self, selection: $selection, sortOrder: order($sort, "denied")) {
+                    TableColumn("Title", value: \.track.title) { Cell(text: $0.track.title, playing: $0.track == now) }
+                    TableColumn("Artist", value: \.track.artist) { Cell(text: $0.track.artist, playing: $0.track == now) }
+                    TableColumn("Album", value: \.track.album) { Cell(text: $0.track.album, playing: $0.track == now) }
+                    TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.track == now).monospacedDigit() }.width(70)
+                    TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
+                } rows: {
+                    ForEach(rows) { TableRow($0) }
+                }
+                .onChange(of: active) { if !active { sort = Sort() } }
+                .onChange(of: skips.paths) { selection = [] }
+                .id("\(sort.rawValue)\u{1F}\(library.edits)")
+                .contextMenu(forSelectionType: Row.ID.self) { ids in
+                    let picked = rows.filter { targets(ids, selection).contains($0.id) }
+
+                    if !picked.isEmpty {
+                        Button("Pick Again in Discovery") { remove(picked.map(\.track)) }
+                            .keyboardShortcut(.delete, modifiers: [])
+                        Divider()
+
+                        TrackMenu(tracks: picked.map(\.track))
+
+                        if picked.count == 1 {
+                            GoMenu(track: picked[0].track)
+                        }
+
+                        CopyMenu(tracks: picked.map(\.track))
+                        FileMenu(urls: picked.map(\.track.url))
+                    }
+                } primaryAction: { ids in
+                    guard let index = rows.firstIndex(where: { ids.contains($0.id) }) else { return }
+
+                    player.start(rows.map(\.track), at: index)
+                }
+                .onChange(of: youTube.showing ?? player.current, initial: true) { _, track in
+                    guard let track, let row = rows.first(where: { $0.track == track }) else { return }
+
+                    selection = [row.id]
+                }
+                .modifier(Keys(count: rows.count, selected: { selection.contains(rows[$0].id) }, select: { index in
+                    selection = [rows[index].id]
+                    proxy.scrollTo(rows[index].id)
+                }, enter: { player.start(rows.map(\.track), at: $0) }, extend: { index in
+                    selection.insert(rows[index].id)
+                    proxy.scrollTo(rows[index].id)
+                }, delete: { remove(rows.filter { selection.contains($0.id) }.map(\.track)) }, selectAll: { selection = Set(rows.map(\.id)) }))
+                .modifier(Selected(tracks: rows.filter { selection.contains($0.id) }.map(\.track)))
+            }
+        }
+    }
+
+    private func remove(_ tracks: [Track]) {
+        selection = []
+        skips.remove(tracks)
+    }
+}
+
 struct SpectrumBar: View {
     static let width: CGFloat = 4
     static let gap: CGFloat = 2
@@ -1950,6 +2029,7 @@ struct ContentView: View {
                         }
 
                         row("Liked Songs", "heart", .liked)
+                        row("Never Picked", "nosign", .denied)
                         row("Up Next", "list.bullet", .upNext)
 
                         SwiftUI.Section {
@@ -2219,6 +2299,7 @@ struct ContentView: View {
         let list: Int? = switch page {
         case .playlist(let name): playlists.paths[name]?.count
         case .liked: likes.paths.count
+        case .denied: skips.count
         default: nil
         }
         let token: [AnyHashable] = [page.key, path.map(\.key), library.version, player.queue.count, player.index, player.head, list]
@@ -2234,6 +2315,7 @@ struct ContentView: View {
         case (nil, .section(.songs)): summary(library.tracks)
         case (nil, .playlist(let name)): summary(library.rows(playlists.paths[name] ?? []).map(\.track))
         case (nil, .liked): summary(library.rows(likes.paths).map(\.track))
+        case (nil, .denied): summary(library.rows(skips.paths).map(\.track))
         case (nil, .upNext): summary(player.queue.dropFirst(player.head))
         case (nil, .about): ""
         }
@@ -2250,6 +2332,7 @@ struct ContentView: View {
                 case .section(.artists): ArtistList(artists: library.artists)
                 case .playlist(let name): PlaylistView(name: name)
                 case .liked: LikedView()
+                case .denied: DeniedView()
                 case .upNext: UpNextView()
                 case .about: AboutView()
                 case .section(.songs):
@@ -2330,7 +2413,7 @@ struct ContentView: View {
         let target = Page(key: Player.saved?.page ?? "") ?? .section(.albums)
         Log.navigation.info("restore", metadata: ["page": "\(target.key)", "current": "\(page.key)", "routes": Log.list(routes.map(\.key))])
         switch target {
-        case .liked, .playlist, .upNext:
+        case .liked, .denied, .playlist, .upNext:
             break
         default:
             navigation.restore(routes, on: target)

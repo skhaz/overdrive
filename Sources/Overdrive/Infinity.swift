@@ -32,6 +32,13 @@ final class Infinity {
         pool == 0 && served > 0
     }
 
+    /// Whether the fill that holds `mine` still owns the slot of the mode: a
+    /// toggle off and on again gives the next fill a new token, and the old one
+    /// must free nothing, or two fills run at once and a tick starts a third.
+    nonisolated static func ours(_ mine: Int, current: Int?) -> Bool {
+        current == mine
+    }
+
     /// Why a trigger did not, or did, start a fill.
     enum Pause {
         case off, filling, full, now
@@ -57,6 +64,7 @@ final class Infinity {
     @ObservationIgnored private var served: Set<Track.ID> = []
     @ObservationIgnored private var starting = false
     @ObservationIgnored private var flight: Task<Void, Never>?
+    @ObservationIgnored private var token: Int?
 
     init(library: Library, lastFM: LastFM, player: Player, discovery: Discovery, skips: Skips) {
         self.library = library
@@ -80,8 +88,10 @@ final class Infinity {
         on = true
         starting = true
         served = []
-        Log.player.info("infinity", metadata: ["state": "on", "batch": "\(Infinity.batch)", "keep": "\(Infinity.keep)"])
-        flight = Task { await self.fill(at: .start, discovery.begin()) }
+        let mine = discovery.begin()
+        token = mine
+        Log.player.info("infinity", metadata: ["state": "on", "batch": "\(Infinity.batch)", "keep": "\(Infinity.keep)", "run": "\(mine)"])
+        flight = Task { await self.fill(at: .start, mine) }
     }
 
     /// The mode leaves, and the songs it already put in the list stay: the user
@@ -89,6 +99,7 @@ final class Infinity {
     func off(_ reason: String) {
         flight?.cancel()
         flight = nil
+        token = nil
         starting = false
 
         guard on else { return }
@@ -125,16 +136,22 @@ final class Infinity {
                 return Log.player.debug("infinity waiting", metadata: ["reason": "the user has a task in flight"])
             }
 
+            token = mine
             flight = Task { await self.fill(at: .halfway, mine) }
         }
     }
 
     private func fill(at stage: Infinity.Stage, _ mine: Int) async {
         defer {
-            // only the fill that is still the one in flight clears its own handle,
-            // so a replaced fill never frees the successor and starts two
-            if flight != nil { flight = nil }
-            starting = false
+            // only the fill that still owns the slot clears it, so a replaced fill
+            // never frees the handle of its successor and starts a second one
+            if Infinity.ours(mine, current: token) {
+                token = nil
+                flight = nil
+                starting = false
+            } else {
+                Log.player.debug("infinity released", metadata: ["at": "\(stage.rawValue)", "run": "\(mine)", "current": "\(token.map(String.init) ?? "none")"])
+            }
         }
 
         let songs = await draw()

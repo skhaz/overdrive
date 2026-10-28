@@ -167,7 +167,7 @@ final class Records: @unchecked Sendable {
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted", "append", "append ignored"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
             "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded", "discovery denied", "discovery note", "task waiting", "artists drawn", "artist drawn"],
-            "Infinity.swift": ["infinity", "infinity ignored", "infinity kept", "infinity waiting", "infinity full", "infinity dropped", "infinity empty", "infinity cycle", "infinity filled", "infinity drew"],
+            "Infinity.swift": ["infinity", "infinity ignored", "infinity kept", "infinity waiting", "infinity full", "infinity dropped", "infinity released", "infinity empty", "infinity cycle", "infinity filled", "infinity drew"],
             "Skips.swift": ["load", "add", "add skipped", "remove", "remove skipped", "save skipped"],
             "Loves.swift": ["load", "tick", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull wide", "pull fast", "pull", "apply", "push", "arrive", "arrive ignored", "prune", "prune skipped"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],

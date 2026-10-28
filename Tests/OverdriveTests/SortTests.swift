@@ -137,15 +137,15 @@ struct SortTests {
         let source = try String(contentsOf: root.appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
 
         let tables = try Regex(#"\bTable\("#)
-        #expect(source.matches(of: tables).count == 4)
+        #expect(source.matches(of: tables).count == 5, "songs, up next, a playlist, liked songs, and the never-picked list")
         #expect(source.matches(of: tables).count == source.components(separatedBy: "sortOrder: order($sort").count - 1, "every table sorts")
         #expect(source.components(separatedBy: "TableColumn(\"").count == source.components(separatedBy: "\", value: \\.").count, "every column sorts")
         #expect(source.components(separatedBy: "guard sort.column == nil else { return Log.navigation.debug(\"drop ignored\"").count - 1 == 2, "a drag reorders Up Next and a playlist only in their own order")
         #expect(source.contains("AlbumGrid(albums: library.albums(by: name))"), "the albums of an artist go by year")
-        #expect(source.components(separatedBy: "@State private var sort = Sort()").count - 1 == 4, "the sort is not saved")
-        #expect(source.components(separatedBy: ".onChange(of: active) { if !active { sort = Sort() } }").count - 1 == 4, "a list that leaves goes back to its own order")
+        #expect(source.components(separatedBy: "@State private var sort = Sort()").count - 1 == 5, "the sort is not saved")
+        #expect(source.components(separatedBy: ".onChange(of: active) { if !active { sort = Sort() } }").count - 1 == 5, "a list that leaves goes back to its own order")
         #expect(!source.contains("@AppStorage(\"sort."), "the sort is not saved")
         #expect(source.components(separatedBy: "{ if !active { sort = Sort() } }\n").count - 1 == source.components(separatedBy: ".id(sort)").count - 1 + source.components(separatedBy: ".id(\"\\(sort.rawValue)").count - 1, "a SwiftUI Table that diffs a new order of the whole library hangs the main thread; a new sort builds a new table")
-        #expect(source.components(separatedBy: "sorted.apply(sort, ").count - 1 == 4, "the sorted rows are kept between redraws")
+        #expect(source.components(separatedBy: "sorted.apply(sort, ").count - 1 == 5, "the sorted rows are kept between redraws")
     }
 }

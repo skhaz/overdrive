@@ -527,7 +527,7 @@ struct TagEditTests {
 
         #expect(views.contains("SongTable(tracks: library.tracks).id(\"\\(library.query)\\u{1F}\\(library.members)\\u{1F}\\(library.edits)\")"))
         #expect(views.contains(".id(\"\\(route.key)\\u{1F}\\(library.edits)\")"), "an open album shows its new tags and cover")
-        #expect(views.components(separatedBy: ".id(\"\\(sort.rawValue)\\u{1F}\\(library.edits)\")").count - 1 == 3, "the queue, playlists, and liked songs show new tags")
+        #expect(views.components(separatedBy: ".id(\"\\(sort.rawValue)\\u{1F}\\(library.edits)\")").count - 1 == 4, "the queue, playlists, liked songs, and the never-picked list show new tags")
         #expect(views.contains("player.refresh { library.track($0) }"), "the queue takes the new tags after a scan")
     }
 }

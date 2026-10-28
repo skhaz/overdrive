@@ -39,6 +39,24 @@ struct InfinityTests {
         #expect(Infinity.pause(on: true, flight: false, ahead: 0, kept: Infinity.keep) == .now, "and so does an empty list")
     }
 
+    @Test func aQuickReToggleLeavesOneFillInFlight() throws {
+        #expect(Infinity.ours(2, current: 2), "the fill that owns the slot frees it")
+        #expect(!Infinity.ours(1, current: 2), "a fill that a toggle off and on replaced frees nothing, or two runs at once")
+        #expect(!Infinity.ours(2, current: 1), "and a fill that has not begun yet is not the current one")
+        #expect(!Infinity.ours(1, current: nil), "nor is any fill, once the mode left")
+
+        let infinity = try source("Infinity.swift")
+
+        #expect(body(infinity, "func toggle() {").contains("let mine = discovery.begin()\n        token = mine"), "the start records its token before the task begins")
+        #expect(body(infinity, "func passed() {").contains("token = mine\n            flight = Task"), "and so does a top-up")
+        #expect(body(infinity, "func off(_ reason: String) {").contains("token = nil"), "leaving the mode clears the slot with the handle")
+        let fill = body(infinity, "private func fill(at stage: Infinity.Stage, _ mine: Int) async {")
+
+        #expect(fill.contains("if Infinity.ours(mine, current: token) {"), "the defer of a fill is gated by its token")
+        #expect(fill.range(of: "starting = false")!.lowerBound > fill.range(of: "if Infinity.ours(mine, current: token) {")!.lowerBound, "and so is the start mark, or a replaced fill disarms the successor")
+        #expect(fill.components(separatedBy: "flight = nil").count - 1 == 1, "one place frees the handle")
+    }
+
     @Test func aFillThatFoundNoArtistStartsTheLibraryOver() {
         #expect(Infinity.cycles(pool: 0, served: 20), "every song of the library played, so the cycle begins again")
         #expect(!Infinity.cycles(pool: 3, served: 20), "artists are left, so the fill asks them")
@@ -150,8 +168,9 @@ struct InfinityTests {
         #expect(fill.contains("if stage == .start {"), "the two stages are a type, not a string the caller guesses")
         #expect(fill.range(of: "guard discovery.finish(mine, note) else {")!.lowerBound < fill.range(of: "player.random(songs)")!.lowerBound,
                 "an answer that arrived after a newer task began touches no player")
-        #expect(body(infinity, "func toggle() {").contains("flight = Task { await self.fill(at: .start, discovery.begin()) }"),
+        #expect(body(infinity, "func toggle() {").contains("let mine = discovery.begin()"),
                 "the start takes the shared token of a task the user asked for, so the menus dim and the spinner may show")
+        #expect(body(infinity, "func toggle() {").contains("flight = Task { await self.fill(at: .start, mine) }"), "and the fill carries that token to the screen")
         #expect(body(infinity, "func passed() {").contains("guard let mine = discovery.claim() else {"),
                 "a top-up claims a quiet token, and steps aside when the user has a task in flight")
         #expect(body(infinity, "func stopped(_ reason: String) {").contains("guard !starting else {"), "the mode survives the list it just started")

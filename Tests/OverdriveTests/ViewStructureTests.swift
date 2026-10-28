@@ -222,7 +222,7 @@ struct ViewStructureTests {
     @Test func emptyListsClearTheSelectedSong() throws {
         let source = try source()
 
-        #expect(source.components(separatedBy: ".modifier(Selected(tracks: []").count - 1 == 3, "an empty queue, playlist, or Liked Songs shows the lyrics of the song that plays")
+        #expect(source.components(separatedBy: ".modifier(Selected(tracks: []").count - 1 == 4, "an empty queue, playlist, liked songs, or never-picked list shows the lyrics of the song that plays")
     }
 
     @Test func aDoubleClickAndEnterDoTheSame() throws {

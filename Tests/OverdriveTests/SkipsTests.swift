@@ -157,6 +157,75 @@ import Testing
         #expect(views.contains("static let denySongs = Notification.Name(\"denySongs\")"), "one notification name for one question")
     }
 
+    @Test func anArtistWhoseSongsAreAllDeniedCostsNoRequest() throws {
+        let root = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: root) }
+        let skips = Skips(file: Skips.file(in: root), folder: root)
+        let kataklysm = (1...3).map { track(root.appending(path: "Kataklysm/\($0).mp3").path, "Song \($0)") }
+        let krisiun = (1...2).map { track(root.appending(path: "Krisiun/\($0).mp3").path, "Song \($0)") }
+        let pool = [(name: "Kataklysm", songs: kataklysm), (name: "Krisiun", songs: krisiun)]
+
+        let whole = Discovery.allowed(pool, skipping: skips)
+
+        #expect(whole.map(\.name) == ["Kataklysm", "Krisiun"], "no veto, the pool as the library holds it")
+        #expect(whole.map(\.songs) == [kataklysm, krisiun])
+
+        skips.add([kataklysm[0]])
+        let partly = Discovery.allowed(pool, skipping: skips)
+
+        #expect(partly.count == 2, "an artist that is denied partly stays, with the songs that are left")
+        #expect(partly[0].songs == [kataklysm[1], kataklysm[2]])
+        #expect(partly[1].songs == krisiun)
+
+        skips.add(Array(kataklysm.dropFirst()))
+        let gone = Discovery.allowed(pool, skipping: skips)
+
+        #expect(gone.count == 1, "an artist whose every song is denied leaves the pool before a request goes")
+        #expect(gone.first?.name == "Krisiun")
+
+        skips.add(krisiun)
+        #expect(Discovery.allowed(pool, skipping: skips).isEmpty, "a fully denied library is an empty pool")
+        #expect(Discovery.allowed([], skipping: skips).isEmpty, "and an empty pool stays empty")
+    }
+
+    // MARK: - the sidebar list
+
+    @Test func theDeniedListIsAPageOfItsOwn() {
+        #expect(Page(key: Page.denied.key) == .denied, "the page key round-trips")
+        #expect(Page.denied.key == "denied")
+        #expect(Page.denied.title == "Never Picked")
+        #expect(Navigation(page: .denied).lyrics, "the denied list shows the docked lyrics, like every song list")
+    }
+
+    @Test func theSidebarRowOpensTheDeniedList() throws {
+        let views = try source("Views.swift")
+
+        #expect(views.contains("row(\"Liked Songs\", \"heart\", .liked)\n                        row(\"Never Picked\", \"nosign\", .denied)"), "the list sits under Liked Songs, in the style of the other rows")
+        #expect(views.contains("case .denied: DeniedView()"), "the page draws its own screen")
+        #expect(views.contains("case .denied: skips.count"), "the sidebar count and the subtitle read the veto")
+        #expect(views.contains("case (nil, .denied): summary(library.rows(skips.paths).map(\\.track))"), "the window subtitle counts the songs the library still holds")
+        #expect(views.contains("case .liked, .denied, .playlist, .upNext:"), "a launch on the denied list opens the list, never an old path into it")
+    }
+
+    @Test func theDeniedListOnlyTakesSongsOutOfTheVeto() throws {
+        let views = try source("Views.swift")
+        let start = try #require(views.range(of: "struct DeniedView: View {"))
+        let rest = views[start.lowerBound...]
+        let screen = String(rest[..<(try #require(rest.range(of: "\n}\n")).lowerBound)])
+
+        #expect(screen.contains("library.rows(skips.paths)"), "the rows are the vetoed songs the library holds, in the order the user denied them")
+        #expect(screen.contains("if skips.paths.isEmpty {"), "an empty veto says what the item is for")
+        #expect(screen.contains("Button(\"Pick Again in Discovery\") { remove(picked.map(\\.track)) }"), "the menu of a row takes it out of the veto")
+        #expect(screen.contains("delete: { remove(rows.filter { selection.contains($0.id) }.map(\\.track)) }"), "Delete does the same for the whole selection")
+        #expect(screen.contains("selection = []\n        skips.remove(tracks)"), "the action clears the selection before the rows change, so the next action never hits a moved row")
+        #expect(screen.contains("TrackMenu(tracks: picked.map(\\.track))"), "and the song menu is there, so a row can go back into the veto from the same screen")
+        #expect(screen.contains("GoMenu(track: picked[0].track)"), "a single row keeps Go to Album, Go to Artist, and Go to Last.fm")
+        #expect(screen.contains(".onChange(of: skips.paths) { selection = [] }"), "a veto that changed elsewhere empties the selection instead of pointing at another row")
+        #expect(!screen.contains("Persist."), "the screen writes nothing but through Skips")
+        #expect(!screen.contains("library.remove") && !screen.contains("FileManager"), "the list never touches a song file")
+        #expect(views.contains("static let denySongs = Notification.Name(\"denySongs\")"), "one notification for the question the song menu asks")
+    }
+
     // MARK: - helpers
 
     private func source(_ name: String) throws -> String {
