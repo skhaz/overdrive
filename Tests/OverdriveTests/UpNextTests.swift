@@ -34,21 +34,29 @@ struct UpNextTests {
         #expect(removed.index == 0)
     }
 
-    @Test func addGoesToTheEndOfTheList() {
+    @Test func addGoesRightAfterTheSongThatPlays() {
         let album = ["01", "02", "03", "04", "05", "06"]
         let added = Player.inserting(album, Array(repeating: false, count: 6), at: 0, ["02", "03", "05", "04"])
 
-        #expect(added.items == ["01", "06", "02", "03", "05", "04"], "the picked songs went to the end, after the rest of the album")
-        #expect(added.marks == [false, false, true, true, true, true])
-        #expect(added.index == 0)
+        #expect(added.items == ["01", "02", "03", "05", "04", "06"], "the picked songs play next, not at the end of Up Next")
+        #expect(added.marks == [false, true, true, true, true, false])
+        #expect(added.index == 0, "the song that plays does not move")
     }
 
     @Test func eachAddGoesAfterTheSongsAddedBefore() {
         let first = Player.inserting(["a", "b", "c"], [false, false, false], at: 0, ["x"])
         let second = Player.inserting(first.items, first.marks, at: first.index, ["y"])
 
-        #expect(second.items == ["a", "b", "c", "x", "y"])
-        #expect(second.marks == [false, false, false, true, true])
+        #expect(second.items == ["a", "x", "y", "b", "c"], "the next add follows the one before it, so the picks keep their order")
+        #expect(second.marks == [false, true, true, false, false])
+    }
+
+    @Test func anAddWhilePlayingAnAddedSongGoesAfterTheAddedRun() {
+        let first = Player.inserting(["a", "b", "c"], [false, false, false], at: 0, ["x", "y"])
+        let second = Player.inserting(first.items, first.marks, at: 1, ["z"])
+
+        #expect(second.items == ["a", "x", "y", "z", "b", "c"], "the picks of this run stay together")
+        #expect(second.index == 1)
     }
 
     @Test func addAtTheEndOfTheListAddsToIt() {
@@ -99,7 +107,7 @@ struct UpNextTests {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let views = try String(contentsOf: root.appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
 
-        #expect(views.contains("Button(\"Add to Up Next\") { player.insert(tracks) }"), "one action adds the selected songs to the end of Up Next")
+        #expect(views.contains("Button(\"Add to Up Next\") { player.insert(tracks) }"), "one action adds the selected songs right after the song that plays")
         #expect(!views.contains("Play Next"), "Play Next and Add to Queue were the same action twice")
         #expect(!views.contains("Add to Queue"), "Play Next and Add to Queue were the same action twice")
         #expect(views.contains(".keyboardShortcut(.return, modifiers: .command)"), "the one action keeps Command-Return")

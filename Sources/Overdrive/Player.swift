@@ -280,7 +280,8 @@ final class Player {
         var marks = kept.map { marks.indices.contains($0) && marks[$0] }
         let index = kept.firstIndex(of: index) ?? 0
 
-        let position = items.count
+        var position = index + 1
+        while position < items.count, marks[position] { position += 1 }
 
         items.insert(contentsOf: new, at: position)
         marks.insert(contentsOf: repeatElement(true, count: new.count), at: position)
