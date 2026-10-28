@@ -135,23 +135,20 @@ struct DiscoveryTests {
         titles.map { track($0, artist) }
     }
 
-    @Test func theBestTitleThatTheLibraryHasWins() {
-        let owned = Discovery.owned(["Combustion Inferno", "Bloodcraft"], songs(["Bloodcraft", "Combustion Inferno"]))
-
-        #expect(owned?.title == "Combustion Inferno", "the highest-ranked title wins, even when the library holds the other one first")
-        #expect(Discovery.owned(["Bloodcraft"], songs(["Combustion Inferno"])) == nil, "a song the library lacks is skipped")
-        #expect(Discovery.owned([], songs(["Bloodcraft"])) == nil, "no title from the internet, no song")
-        #expect(Discovery.owned(["Bloodcraft"], []) == nil, "an artist with no songs in the library is skipped")
+    /// A draw that must never run: a single candidate is taken at once.
+    func noDraw(_ count: Int) -> Int {
+        Issue.record("a library that holds one candidate must not cost a draw")
+        return 0
     }
 
-    @Test func theTitleRankBeatsTheClosestName() {
-        let songs = [
-            Track(url: URL(fileURLWithPath: "/m/a.mp3"), title: "Bloodcrafts", artist: "A", album: "B", number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x"),
-            Track(url: URL(fileURLWithPath: "/m/b.mp3"), title: "Blood of Lions", artist: "A", album: "B", number: 2, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x"),
-        ]
+    @Test func aTitleOfTheChartIsASongOfTheLibrary() {
+        let held = Discovery.Held(songs(["Bloodcraft", "Combustion Inferno"]))
 
-        #expect(Discovery.owned(["Bloodcraft", "Blood of Lions"], songs)?.title == "Bloodcrafts",
-                "a fuzzy match on the higher-ranked title wins over an exact name lower down; the exact key must not jump the queue")
+        #expect(held.one("Combustion Inferno")?.title == "Combustion Inferno")
+        #expect(held.one("Bloodcraft")?.title == "Bloodcraft")
+        #expect(held.one("Nothing Here") == nil, "a title the library lacks is no candidate")
+        #expect(held.one("") == nil, "an empty title never matches")
+        #expect(Discovery.Held([]).one("Bloodcraft") == nil, "an artist with no song in the library has no candidate")
     }
 
     @Test func anExactNameIsFoundWithoutScanningTheSongs() throws {
@@ -163,13 +160,71 @@ struct DiscoveryTests {
     }
 
     @Test func theClosestNameOfTheLibraryWinsInsideOneTitle() {
-        #expect(Discovery.owned(["Sandman"], songs(["Sandman", "Enter Sandman", "Sandmen"]))?.title == "Sandman", "the exact name beats a near one")
-        #expect(Discovery.owned(["Enter Sandman"], songs(["Sandmen", "Enter Sandman"]))?.title == "Enter Sandman")
+        let held = Discovery.Held(songs(["Sandman", "Enter Sandman", "Sandmen"]))
+
+        #expect(held.one("Sandman")?.title == "Sandman", "the exact name beats a near one")
+        #expect(held.one("Enter Sandman")?.title == "Enter Sandman")
+        #expect(held.one("Wrong Assembly") == nil)
     }
 
     @Test func anAccentOrACaseChangeIsTheSameSong() {
-        #expect(Discovery.owned(["Sabado De Sol"], songs(["sábado de sol"], "Morra"))?.title == "sábado de sol", "the library title is what plays, with its own spelling")
-        #expect(Discovery.owned(["Ratos de Porao"], songs(["Ratos de Porão"], "Ratos de Porão")) != nil)
+        #expect(Discovery.choose(["Sabado De Sol"], songs(["sábado de sol"], "Morra"), using: noDraw)?.track.title == "sábado de sol",
+                "the library title is what plays, with its own spelling")
+        #expect(Discovery.choose(["Ratos de Porao"], songs(["Ratos de Porão"], "Ratos de Porão"), using: noDraw) != nil)
+    }
+
+    @Test func everyCandidateOfTheChartIsInTheDraw() {
+        let songs = [
+            Track(url: URL(fileURLWithPath: "/m/a.mp3"), title: "Bloodcrafts", artist: "A", album: "B", number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x"),
+            Track(url: URL(fileURLWithPath: "/m/b.mp3"), title: "Blood of Lions", artist: "A", album: "B", number: 2, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x"),
+        ]
+
+        #expect(Discovery.choose(["Bloodcraft", "Blood of Lions"], songs, using: { _ in 0 })?.track.title == "Bloodcrafts")
+        #expect(Discovery.choose(["Bloodcraft", "Blood of Lions"], songs, using: { _ in 1 })?.track.title == "Blood of Lions",
+                "a fuzzy match on the higher-ranked title and an exact name lower down are both candidates, so the draw decides")
+        #expect(Discovery.choose(["Bloodcraft", "Blood of Lions"], songs, using: { _ in 1 })?.candidates == 2)
+    }
+
+    @Test func aSingleCandidateIsTakenWithoutADraw() {
+        let match = Discovery.choose(["Nope", "Nada", "Two", "Also Nope", "Neither"], songs(["One", "Two"]), using: noDraw)
+
+        #expect(match?.track.title == "Two")
+        #expect(match?.title == "Two", "the spelling of the library is what plays")
+        #expect(match?.candidates == 1, "the one title of the top five that the library holds is used directly, so no draw is spent")
+    }
+
+    @Test func everyCandidateOfThePoolCanWinTheDraw() {
+        let titles = ["One", "Two", "Three"]
+        let held = songs(["One", "Two", "Three"])
+
+        for index in titles.indices {
+            let match = Discovery.choose(titles, held, using: { _ in index })
+
+            #expect(match?.track.title == titles[index], "the draw reaches every candidate, not only the first")
+            #expect(match?.candidates == 3)
+        }
+
+        #expect(Discovery.choose(titles, held, using: { _ in 99 })?.track.title == "Three", "a draw past the pool lands on the last candidate, it never traps")
+        #expect(Discovery.choose(titles, held, using: { _ in -1 })?.track.title == "One", "and a negative draw lands on the first")
+    }
+
+    @Test func anArtistWhoseTopFiveNobodyHasIsSkippedWithoutADraw() {
+        #expect(Discovery.choose(["Nope", "Nada"], songs(["One", "Two"]), using: noDraw) == nil, "no candidate, no song, and no draw spent")
+        #expect(Discovery.choose([], songs(["One"]), using: noDraw) == nil, "no title from the internet, no song")
+        #expect(Discovery.choose(["One"], [], using: noDraw) == nil, "an artist with no song in the library is skipped")
+    }
+
+    @Test func twoTitlesThatAreOneSongEnterTheDrawOnce() {
+        let draws = Counter()
+        let match = Discovery.choose(["Sandman", "Sandmen", "Enter Sandman"], songs(["Sandmen", "Enter Sandman"]), using: { count in
+            draws.hit()
+            #expect(count == 2, "the pool is the songs the library holds, not the titles it was sent")
+            return 1
+        })
+
+        #expect(match?.track.title == "Enter Sandman")
+        #expect(match?.candidates == 2)
+        #expect(draws.value == 1)
     }
 
     @Test func theWalkFollowsTheArtistOrderAndStopsAtTheCount() async {
@@ -354,8 +409,10 @@ struct DiscoveryTests {
         let walk = body(discovery, "nonisolated static func collect(_ count: Int, _ wanted: [(name: String, songs: [Track])],")
 
         #expect(Discovery.window == 4, "Last.fm answers 29 when one IP spends its rate")
-        #expect(Discovery.tracks == 5, "the five most played songs of an artist are the pool a title is drawn from")
-        #expect(Discovery.attempts == 10, "a title the library lacks is drawn again, ten times at most, then the artist is skipped")
+        #expect(Discovery.tracks == 5, "the five most played songs of an artist are the pool a title comes from")
+        #expect(!discovery.contains("attempts"), "the candidates are known before the first draw, so nothing is drawn again and nothing is retried")
+        #expect(body(discovery, "nonisolated static func choose(").contains("guard candidates.count > 1 else {"), "one candidate is taken at once, and only more than one is drawn")
+        #expect(body(discovery, "nonisolated static func choose(").contains("$0.track.id == track.id"), "two titles that are the same song enter the draw once")
         #expect(walk.contains("min(start + min(window, count - found.count), names.count)"), "a discovery of one song asks one artist, not a whole window")
         #expect(walk.contains("start += slice.count"), "the walk advances by the artists it asked, so none is skipped")
         #expect(walk.contains("found.count < count"), "the walk stops as soon as the list is full")
@@ -405,40 +462,13 @@ struct DiscoveryTests {
         #expect(Discovery.draw([], 3, using: { _ in 0 }).isEmpty)
     }
 
-    @Test func oneTitleIsDrawnAtRandomAndOnlyFromTheLibrary() {
-        let titles = ["Nope", "Two", "Three"]
-        let held = songs(["One", "Two", "Three", "Four", "Five"])
-        var picks = [0, 1]
-
-        let match = Discovery.choose(titles, held, attempts: 10, using: { _ in picks.removeFirst() })
-
-        #expect(match?.track.title == "Two", "the first title the library lacks is skipped, the next draw finds a song")
-        #expect(match?.title == "Two")
-        #expect(match?.draws == 2, "the count says how many draws it took")
-        #expect(Discovery.choose(titles, held, attempts: 1, using: { _ in 2 })?.track.title == "Three", "a draw that lands on a song of the library plays it")
-        #expect(Discovery.choose(["Nope"], held, attempts: 10, using: { _ in 0 }) == nil, "a title the library lacks is never picked")
-        #expect(Discovery.choose([], held, attempts: 10, using: { _ in 0 }) == nil, "no title from the internet, no song")
-        #expect(Discovery.choose(titles, [], attempts: 10, using: { _ in 0 }) == nil, "an artist with no song in the library is skipped")
-    }
-
-    @Test func anArtistIsSkippedAfterTenMisses() {
-        let draws = Counter()
-        let match = Discovery.choose(["Nope", "Nada"], songs(["One"]), attempts: Discovery.attempts) { _ in
-            draws.hit()
-            return 0
+    @Test func theWalkDrawsInsideTheCandidatesOfEachArtist() async {
+        let wanted = [("A", songs(["One", "Two"], "A")), ("B", songs(["Three"], "B"))]
+        let picked = await Discovery.collect(2, wanted, draw: { _ in 1 }) { name in
+            name == "A" ? ["One", "Two"] : ["Nope", "Three"]
         }
 
-        #expect(match == nil)
-        #expect(draws.value == 10, "ten draws with no song of the library, then the artist is skipped")
-    }
-
-    @Test func theWalkDrawsOneTitlePerArtist() async {
-        let wanted = [("A", songs(["One"], "A")), ("B", songs(["Three"], "B"))]
-        let picked = await Discovery.collect(1, wanted, attempts: 1, draw: { _ in 1 }) { name in
-            name == "A" ? ["One", "Nope"] : ["Nope", "Three"]
-        }
-
-        #expect(picked.map(\.title) == ["Three"], "the drawn title is the second one, and only B holds it")
+        #expect(picked.map(\.title) == ["Two", "Three"], "A is drawn from its two candidates, B takes its only one with no draw")
     }
 
     @Test func theArtistPageIsPercentEncoded() {

@@ -667,7 +667,7 @@ final class Library {
     /// then the fuzzy walk, so a Last.fm title that differs by a plural or a typo
     /// still lands on a real song.
     func loved(folded artist: String, folded title: String) -> Track? {
-        hold(folded: artist, folded: title) ?? Discovery.owned([title], songs(folded: artist))
+        hold(folded: artist, folded: title) ?? Discovery.loved(title, songs(folded: artist))
     }
 
     private func songPlayed(_ track: Track) {

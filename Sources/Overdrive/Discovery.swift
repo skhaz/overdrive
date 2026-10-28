@@ -8,7 +8,6 @@ final class Discovery {
 
     nonisolated static let window = 4
     nonisolated static let tracks = 5
-    nonisolated static let attempts = 10
     nonisolated static let pool = 5
     nonisolated static let least = 20
     nonisolated static let most = 200
@@ -19,16 +18,16 @@ final class Discovery {
         min(max(count * pool, least), most)
     }
 
-    /// One title of the internet that the library holds, with what it took to
-    /// find it: the spelling that matched and how many titles were drawn.
+    /// One title of the internet that the library holds, with the number of
+    /// titles of the chart that a song of yours matches.
     nonisolated struct Match {
         let track: Track
         let title: String
-        let draws: Int
+        let candidates: Int
     }
 
-    /// The names of the library songs, folded once, so many titles cost one
-    /// dictionary read each and a few comparisons.
+    /// The names of the library songs of one artist, folded once, so every
+    /// title of the chart costs one dictionary read and a few comparisons.
     nonisolated struct Held {
         private let exact: [String: Track]
         private let names: [(track: Track, letters: [Unicode.Scalar])]
@@ -52,8 +51,8 @@ final class Discovery {
             self.names = names
         }
 
-        var isEmpty: Bool { names.isEmpty }
-
+        /// The song of the library that a title of the chart is, the closest
+        /// name of the library when the spelling is not the same.
         func one(_ title: String) -> Track? {
             let letters = Similarity.letters(title)
             guard !letters.isEmpty else { return nil }
@@ -72,37 +71,40 @@ final class Discovery {
         }
     }
 
-    nonisolated static func owned(_ titles: [String], _ songs: [Track]) -> Track? {
+    /// The song of an artist that one name is, when the library holds it under
+    /// another spelling: the fuzzy door of the loved sync, one name and one
+    /// artist, so a scan never folds a name twice.
+    nonisolated static func loved(_ title: String, _ songs: [Track]) -> Track? {
+        Held(songs).one(title)
+    }
+
+    /// The song one artist adds to the list: of the top titles of the chart,
+    /// every one that a song of yours matches is a candidate, in the order the
+    /// service ranked them. A single candidate is taken at once, so a library
+    /// that holds one of the top five spends no draw on it; only more than one
+    /// candidate is drawn, which is the only case where a draw can change the
+    /// answer. No candidate, no song, and the artist is skipped.
+    nonisolated static func choose(_ titles: [String], _ songs: [Track], using draw: (Int) -> Int) -> Match? {
         guard !titles.isEmpty, !songs.isEmpty else { return nil }
 
         let held = Held(songs)
+        var candidates: [(title: String, track: Track)] = []
+
         for title in titles {
-            if let track = held.one(title) { return track }
+            guard let track = held.one(title) else { continue }
+            guard !candidates.contains(where: { $0.track.id == track.id }) else { continue }
+
+            candidates.append((title, track))
         }
 
-        return nil
-    }
-
-    /// A title drawn at random from the chart of one artist, over and over
-    /// until one of them is a song the library holds. The draw is with
-    /// replacement, and the artist is skipped after `attempts` misses.
-    nonisolated static func choose(_ titles: [String], _ songs: [Track], attempts: Int,
-                                   using draw: (Int) -> Int) -> Match?
-    {
-        guard !titles.isEmpty, !songs.isEmpty, attempts > 0 else { return nil }
-
-        let held = Held(songs)
-        guard !held.isEmpty else { return nil }
-
-        for attempt in 1...attempts {
-            let index = draw(titles.count)
-            guard titles.indices.contains(index) else { continue }
-            guard let track = held.one(titles[index]) else { continue }
-
-            return Match(track: track, title: titles[index], draws: attempt)
+        guard let first = candidates.first else { return nil }
+        guard candidates.count > 1 else {
+            return Match(track: first.track, title: first.title, candidates: 1)
         }
 
-        return nil
+        let index = min(max(draw(candidates.count), 0), candidates.count - 1)
+
+        return Match(track: candidates[index].track, title: candidates[index].title, candidates: candidates.count)
     }
 
     /// `count` names of the pool, drawn at random and never repeated. The draw
@@ -133,7 +135,6 @@ final class Discovery {
     }
 
     nonisolated static func collect(_ count: Int, _ wanted: [(name: String, songs: [Track])],
-                                    attempts: Int = attempts,
                                     draw: @escaping @Sendable (Int) -> Int = { Int.random(in: 0..<$0) },
                                     _ titles: @escaping @Sendable (String) async -> [String]) async -> [Track]
     {
@@ -154,8 +155,8 @@ final class Discovery {
                 for (index, pair) in slice.enumerated() {
                     group.addTask {
                         let found = await titles(pair.name)
-                        let match = choose(found, pair.songs, attempts: attempts, using: draw)
-                        Log.player.debug("artist drawn", metadata: ["artist": "\(pair.name)", "titles": "\(found.count)", "draws": "\(match?.draws ?? 0)", "found": "\(match?.title ?? "")"])
+                        let match = choose(found, pair.songs, using: draw)
+                        Log.player.debug("artist drawn", metadata: ["artist": "\(pair.name)", "titles": "\(found.count)", "candidates": "\(match?.candidates ?? 0)", "found": "\(match?.title ?? "")"])
                         return (index, match?.track)
                     }
                 }

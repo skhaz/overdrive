@@ -24,29 +24,35 @@ struct DiscoveryCostTests {
     @Test func aMatchReadsEveryNameOnce() {
         let far = songs(300) { "Alfa \($0) Beta Gamma Delta Epsilon Zeta \($0)" }
         let improbable = songs(300) { "Track \($0) of the Executioner and the Longest Title Here \($0)" }
+        let pick = { (count: Int) in 0 }
 
-        #expect(Discovery.owned(titles, far) == nil, "nothing here matches, so the walk reads every name")
+        #expect(Discovery.choose(titles, far, using: pick) == nil, "nothing here matches, so the walk reads every name")
 
         let start = ContinuousClock.now
         for _ in 0..<100 {
-            _ = Discovery.owned(titles, far)
-            _ = Discovery.owned(titles, improbable)
+            _ = Discovery.choose(titles, far, using: pick)
+            _ = Discovery.choose(titles, improbable, using: pick)
         }
         let elapsed = start.duration(to: .now)
 
         #expect(elapsed < .seconds(1), "200 artists of 300 songs each took \(elapsed); the walk that folded every name per title spent 3 s here")
     }
 
-    @Test func anExactNameCostsNoComparison() {
-        let held = songs(300) { $0 == 1 ? "Blood of Lions" : "Track \($0) of the Executioner \($0)" }
+    @Test func anExactNameCostsOneDictionaryRead() {
+        let held = Discovery.Held(songs(300) { $0 == 1 ? "Blood of Lions" : "Track \($0) of the Executioner and the Longest Title \($0)" })
 
-        #expect(Discovery.owned(titles, held)?.title == "Blood of Lions")
+        #expect(held.one("Blood of Lions")?.title == "Blood of Lions")
+        #expect(held.one("Blood of Lion")?.title == "Blood of Lions", "a near name still finds its song, by walking every song")
 
         let start = ContinuousClock.now
-        for _ in 0..<100 { _ = Discovery.owned(titles, held) }
-        let elapsed = start.duration(to: .now)
+        for _ in 0..<100_000 { _ = held.one("Blood of Lions") }
+        let exact = start.duration(to: .now)
 
-        #expect(elapsed < .milliseconds(400), "the common case is one dictionary read per title, not 300 comparisons: \(elapsed)")
+        let walk = ContinuousClock.now
+        for _ in 0..<1_000 { _ = held.one("Blood of Lion") }
+        let near = walk.duration(to: .now)
+
+        #expect(exact < near, "an exact name is one dictionary read: \(exact) for 100 000 of them, against \(near) for 1 000 walks of 300 songs")
     }
 
     @Test func theBandedWalkCostsLessThanTheFullRatio() {
