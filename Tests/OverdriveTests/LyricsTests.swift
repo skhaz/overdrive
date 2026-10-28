@@ -164,6 +164,51 @@ import Testing
         #expect(!second.modified)
     }
 
+    @Test func discardingPutsBackTheLyricTheFileHas() async throws {
+        let folder = try folder()
+        let music = folder.appending(path: "Music")
+        try FileManager.default.createDirectory(at: music, withIntermediateDirectories: true)
+        let drafts = folder.appending(path: "Drafts.plist")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: music.path)
+            Persist.flush()
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let track = track(music)
+        try Data("saved".utf8).write(to: music.appending(path: "Song.lyrics"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: music.path)
+
+        let lyrics = Lyrics(drafts: drafts)
+        lyrics.show(track)
+        lyrics.edit("thrown away")
+        lyrics.flush()
+
+        #expect(lyrics.modified, "the write is not on the disk")
+        #expect(Persist.read([String: String].self, from: drafts)?[StoredPath.encode(track.url.path)] == "thrown away")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: music.path)
+        lyrics.discard()
+
+        #expect(lyrics.text == "saved", "discard puts back the lyric the file has")
+        #expect(!lyrics.modified)
+        #expect(read(music.appending(path: "Song.lyrics")) == "saved")
+        #expect(!FileManager.default.fileExists(atPath: drafts.path), "and the draft of the thrown edit leaves")
+    }
+
+    @Test func theSaveCommandAndThePromptAreWired() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive")
+        let app = try String(contentsOf: root.appending(path: "Overdrive.swift"), encoding: .utf8)
+
+        #expect(app.contains("Button(\"Save Lyrics\", systemImage: \"square.and.arrow.down\")"))
+        #expect(app.contains(".keyboardShortcut(\"s\")"), "Command-S saves the lyrics at once")
+
+        for name in ["Views.swift", "LyricsPanel.swift"] {
+            let view = try String(contentsOf: root.appending(path: name), encoding: .utf8)
+            #expect(view.contains("Button(\"Discard\", role: .destructive) { lyrics.discard(); editing = false }"), "\(name) asks before an edit is lost")
+            #expect(view.contains("Button(\"Save\") { lyrics.flush(); editing = false }"))
+        }
+    }
+
     @Test func flushSavesAtOnce() throws {
         let folder = try folder()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }

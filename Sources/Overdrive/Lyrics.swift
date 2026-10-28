@@ -93,6 +93,15 @@ final class Lyrics {
         keeper.wait()
     }
 
+    func discard() {
+        guard let track, modified else { return }
+
+        Log.lyrics.info("discard", metadata: ["path": "\(track.url.path)", "characters": "\(original.count)"])
+        text = original
+        save(original, for: track)
+        keeper.wait()
+    }
+
     func wait() {
         keeper.wait()
     }

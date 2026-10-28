@@ -250,6 +250,9 @@ struct Overdrive: App {
                 Button("Edit Lyrics", systemImage: "pencil") { NotificationCenter.default.post(name: .editLyrics, object: nil) }
                     .keyboardShortcut("e")
                     .disabled(!player.lyrics)
+                Button("Save Lyrics", systemImage: "square.and.arrow.down") { NotificationCenter.default.post(name: .saveLyrics, object: nil) }
+                    .keyboardShortcut("s")
+                    .disabled(!player.lyrics)
                 Button("Show Lyrics in a Floating Window", systemImage: "macwindow") { NotificationCenter.default.post(name: .floatLyrics, object: nil) }
                     .keyboardShortcut("u")
                     .disabled(player.current == nil)

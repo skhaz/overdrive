@@ -119,7 +119,7 @@ The wishes that have not gone up yet live in `Loves.plist` inside `~/Library/App
 
 ### Lyrics
 
-The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay next to the song, in a file with the `.cache.lyrics` extension, for one month. After that the app looks for them again and keeps the old ones if it finds nothing new. To keep the lyrics that the app finds on the internet, edit them.
+The lyrics show at the right side when a song plays. Click a line to go to that part of the song. To change the lyrics, click **Edit** (Command-E) and type. The app saves the lyrics next to the song by itself, and **Save Lyrics** (Command-S) writes them at once. If the app cannot write the file, it asks **Save** or **Discard** when you click **Done**, so an edit is never lost without a question. To remove the lyrics, delete all the text. The lyrics that the app finds on the internet stay next to the song, in a file with the `.cache.lyrics` extension, for one month. After that the app looks for them again and keeps the old ones if it finds nothing new. To keep the lyrics that the app finds on the internet, edit them.
 
 To hide the lyrics, click the lyrics button in the toolbar (Option-Command-Y). Click it again to show them. While the lyrics are hidden, the app does not look for them. The app remembers your choice.
 
@@ -186,6 +186,7 @@ The Song menu at the top of the screen has the same actions as the right-click m
 | Option-Command-S | Shuffle on or off |
 | Option-Command-R | Repeat: off, all songs, or one song |
 | Command-E | Edit the lyrics |
+| Command-S | Save the lyrics |
 | Option-Space | From any app: open Overdrive and search |
 | Command-U | Show the lyrics in a floating window |
 | Option-Command-Y | Show or hide the lyrics |

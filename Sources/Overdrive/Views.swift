@@ -385,7 +385,21 @@ struct LyricsView: View {
     @State private var editing = false {
         didSet { if editing != oldValue { Log.lyrics.info("editing", metadata: ["on": "\(editing)"]) } }
     }
+    @State private var asking = false
     @FocusState private var typing: Bool
+
+    private func close() {
+        guard editing else {
+            editing = true
+            return
+        }
+        guard lyrics.modified else {
+            lyrics.flush()
+            editing = false
+            return
+        }
+        asking = true
+    }
 
     var body: some View {
         if let track = lyrics.track {
@@ -415,10 +429,17 @@ struct LyricsView: View {
                             .buttonStyle(.borderless)
                             .controlSize(.small)
                         if !lines.isEmpty {
-                            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
+                            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") { close() }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
                                 .controlSize(.small)
+                                .alert("Save your lyric edit?", isPresented: $asking) {
+                                    Button("Save") { lyrics.flush(); editing = false }
+                                    Button("Discard", role: .destructive) { lyrics.discard(); editing = false }
+                                    Button("Cancel", role: .cancel) {}
+                                } message: {
+                                    Text("The new text is not on the disk yet. Save it, or discard it and keep the lyrics the file has.")
+                                }
                         }
                     }
                 }
@@ -794,6 +815,7 @@ extension Notification.Name {
     static let key = Notification.Name("key")
     static let reveal = Notification.Name("reveal")
     static let editLyrics = Notification.Name("editLyrics")
+    static let saveLyrics = Notification.Name("saveLyrics")
     static let floatLyrics = Notification.Name("floatLyrics")
     static let clearUpNext = Notification.Name("clearUpNext")
     static let discovery = Notification.Name("discovery")
@@ -1947,6 +1969,10 @@ struct ContentView: View {
 
             lyrics.show(current)
             lyrics.floating = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .saveLyrics)) { _ in
+            Log.lyrics.info("save command")
+            lyrics.flush()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             lyrics.flush()

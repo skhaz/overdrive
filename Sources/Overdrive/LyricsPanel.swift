@@ -68,6 +68,20 @@ struct FloatingLyrics: View {
     let open: () -> Void
     @State private var scrub: Double?
     @State private var editing = false
+    @State private var asking = false
+
+    private func close() {
+        guard editing else {
+            editing = true
+            return
+        }
+        guard lyrics.modified else {
+            lyrics.flush()
+            editing = false
+            return
+        }
+        asking = true
+    }
 
     var body: some View {
         if !lyrics.floating {
@@ -104,10 +118,17 @@ struct FloatingLyrics: View {
                         }
 
                         if !lines.isEmpty {
-                            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil", action: { editing.toggle() })
+                            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") { close() }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
                                 .controlSize(.small)
+                                .alert("Save your lyric edit?", isPresented: $asking) {
+                                    Button("Save") { lyrics.flush(); editing = false }
+                                    Button("Discard", role: .destructive) { lyrics.discard(); editing = false }
+                                    Button("Cancel", role: .cancel) {}
+                                } message: {
+                                    Text("The new text is not on the disk yet. Save it, or discard it and keep the lyrics the file has.")
+                                }
                         }
 
                         Button("Show Overdrive", systemImage: "macwindow", action: open)

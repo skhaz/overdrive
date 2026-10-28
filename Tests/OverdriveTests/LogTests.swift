@@ -169,11 +169,11 @@ final class Records: @unchecked Sendable {
             "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded"],
             "Loves.swift": ["load", "hourly", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull wide", "pull fast", "pull", "apply", "push", "arrive", "arrive ignored"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
-            "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up"],
+            "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up", "discard"],
             "Spectrum.swift": ["spectrum tap failed"],
             "AppleMusic.swift": ["blocked apple music"],
             "LyricsPanel.swift": ["panel shown", "panel hidden"],
-            "Views.swift": ["drop ignored", "drop", "create cancelled", "delete cancelled", "clear cancelled", "shown", "gesture", "gesture ignored", "discovery", "open in mp3tag", "show in finder"],
+            "Views.swift": ["drop ignored", "drop", "create cancelled", "delete cancelled", "clear cancelled", "shown", "gesture", "gesture ignored", "discovery", "open in mp3tag", "show in finder", "save command"],
         ]
         for (file, names) in events {
             let text = try source(file)
