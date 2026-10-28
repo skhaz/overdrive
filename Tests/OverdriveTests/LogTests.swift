@@ -167,7 +167,7 @@ final class Records: @unchecked Sendable {
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
             "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded"],
-            "Loves.swift": ["load", "hourly", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull wide", "pull fast", "pull", "apply", "push", "arrive", "arrive ignored"],
+            "Loves.swift": ["load", "tick", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull wide", "pull fast", "pull", "apply", "push", "arrive", "arrive ignored", "prune", "prune skipped"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up", "discard"],
             "Spectrum.swift": ["spectrum tap failed"],

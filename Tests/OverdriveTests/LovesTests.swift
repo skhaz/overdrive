@@ -141,7 +141,7 @@ struct LovesTests {
         #expect(settle.contains("guard let track = hold(key)"), "the scan pass uses the exact name, so it costs two dictionary reads per key")
         #expect(settle.contains("hold(key) ?? loose(key)"), "a drop resolves the same way a like did")
         #expect(body(loves, "func apply() {").contains("settle([])"), "a scan re-applies the mirror with no request")
-        #expect(body(loves, "private func absorb(_ keys: Set<String>, whole: Bool) {").contains("settle(gone, matched)"), "and a read drops what the server let go through the same door")
+        #expect(body(loves, "private func absorb(_ found: [String: Names], whole: Bool) {").contains("settle(gone, matched)"), "and a read drops what the server let go through the same door")
         #expect(!settle.contains("await"), "the local half never waits on the network")
     }
 
@@ -159,7 +159,7 @@ struct LovesTests {
     @Test func theMirrorIsTheServerPlusOurWishesAndNeverFightsThem() throws {
         let loves = try source("Loves.swift")
         let mirror = body(loves, "var mirror: Set<String> {")
-        let absorb = body(loves, "private func absorb(_ keys: Set<String>, whole: Bool) {")
+        let absorb = body(loves, "private func absorb(_ found: [String: Names], whole: Bool) {")
 
         #expect(mirror.contains("if wish {\n                pool.insert(key)"), "an outstanding love rides on top of the server list")
         #expect(mirror.contains("pool.remove(key)") && mirror.contains("} else {"), "an outstanding unlove is taken out of it")
@@ -183,7 +183,7 @@ struct LovesTests {
 
     @Test func theFuzzyWalkRunsOncePerKeyOnTheReadThatBringsIt() throws {
         let loves = try source("Loves.swift")
-        let absorb = body(loves, "private func absorb(_ keys: Set<String>, whole: Bool) {")
+        let absorb = body(loves, "private func absorb(_ found: [String: Names], whole: Bool) {")
 
         #expect(absorb.contains("let fresh = keys.subtracting(known).subtracting(held)"), "only a key the mirror did not have is walked")
         #expect(absorb.contains("hold(key) == nil, let track = self.loose(key)"), "and only when its exact name is not in the library")
@@ -202,7 +202,7 @@ struct LovesTests {
         #expect(newest.contains("return await every()"), "anything the count cannot explain is read in full")
         #expect(every.contains("fetch(number, LastFM.wide)"), "a whole read takes the big pages")
         #expect(every.contains("answer.pages <= LastFM.pages"), "and a list past the cap is not taken for the whole truth")
-        #expect(every.contains("absorb(Set(loved.map"), "only the whole list can drop a love")
+        #expect(every.contains("absorb(Loves.named(loved)"), "only the whole list can drop a love")
         #expect(body(loves, "private func pull(full: Bool) async -> Read {").contains("guard !full, !remote.isEmpty else { return await every() }"), "a cache with no mirror or a sync asked for in full reads everything")
     }
 
@@ -227,6 +227,50 @@ struct LovesTests {
         #expect(local.contains("save()"), "and it is on the disk before the request")
         #expect(local.contains("Task { await drain() }"), "the write goes up at once")
         #expect(body(loves, "private func push() {").contains("local(raised, true)"), "a like that predates the account goes up through the same door")
+    }
+
+    @Test func anUnloveGoesUpWithTheNameTheAccountKeeps() {
+        let names = [Loves.key("Héia", "Manifesto da Desgraça"): Loves.Names(artist: "Héia", title: "Manifesto da Desgraça")]
+        let track = Track(url: URL(fileURLWithPath: "/m/heia.mp3"), title: "Manifesto da Desgraca", artist: "Heia", album: "Album", number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x")
+
+        #expect(Loves.account(track, names) == Loves.Names(artist: "Héia", title: "Manifesto da Desgraça"), "the account's own spelling is the one an unlove must say")
+        #expect(Loves.account(track, [:]) == nil, "with no read yet there is no other name")
+        #expect(Loves.account(Track(url: URL(fileURLWithPath: "/m/other.mp3"), title: "Other", artist: "Heia", album: "Album", number: 1, disc: 1, albumArtist: "", year: 2000, duration: 100, albumID: "x"), names) == nil, "a different song of the same artist keeps its own name")
+    }
+
+    @Test func aLikeTheAccountAlreadyHoldsUnderAnotherNameIsNotPushedAgain() throws {
+        let loves = try source("Loves.swift")
+        let push = body(loves, "private func push() {")
+        let local = body(loves, "private func local(_ tracks: [Track], _ love: Bool) {")
+
+        #expect(push.contains("guard Loves.account(track, names) == nil else { continue }"), "a song the account loves under another spelling is not loved twice")
+        #expect(local.contains("let name = love ? nil : Loves.account(track, names)"), "and an unlove says the name the account keeps")
+    }
+
+    @Test func theStrictMirrorUnlovesWhatTheLibraryCannotHold() throws {
+        let loves = try source("Loves.swift")
+        let prune = body(loves, "private func prune() {")
+        let whole = body(loves, "nonisolated static func whole(settled: Bool, folders: [URL], readable: (URL) -> Bool = { FileManager.default.isReadableFile(atPath: $0.path) }) -> Bool {")
+
+        #expect(!prune.isEmpty, "the mirror must have a strict half")
+        #expect(prune.contains("unresolved.intersection(remote).subtracting(held)"), "a song the account loves that no liked song answers is the one to unlove")
+        #expect(prune.contains("guard let name = names[key] ?? Loves.parts(key)"), "the unlove carries the name the account keeps: another spelling is answered with success and kept")
+        #expect(prune.contains("wishes[key] = false"), "the unlove is a wish until the account confirms it")
+        #expect(prune.contains("pending = Loves.queued(pending, entry, flight)"), "and it walks the same queue as every other write")
+        #expect(prune.contains("if let track = loose(key)"), "a song the library holds under another spelling is liked, never unloved")
+        #expect(prune.contains("likes.add(liked, notify: false)"), "and the like does not go back up")
+        #expect(whole.contains("settled && !folders.isEmpty && folders.allSatisfy(readable)"), "a library that did not reach the end of a scan, or that lost a folder, is never pruned")
+    }
+
+    @Test func anUnloveTheAccountIgnoredGoesUpAgainWithItsName() throws {
+        let loves = try source("Loves.swift")
+        let absorb = body(loves, "private func absorb(_ found: [String: Names], whole: Bool) {")
+
+        #expect(absorb.contains("for (key, wish) in wishes where !wish && keys.contains(key)"), "the account still holds the song, so the unlove did not land")
+        #expect(absorb.contains("guard let name = found[key], (tries[key] ?? 0) < Loves.tries"), "the unlove is sent again with the account's spelling, a few times only")
+        #expect(absorb.contains("tries[key, default: 0] += 1"), "and every attempt is counted")
+        #expect(absorb.contains("tries = tries.filter { keys.contains($0.key) }"), "a song the account let go keeps no count")
+        #expect(Loves.tries == 3, "a name the account refuses forever is not sent without end")
     }
 
     @Test func theLedgerRoundTrips() throws {

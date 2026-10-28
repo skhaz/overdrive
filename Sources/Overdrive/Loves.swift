@@ -15,15 +15,25 @@ final class Loves {
         var wishes: [String: Bool] = [:]
     }
 
+    /// The spelling of a song on the account. It is not in the ledger: a read names
+    /// the list again before any unlove needs a name.
+    nonisolated struct Names: Equatable, Sendable {
+        let artist: String
+        let title: String
+    }
+
     nonisolated static let file = URL.applicationSupportDirectory.appending(path: "Overdrive/Loves.plist")
     nonisolated static let gap = Duration.milliseconds(300)
     /// How often a wish the server did not take is offered again. The path monitor
     /// sends at once on a reconnect; this is the fallback for a network that comes
-    /// back without an event, so a like is never held until the next hour.
+    /// back without an event, so a like is never held until the next read.
     nonisolated static let retry = Duration.seconds(60)
-    /// The hour that runs on its own: scrobbles and the loved tracks go up and come
-    /// down even when no scan, no reconnect, and no click happens.
-    nonisolated static let hour = Duration.seconds(3600)
+    /// The read that runs on its own, minute by minute: a love or an unlove made on
+    /// the website is in the app in a minute, without a click.
+    nonisolated static let period = Duration.seconds(60)
+    /// How many times an unlove the server ignored is sent again with the name the
+    /// server keeps before the app gives up on it.
+    nonisolated static let tries = 3
     /// The songs of one fast read. Last.fm lists the loved tracks newest first, so a
     /// page that reaches a song the cache already holds carries every song above it,
     /// and the count the server reports says whether anything below changed.
@@ -110,8 +120,10 @@ final class Loves {
     @ObservationIgnored private var primed = false
     @ObservationIgnored private var repair = true
     @ObservationIgnored private var flight: String?
+    @ObservationIgnored private var names: [String: Names] = [:]
+    @ObservationIgnored private var tries: [String: Int] = [:]
 
-    init(library: Library, lastFM: LastFM, likes: Likes, file: URL = Loves.file, retry: Duration = Loves.retry, hour: Duration = Loves.hour) {
+    init(library: Library, lastFM: LastFM, likes: Likes, file: URL = Loves.file, retry: Duration = Loves.retry, period: Duration = Loves.period) {
         self.library = library
         self.lastFM = lastFM
         self.likes = likes
@@ -138,10 +150,10 @@ final class Loves {
 
         Task { [weak self] in
             while true {
-                do { try await Task.sleep(for: hour) } catch { return }
+                do { try await Task.sleep(for: period) } catch { return }
                 guard let self else { return }
 
-                Log.loves.info("hourly", metadata: ["pending": "\(self.pending.count)", "remote": "\(self.remote.count)"])
+                Log.loves.info("tick", metadata: ["pending": "\(self.pending.count)", "remote": "\(self.remote.count)"])
                 await self.lastFM.flush()
                 await self.sync()
             }
@@ -185,6 +197,10 @@ final class Loves {
             repair = false
             push()
         }
+
+        // The read can queue a wish of its own: an unlove the server ignored, and
+        // the songs the account loves that the library cannot hold.
+        await drain()
     }
 
     private func local(_ tracks: [Track], _ love: Bool) {
@@ -192,7 +208,10 @@ final class Loves {
 
         var next = pending
         for track in tracks {
-            next = Loves.queued(next, Entry(artist: track.artist, title: track.title, love: love), flight)
+            // The account keeps its own spelling of a song, and an unlove must say
+            // that one: a name it never held answers success and keeps the song.
+            let name = love ? nil : Loves.account(track, names)
+            next = Loves.queued(next, Entry(artist: name?.artist ?? track.artist, title: name?.title ?? track.title, love: love), flight)
         }
 
         guard next != pending else {
@@ -295,7 +314,7 @@ final class Loves {
             return await every()
         }
 
-        absorb(keys, whole: false)
+        absorb(Loves.named(first.tracks), whole: false)
         return .fast
     }
 
@@ -320,8 +339,18 @@ final class Loves {
             number += 1
         }
 
-        absorb(Set(loved.map { Self.key($0.artist, $0.title) }), whole: true)
+        absorb(Loves.named(loved), whole: true)
         return .whole
+    }
+
+    /// The account's spelling of every loved song, by key.
+    nonisolated static func named(_ tracks: [LastFM.Loved]) -> [String: Names] {
+        var named: [String: Names] = [:]
+
+        for track in tracks {
+            named[Self.key(track.artist, track.title)] = Names(artist: track.artist, title: track.title)
+        }
+        return named
     }
 
     private func fetch(_ page: Int, _ limit: Int) async -> LastFM.Page? {
@@ -333,11 +362,23 @@ final class Loves {
     /// What one read means for the cache. `whole` is the entire list: only it can drop
     /// a key the server let go. A page from the top only adds, because it never sees
     /// the old songs.
-    private func absorb(_ keys: Set<String>, whole: Bool) {
+    private func absorb(_ found: [String: Names], whole: Bool) {
+        let keys = Set(found.keys)
         let known = remote
         let was = known.count
 
         for (key, wish) in wishes where wish == keys.contains(key) { wishes.removeValue(forKey: key) }
+
+        // An unlove the account still holds was not taken: the name the app sent is
+        // not the name the account keeps. Send the one it keeps, a few times only.
+        var stuck = 0
+        for (key, wish) in wishes where !wish && keys.contains(key) {
+            guard let name = found[key], (tries[key] ?? 0) < Loves.tries else { continue }
+
+            tries[key, default: 0] += 1
+            stuck += 1
+            pending = Loves.queued(pending, Entry(artist: name.artist, title: name.title, love: false), flight)
+        }
 
         let held = Set(pending.map(Self.key)).union(wishes.keys)
         let gone = whole ? Loves.dropped(keys, known, held) : []
@@ -345,8 +386,11 @@ final class Loves {
 
         if whole {
             remote = keys
+            names = found
+            tries = tries.filter { keys.contains($0.key) }
         } else {
             remote.formUnion(keys)
+            names.merge(found) { _, new in new }
         }
         if primed { unresolved.formUnion(fresh) }
         save()
@@ -361,10 +405,62 @@ final class Loves {
 
         settle(gone, matched)
         if whole {
-            Log.loves.info("pull", metadata: ["remote": "\(remote.count)", "known": "\(was)", "new": "\(fresh.count)", "gone": "\(gone.count)", "loose": "\(matched.count)", "wishes": "\(wishes.count)"])
+            Log.loves.info("pull", metadata: ["remote": "\(remote.count)", "known": "\(was)", "new": "\(fresh.count)", "gone": "\(gone.count)", "loose": "\(matched.count)", "wishes": "\(wishes.count)", "stuck": "\(stuck)"])
         } else {
-            Log.loves.info("pull fast", metadata: ["remote": "\(remote.count)", "known": "\(was)", "new": "\(fresh.count)", "gone": "\(gone.count)", "loose": "\(matched.count)", "wishes": "\(wishes.count)"])
+            Log.loves.info("pull fast", metadata: ["remote": "\(remote.count)", "known": "\(was)", "new": "\(fresh.count)", "gone": "\(gone.count)", "loose": "\(matched.count)", "wishes": "\(wishes.count)", "stuck": "\(stuck)"])
         }
+        prune()
+    }
+
+    /// The strict half of the mirror: a song the account loves that the library
+    /// cannot hold is unloved on the account, so both lists always hold the same
+    /// songs. It runs only on a settled library whose every folder is readable, so a
+    /// drive that is not mounted never takes the loves of its folder with it.
+    private func prune() {
+        guard Loves.whole(settled: library.settled, folders: library.folders), !library.albums.isEmpty else {
+            return Log.loves.debug("prune skipped", metadata: ["reason": "library not whole", "albums": "\(library.albums.count)"])
+        }
+
+        let held = Set(pending.map(Self.key)).union(wishes.keys)
+        let extra = unresolved.intersection(remote).subtracting(held)
+        guard !extra.isEmpty else { return }
+
+        var entries: [Entry] = []
+        var liked: [Track] = []
+        for key in extra.sorted() {
+            unresolved.remove(key)
+            if let track = loose(key) {
+                if !likes.contains(track) { liked.append(track) }
+                continue
+            }
+            guard let name = names[key] ?? Loves.parts(key).map({ Names(artist: $0.artist, title: $0.title) }) else { continue }
+
+            entries.append(Entry(artist: name.artist, title: name.title, love: false))
+            wishes[key] = false
+        }
+
+        if !liked.isEmpty { likes.add(liked, notify: false) }
+        guard !entries.isEmpty else { return }
+
+        for entry in entries {
+            pending = Loves.queued(pending, entry, flight)
+        }
+        save()
+        Log.loves.info("prune", metadata: ["songs": "\(entries.count)", "liked": "\(liked.count)", "remote": "\(remote.count)", "unresolved": "\(unresolved.count)"])
+    }
+
+    /// A key split back into its two folded names, for a key the read never named.
+    nonisolated static func parts(_ key: String) -> (artist: String, title: String)? {
+        let parts = key.components(separatedBy: joined)
+        guard parts.count == 2 else { return nil }
+
+        return (parts[0], parts[1])
+    }
+
+    /// Whether the library can be trusted to hold every song it had: the last scan
+    /// reached its end and every folder is there to read.
+    nonisolated static func whole(settled: Bool, folders: [URL], readable: (URL) -> Bool = { FileManager.default.isReadableFile(atPath: $0.path) }) -> Bool {
+        settled && !folders.isEmpty && folders.allSatisfy(readable)
     }
 
     /// The other half of the push: a song liked in the app that the server does not
@@ -382,6 +478,7 @@ final class Loves {
 
             let key = Self.key(track)
             guard !remote.contains(key), !held.contains(key), !rejected.contains(key) else { continue }
+            guard Loves.account(track, names) == nil else { continue }
 
             raised.append(track)
         }
@@ -390,6 +487,26 @@ final class Loves {
 
         local(raised, true)
         Log.loves.info("push", metadata: ["songs": "\(raised.count)", "likes": "\(likes.paths.count)", "remote": "\(remote.count)"])
+    }
+
+    /// The name the account knows a song by, when it holds the song under another
+    /// spelling than the file: the exact folded title first, then the closest name
+    /// of the same artist. A like already on the account under that name is not
+    /// pushed again, and an unlove goes up with it.
+    nonisolated static func account(_ track: Track, _ names: [String: Names]) -> Names? {
+        let artist = Fuzzy.fold(track.artist)
+        let title = Fuzzy.fold(track.title)
+        let letters = Similarity.letters(track.title)
+        var best: (name: Names, ratio: Double)?
+
+        for name in names.values where Fuzzy.fold(name.artist) == artist {
+            if Fuzzy.fold(name.title) == title { return name }
+            guard let ratio = Similarity.close(letters, Similarity.letters(name.title)) else { continue }
+            guard ratio > (best?.ratio ?? 0) else { continue }
+
+            best = (name, ratio)
+        }
+        return best?.name
     }
 
     /// The name of a key matched by similarity, for the case where Last.fm spells a

@@ -146,6 +146,8 @@ final class Library {
     @ObservationIgnored private var hits: Set<URL> = []
     @ObservationIgnored private var songMatches: Set<URL> = []
     var scanning = false
+    /// The last scan reached its end, so the library holds every song it found.
+    var settled = false
     var query = Player.saved?.query ?? "" { didSet { if query != oldValue { search() } } }
 
     var folders: [URL] {
@@ -475,6 +477,7 @@ final class Library {
         }
 
         scanning = true
+        settled = false
         Log.library.info("scan", metadata: ["generation": "\(generation)", "reason": "\(reason)", "first": "\(first)", "folders": Log.list(folders.map(\.path))])
 
         let previous = running
@@ -504,6 +507,7 @@ final class Library {
             remember(folders)
             guard first || shown else {
                 Log.library.info("scan unchanged", metadata: ["generation": "\(generation)", "reason": "\(reason)"])
+                settled = true
                 loaded?(true)
                 return
             }
@@ -511,6 +515,7 @@ final class Library {
             Log.library.info("scan done", metadata: ["generation": "\(generation)", "albums": "\(result.albums.count)"])
             show(result, folders)
             loudness.update(result.albums)
+            settled = true
             loaded?(true)
         }
     }
@@ -544,6 +549,7 @@ final class Library {
             remember(folders)
             show(result, folders)
             scanning = false
+            settled = true
             loaded?(true)
             loudness.update(result.albums)
         }

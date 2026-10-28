@@ -632,7 +632,7 @@ struct LibraryHarnessTests {
         #expect(Persist.read(Loves.Ledger.self, from: ledger)?.pending.isEmpty == true, "nothing is left in the queue")
     }
 
-    @Test func ALovedSongThatArrivesLaterIsLikedWithoutANewRead() async throws {
+    @Test func aLovedSongTheLibraryCannotHoldIsUnlovedAndNeverComesBack() async throws {
         let folder = try folder()
         let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
         defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
@@ -662,29 +662,32 @@ struct LibraryHarnessTests {
         func song(_ title: String) -> Track? { library.tracks.first { $0.title == title } }
         let artist = song("alpha")!.artist
         let read = Counter()
+        let sent = Counter()
         loves.read = { _, _ in
             read.value += 1
-            return LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "alpha"), LastFM.Loved(artist: artist, title: "gamma")], total: 2, pages: 1)
+            let tracks = read.value == 1 ? ["alpha", "gamma"] : ["alpha"]
+            return LastFM.Page(tracks: tracks.map { LastFM.Loved(artist: artist, title: $0) }, total: tracks.count, pages: 1)
         }
-        loves.send = { (_: Loves.Entry) in .sent }
+        loves.send = { (_: Loves.Entry) in
+            sent.value += 1
+            return .sent
+        }
         await loves.sync()
 
         #expect(read.value == 1)
         #expect(likes.paths == [song("alpha")!.url.path], "the loved song the library has is liked")
-        #expect(loves.remote == Set(["alpha", "gamma"].map { Loves.key(artist, $0) }), "and the one it lacks stays in the mirror")
+        #expect(sent.value == 1, "the loved song the library lacks is unloved upstream")
+        #expect(loves.mirror == [Loves.key(artist, "alpha")], "so both lists hold the same songs")
 
         try put(folder, "Other/gamma.mp3")
         await settle(library, [folder])
 
-        #expect(read.value == 1, "the song that arrived later was liked with no request of its own")
-        #expect(likes.paths.sorted() == [song("alpha")!.url.path, song("gamma")!.url.path].sorted(), "and it is liked now")
-        #expect(likes.contains(song("gamma")!))
+        #expect(!likes.contains(song("gamma")!), "a song the account no longer loves is not liked just because the file arrived")
 
-        try FileManager.default.removeItem(at: folder.appending(path: "Other/gamma.mp3"))
-        await settle(library, [folder])
+        await loves.sync()
 
-        #expect(read.value == 1, "a song that leaves the library is not unloved by a local pass")
-        #expect(loves.remote.contains(Loves.key(artist, "gamma")), "and its love is still on the mirror, for the next time")
+        #expect(read.value >= 2, "the next read confirms the unlove")
+        #expect(!loves.remote.contains(Loves.key(artist, "gamma")), "and the mirror drops it for good")
     }
 
     @Test func ALovedSongSpelledDifferentlyIsMatchedOnTheReadThatBringsIt() async throws {
@@ -935,7 +938,7 @@ struct LibraryHarnessTests {
         #expect(loves.pending.isEmpty, "and the queue is empty again")
     }
 
-    @Test func theHourKeepsTheLovedTracksInStepWithoutAClick() async throws {
+    @Test func aMinuteKeepsTheLovedTracksInStepWithoutAClick() async throws {
         let folder = try folder()
         let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
         defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
@@ -953,7 +956,7 @@ struct LibraryHarnessTests {
 
         let lastFM = LastFM(configuration)
         lastFM.user = "tester"
-        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .seconds(3600), hour: .milliseconds(30))
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .seconds(3600), period: .milliseconds(30))
 
         func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
         let artist = song("alpha").artist
@@ -967,7 +970,7 @@ struct LibraryHarnessTests {
             try await Task.sleep(for: .milliseconds(10))
         }
 
-        #expect(read.value == 1, "the hour asks the account once, with no click and no reconnect: \(read.value)")
+        #expect(read.value == 1, "the minute asks the account once, with no click and no reconnect: \(read.value)")
         #expect(loves.remote == [Loves.key(artist, "alpha")], "and takes what the server holds")
         #expect(likes.contains(song("alpha")), "so the loved song is liked with nobody touching the app")
     }
@@ -1048,6 +1051,98 @@ struct LibraryHarnessTests {
         #expect(loves.remote.count == 3, "the whole list is the mirror now")
         #expect(likes.paths.count == 3, "and every loved song the library holds is liked")
         #expect(likes.contains(song("gamma")), "including the one on the second page")
+    }
+
+    @Test func aSongTheLibraryLacksIsUnlovedOnTheAccount() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        try put(folder, "Album/alpha.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        lastFM.session = "key"
+
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let artist = song("alpha").artist
+        let ghost = LastFM.Loved(artist: "Héia", title: "Manifesto da Desgraça")
+        let data = try #require(Persist.encode(Loves.Ledger(remote: [Loves.key(ghost.artist, ghost.title)], pending: [], dropped: [], wishes: [:]), for: ledger))
+        #expect(Persist.write(data, to: ledger))
+
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .seconds(3600))
+        let sent = Counter()
+        var entries: [Loves.Entry] = []
+        loves.send = { (entry: Loves.Entry) in
+            sent.value += 1
+            entries.append(entry)
+            return .sent
+        }
+        loves.read = { _, _ in
+            LastFM.Page(tracks: [LastFM.Loved(artist: artist, title: "alpha"), ghost], total: 2, pages: 1)
+        }
+
+        await loves.sync()
+
+        #expect(likes.contains(song("alpha")), "a loved song the library holds is liked")
+        #expect(entries == [Loves.Entry(artist: "Héia", title: "Manifesto da Desgraça", love: false)], "the song the library lacks is unloved, with the spelling the account keeps")
+        #expect(loves.mirror == [Loves.key(artist, "alpha")], "so both lists hold the same songs")
+        #expect(Persist.read(Loves.Ledger.self, from: ledger)?.pending.isEmpty == true, "and the wish is on the disk until the account confirms it")
+    }
+
+    @Test func aLovedSongSpelledDifferentlyIsLikedNotUnloved() async throws {
+        let folder = try folder()
+        let ledger = FileManager.default.temporaryDirectory.appending(path: "OverdriveLoves-\(UUID().uuidString).plist")
+        defer { clean(folder); try? FileManager.default.removeItem(at: ledger) }
+        try put(folder, "Album/alpha.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        let likes = Likes(file: Likes.file(in: folder), folder: folder)
+        var configuration = LastFM.Configuration()
+        configuration.endpoint = URL(string: "https://example.invalid/2.0/")!
+        configuration.credentials = folder.appending(path: "fm.plist")
+        configuration.store = folder.appending(path: "sc.plist")
+        configuration.retry = .seconds(3600)
+        configuration.monitor = false
+
+        let lastFM = LastFM(configuration)
+        lastFM.user = "tester"
+        lastFM.session = "key"
+
+        func song(_ title: String) -> Track { library.tracks.first { $0.title == title }! }
+        let artist = song("alpha").artist
+        let loved = LastFM.Loved(artist: artist, title: "alphax")
+        let data = try #require(Persist.encode(Loves.Ledger(remote: [Loves.key(loved.artist, loved.title)], pending: [], dropped: [], wishes: [:]), for: ledger))
+        #expect(Persist.write(data, to: ledger))
+
+        let loves = Loves(library: library, lastFM: lastFM, likes: likes, file: ledger, retry: .seconds(3600))
+        let sent = Counter()
+        var entries: [Loves.Entry] = []
+        loves.send = { (entry: Loves.Entry) in
+            sent.value += 1
+            entries.append(entry)
+            return .sent
+        }
+        loves.read = { _, _ in
+            LastFM.Page(tracks: [loved], total: 1, pages: 1)
+        }
+
+        await loves.sync()
+
+        #expect(sent.value == 0, "a song the library holds under a different spelling is never unloved or pushed twice")
+        #expect(entries.isEmpty, "the account already loves it, so no write goes up")
+        #expect(likes.contains(song("alpha")), "the closest song of the library is liked instead")
+        #expect(loves.mirror == [Loves.key(loved.artist, loved.title)], "and the account keeps the song it loves")
     }
 
     @Test func theBootIsLazyAndStartsFromTheCache() async throws {
