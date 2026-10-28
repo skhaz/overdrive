@@ -164,10 +164,11 @@ final class Records: @unchecked Sendable {
             "Picture.swift": ["covers process failed", "covers"],
             "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved"],
             "LastFM.swift": ["connected", "connect failed", "http failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "scrobble skipped", "settle", "now playing", "artist page", "open artist"],
-            "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted", "halfway", "append", "append ignored"],
+            "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted", "append", "append ignored"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
-            "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded", "discovery waiting", "discovery note", "artists drawn", "artist drawn"],
+            "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded", "discovery denied", "discovery note", "task waiting", "artists drawn", "artist drawn"],
             "Infinity.swift": ["infinity", "infinity ignored", "infinity kept", "infinity waiting", "infinity full", "infinity dropped", "infinity empty", "infinity cycle", "infinity filled", "infinity drew"],
+            "Skips.swift": ["load", "add", "add skipped", "remove", "remove skipped", "save skipped"],
             "Loves.swift": ["load", "tick", "sync asked", "sync skipped", "queued", "queue kept", "queue held", "sent", "pull stopped", "pull wide", "pull fast", "pull", "apply", "push", "arrive", "arrive ignored", "prune", "prune skipped"],
             "YouTube.swift": ["ready", "login check failed", "candidate rejected", "superseded", "no video", "remote", "window closed", "song resumed", "corner", "failure ignored"],
             "Lyrics.swift": ["refresh result", "replace", "source", "invalid json", "latin1 fallback", "request gave up", "discard"],
@@ -202,9 +203,10 @@ final class Records: @unchecked Sendable {
 
         let discovery = try source("Discovery.swift")
         #expect(body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("Log.player."), "Discovery.pick must log the click")
+        #expect(body(discovery, "func dismissNote() {").contains("Log.player."), "Discovery.dismissNote must log the dismissal")
         #expect(body(discovery, "private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {").contains("Log.player."), "Discovery.walk must log its result")
-        #expect(body(discovery, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("Log.player."), "Discovery.start must log an empty answer")
-        #expect(body(discovery, "private func waited(_ mine: Int, _ pool: Pool) {").contains("Log.player."), "Discovery.waited must log the spinner")
+        #expect(body(discovery, "private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {").contains("Log.player."), "Discovery.start must log an empty answer and every song the veto dropped")
+        #expect(body(discovery, "func spin(_ mine: Int) {").contains("Log.player."), "Discovery.spin must log the spinner")
         #expect(body(discovery, "func dismissNote() {").contains("Log.player."), "Discovery.dismissNote must log the dismissal")
         #expect(body(discovery, "nonisolated static func collect(").contains("Log.player."), "Discovery.collect must log every artist it draws")
 
@@ -212,6 +214,10 @@ final class Records: @unchecked Sendable {
         for name in ["toggle", "off", "stopped", "passed", "fill", "draw"] {
             #expect(body(infinity, "func \(name)(").contains("Log.player.") || body(infinity, "private func \(name)(").contains("Log.player."), "Infinity.\(name) must log")
         }
+
+        let views = try source("Views.swift")
+        #expect(views.contains("Log.skips.info(\"deny confirmed\"") && views.contains("Log.skips.info(\"deny cancelled\""), "the veto question logs both answers")
+        #expect(views.contains("Log.skips.debug(\"deny ignored\""), "and it logs a question it refused")
 
         let lastFM = try source("LastFM.swift")
         for name in ["artistURL", "openArtist"] {
@@ -223,7 +229,6 @@ final class Records: @unchecked Sendable {
             #expect(body(loves, "func \(name)(").contains("Log.loves.") || body(loves, "private func \(name)(").contains("Log.loves."), "Loves.\(name) must log")
         }
 
-        let views = try source("Views.swift")
         for signature in ["func goBack(", "func goForward(", "func press(", "func reveal(_ track", "func navigate("] {
             #expect(body(views, signature).contains("Log."), "\(signature) must log")
         }

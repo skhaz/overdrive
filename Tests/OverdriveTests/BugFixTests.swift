@@ -187,7 +187,7 @@ struct LibraryBugTests {
 
     @Test func likesAndPlaylistsReloadAfterEveryScan() throws {
         let views = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
-        #expect(views.contains("        likes.load()\n        playlists.load()\n        navigation.refresh(library.albums)"), "a drive that mounts after launch must bring back its likes and playlists")
+        #expect(views.contains("        likes.load()\n        playlists.load()\n        skips.load()\n        navigation.refresh(library.albums)"), "a drive that mounts after launch must bring back its likes, playlists, and denials")
     }
 
     @Test func aPlaylistFileOnDiskIsNeverOverwrittenByANewOne() throws {

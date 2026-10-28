@@ -22,6 +22,7 @@ nonisolated enum Log {
     static let loves = make("loves")
     static let plays = make("plays")
     static let playlists = make("playlists")
+    static let skips = make("skips")
     static let navigation = make("navigation")
     static let keys = make("keys")
     static let crash = make("crash")

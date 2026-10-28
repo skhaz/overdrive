@@ -52,14 +52,20 @@ struct ViewStructureTests {
     }
 
     @Test func anotherPageClearsTheSearch() throws {
-        #expect(try source().contains("""
-                .onChange(of: navigation.page) {
-                    guard !navigation.searching else { return }
+        let text = try source()
+        let start = try #require(text.range(of: "private struct QueryFocus: ViewModifier {"))
+        let rest = text[start.lowerBound...]
+        let focus = String(rest[..<(try #require(rest.range(of: "\n}\n")).lowerBound)])
 
-                    search = ""
-                    library.query = ""
-                }
+        #expect(focus.contains("""
+                    .onChange(of: navigation.page) {
+                        guard !navigation.searching else { return }
+
+                        search = ""
+                        library.query = ""
+                    }
         """), "a page change must clear the search, except the page the search opens")
+        #expect(text.contains(".modifier(QueryFocus(navigation: $navigation, tracker: tracker, placed: placed, remember: remember, search: $search))"), "the window installs the search rules")
         #expect(try source().contains("navigation.filter(.section(.albums), to: text, leaving: tracker.position)"), "a click on an artist name must keep its search")
     }
 

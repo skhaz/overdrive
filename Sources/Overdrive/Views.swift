@@ -286,6 +286,7 @@ struct TrackMenu: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
+    @Environment(Skips.self) private var skips
     @Environment(YouTube.self) private var youTube
 
     var body: some View {
@@ -296,6 +297,11 @@ struct TrackMenu: View {
             let liked = tracks.allSatisfy(likes.contains)
             Button((liked ? "Unlike " : "Like ") + (tracks.count == 1 ? "Song" : "Songs"), systemImage: liked ? "heart.slash" : "heart") { likes.toggle(tracks) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+
+            let denied = tracks.allSatisfy(skips.contains)
+            Button((denied ? "Pick Again in Discovery" : "Never Pick in Discovery") + (tracks.count == 1 ? " Song" : " Songs"), systemImage: denied ? "arrow.uturn.backward" : "nosign") {
+                NotificationCenter.default.post(name: .denySongs, object: tracks)
+            }
 
             if tracks.count == 1 {
                 Button("Watch Video on YouTube") { youTube.watch(tracks[0]) }
@@ -487,6 +493,41 @@ struct LyricsView: View {
                 Task { typing = true }
             }
         }
+    }
+}
+
+/// The search field and the query of the library, and what follows one another.
+/// Its own view, because a `body` this wide stops the Swift type checker: the
+/// rules are the same, they only live somewhere smaller.
+private struct QueryFocus: ViewModifier {
+    @Environment(Library.self) private var library
+    @Environment(Lyrics.self) private var lyrics
+    @Environment(Playlists.self) private var playlists
+    @Binding var navigation: Navigation
+    let tracker: Tracker
+
+    let placed: () -> Void
+    let remember: () -> Void
+    @Binding var search: String
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: navigation.place, placed)
+            .onChange(of: playlists.names, initial: true) { lyrics.settle { navigation.prune(playlists.names, fallback: .section(.albums)) } }
+            .onChange(of: navigation.page) {
+                guard !navigation.searching else { return }
+
+                search = ""
+                library.query = ""
+            }
+            .onChange(of: library.query, initial: true) {
+                if search != library.query { search = library.query }
+            }
+            .onChange(of: library.query) { old, new in
+                Log.navigation.info("query", metadata: ["old": "\(old)", "new": "\(new)"])
+                lyrics.settle { navigation.searched(from: old, to: new, leaving: tracker.position) }
+                remember()
+            }
     }
 }
 
@@ -849,6 +890,7 @@ extension Notification.Name {
     static let saveLyrics = Notification.Name("saveLyrics")
     static let floatLyrics = Notification.Name("floatLyrics")
     static let clearUpNext = Notification.Name("clearUpNext")
+    static let denySongs = Notification.Name("denySongs")
     static let discovery = Notification.Name("discovery")
     static let find = Notification.Name("find")
 }
@@ -1358,6 +1400,47 @@ struct ClearUpNext: ViewModifier {
     }
 }
 
+/// The veto of the user is never set by one click: the song menu asks first,
+/// and the answer goes to `Skips`, which every discovery reads.
+struct DenySongs: ViewModifier {
+    @Environment(Skips.self) private var skips
+    @State private var showing = false
+    @State private var pending: [Track] = []
+
+    private var denied: Bool { !pending.isEmpty && pending.allSatisfy(skips.contains) }
+    private var label: String {
+        let songs = pending.count == 1 ? "Song" : "Songs"
+        return (denied ? "Pick " : "Never Pick ") + songs + " in Discovery"
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog(label, isPresented: $showing) {
+                Button(label, role: denied ? nil : .destructive) {
+                    Log.skips.info("deny confirmed", metadata: ["songs": "\(pending.count)", "state": denied ? "allowed" : "denied"])
+                    denied ? skips.remove(pending) : skips.add(pending)
+                    pending = []
+                }
+                Button("Cancel", role: .cancel) {
+                    Log.skips.info("deny cancelled", metadata: ["songs": "\(pending.count)"])
+                    pending = []
+                }
+            } message: {
+                Text(denied
+                     ? "The song goes back in every discovery of your library."
+                     : "The song stays in your library and plays when you choose it, and no discovery picks it again.")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .denySongs)) { note in
+                guard let tracks = note.object as? [Track], !tracks.isEmpty else {
+                    return Log.skips.debug("deny ignored", metadata: ["reason": "no song"])
+                }
+
+                pending = tracks
+                showing = true
+            }
+    }
+}
+
 struct UpNextView: View {
     @Environment(Library.self) private var library
     @Environment(Player.self) private var player
@@ -1833,6 +1916,7 @@ struct ContentView: View {
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
+    @Environment(Skips.self) private var skips
     @Environment(YouTube.self) private var youTube
     @Environment(\.openWindow) private var openWindow
     @State private var lyrics = Lyrics(enabled: Player.saved?.lyrics ?? true)
@@ -2026,12 +2110,13 @@ struct ContentView: View {
             lyrics.settle { navigation.push(route, leaving: tracker.position) }
         })
         .modifier(ClearUpNext(clearing: $clearing))
+        .modifier(DenySongs())
         .modifier(Find { window in focusSearch(window, selecting: true) })
         .onReceive(NotificationCenter.default.publisher(for: .reveal)) { _ in
             if let current = player.current { reveal(current) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .discovery)) { note in
-            let stage = note.object as? String ?? Discovery.done
+            let stage = note.object as? String ?? Work.done
             Log.navigation.info("discovery", metadata: ["stage": "\(stage)", "songs": "\(player.queue.count)", "page": "\(page.key)"])
             lyrics.settle { navigation.open(.upNext, leaving: tracker.position) }
         }
@@ -2086,6 +2171,7 @@ struct ContentView: View {
             lyrics.flush()
             playlists.load()
             likes.load()
+            skips.load()
         }
         .onChange(of: lyrics.floating) {
             if lyrics.floating {
@@ -2096,22 +2182,7 @@ struct ContentView: View {
                 panel?.hide()
             }
         }
-        .onChange(of: navigation.place, placed)
-        .onChange(of: playlists.names, initial: true) { lyrics.settle { navigation.prune(playlists.names, fallback: .section(.albums)) } }
-        .onChange(of: navigation.page) {
-            guard !navigation.searching else { return }
-
-            search = ""
-            library.query = ""
-        }
-        .onChange(of: library.query, initial: true) {
-            if search != library.query { search = library.query }
-        }
-        .onChange(of: library.query) { old, new in
-            Log.navigation.info("query", metadata: ["old": "\(old)", "new": "\(new)"])
-            lyrics.settle { navigation.searched(from: old, to: new, leaving: tracker.position) }
-            remember()
-        }
+        .modifier(QueryFocus(navigation: $navigation, tracker: tracker, placed: placed, remember: remember, search: $search))
         .environment(\.tracker, tracker)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .frame(minWidth: 820, minHeight: 520)
@@ -2246,6 +2317,7 @@ struct ContentView: View {
         player.refresh { library.track($0) }
         likes.load()
         playlists.load()
+        skips.load()
         navigation.refresh(library.albums)
         guard let saved, !library.albums.isEmpty else { return }
 

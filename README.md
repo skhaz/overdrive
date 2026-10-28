@@ -91,6 +91,8 @@ Right-click a song, an album, or the bottom bar. You can:
 - See the **Information** of the song file. Click an item to copy it.
 - **Open in Mp3tag** or **Show in Finder**.
 
+- **Never Pick in Discovery**. The song stays in your library, stays in every list, and plays whenever you choose it, but no discovery and no Infinity picks it again. The app asks you to confirm. The same item says **Pick Again in Discovery** and takes the song back. The list of denied songs is kept in `Skip.plist` next to your likes and playlists, so it travels with the folder.
+
 To do this for more than one song, select the songs with Command-click or Shift-click, then right-click one of them.
 
 ### Make playlists

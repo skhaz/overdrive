@@ -39,15 +39,6 @@ struct InfinityTests {
         #expect(Infinity.pause(on: true, flight: false, ahead: 0, kept: Infinity.keep) == .now, "and so does an empty list")
     }
 
-    @Test func aReplacedFillLandsOnNothing() {
-        #expect(Infinity.holds(1, current: 1, on: true), "the fill that is still the one in flight may play its songs")
-        #expect(!Infinity.holds(1, current: 2, on: true), "a mode that was turned off and on again does not want the songs of the old fill")
-        #expect(!Infinity.holds(2, current: 1, on: true), "and a run that has not begun yet is no answer")
-        #expect(!Infinity.holds(1, current: 1, on: false), "a mode that left takes nothing, not even its own run")
-        #expect(Infinity.Stage.start.rawValue == "start", "the two stages name themselves in the log")
-        #expect(Infinity.Stage.halfway.rawValue == "halfway")
-    }
-
     @Test func aFillThatFoundNoArtistStartsTheLibraryOver() {
         #expect(Infinity.cycles(pool: 0, served: 20), "every song of the library played, so the cycle begins again")
         #expect(!Infinity.cycles(pool: 3, served: 20), "artists are left, so the fill asks them")
@@ -101,24 +92,33 @@ struct InfinityTests {
 
     // MARK: - the wiring
 
-    @Test func theSongHalfFiresOncePerSongAndEveryListResetsIt() throws {
+    @Test func everyShrinkOfTheListAsksForMoreAndNotTheClock() throws {
         let player = try source("Player.swift")
-        let tick = body(player, "private func tick(_ seconds: Double) {")
 
-        #expect(tick.contains("if !halved, track.duration > 0, played * 2 >= track.duration {"), "the halfway point is the half of the song, not a fixed time")
-        #expect(tick.components(separatedBy: "halfway?()").count - 1 == 1, "one call per song")
-        #expect(tick.contains("halved = true"), "and it is remembered, so a tick every half second spends nothing")
-        #expect(tick.range(of: "halved = true")!.lowerBound < tick.range(of: "scrobbled = true")!.lowerBound, "the fill is asked before the scrobble, so a slow answer still arrives in time")
-
-        for signature in ["private func begin() {", "private func stop() {"] {
-            #expect(try body(player, signature).contains("halved = false"), "\(signature) must arm the next song again")
-        }
+        #expect(player.contains("private(set) var queue: [Track] = [] { didSet { revision += 1; buffer?() } }"), "a list that changed can only have shrunk, so the mode is asked")
+        #expect(player.contains("private(set) var index = 0 { didSet { if index != oldValue { buffer?() } } }"), "and so is a song that moved")
+        #expect(player.components(separatedBy: "buffer?()").count - 1 == 2, "two doors, both of them the shape of the list")
+        #expect(!player.contains("halved"), "no halfway flag: the rule is the size of the buffer, not the clock")
+        #expect(!player.contains("halfway"), "and no per-song hook left to remember it by")
+        #expect(body(player, "private func tick(_ seconds: Double) {").contains("scrobbled = true"), "the tick still counts, scrobbles, and announces")
 
         #expect(player.contains("resets?(\"new list\")"), "a list that replaces the player stops the mode")
         #expect(player.contains("resets?(\"list ended\")"), "so does a list that ended")
         #expect(player.contains("resets?(\"cleared\")"), "and a Clear Up Next")
         #expect(body(player, "func play(_ tracks: [Track], at start: Int = 0) {").range(of: "resets?(")!.lowerBound < body(player, "func play(_ tracks: [Track], at start: Int = 0) {").range(of: "order = tracks")!.lowerBound,
                 "the mode is told before the new list is in place, so no fill of the old one lands on it")
+    }
+
+    @Test func aJumpToTheEndOfTheListRefillsItAtOnce() {
+        // the report: clicking the last song of an infinity list left nothing ahead
+        // and the mode never asked for more, because the clock never reached a half
+        let queue = 20
+        let index = 19
+
+        #expect(Player.ahead(queue, index: index) == 0, "the last song of the list has nothing ahead")
+        #expect(Infinity.pause(on: true, flight: false, ahead: Player.ahead(queue, index: index), kept: Infinity.keep) == .now, "so the shape of the list itself starts a fill")
+        #expect(Infinity.pause(on: true, flight: false, ahead: Player.ahead(40, index: 39), kept: Infinity.keep) == .now, "and it does not matter that the song is only one line into its play")
+        #expect(Infinity.pause(on: true, flight: false, ahead: 20, kept: Infinity.keep) == .full, "a list that is still full waits for the clock")
     }
 
     @Test func anAppendMovesNothingAndNeverStartsAList() throws {
@@ -139,28 +139,34 @@ struct InfinityTests {
         #expect(append.contains("save()"), "a fill that survives a crash survives in the session")
     }
 
-    @Test func theModeStartsThroughTheOneDoorAndStopsWithTheList() throws {
+    @Test func theStartIsATaskOfTheUserAndATopUpIsQuiet() throws {
         let infinity = try source("Infinity.swift")
-        let fill = body(infinity, "private func fill(at stage: Stage, _ run: Int) async {")
+        let fill = body(infinity, "private func fill(at stage: Infinity.Stage, _ mine: Int) async {")
 
         #expect(fill.contains("player.random(songs)"), "the start plays the first song, as every discovery pool does")
-        #expect(fill.contains("player.append(songs)"), "and a refill only adds to the end")
+        #expect(fill.contains("discovery.open(Work.done)"), "and the start opens Up Next, so the user sees what the mode chose")
+        #expect(fill.contains("player.append(songs)"), "a refill only adds to the end")
+        #expect(fill.contains("player.random(songs)\n            discovery.open(Work.done)"), "only the start opens the screen, a refill leaves the list where the user is")
         #expect(fill.contains("if stage == .start {"), "the two stages are a type, not a string the caller guesses")
-        #expect(fill.range(of: "guard Infinity.holds(run, current: self.run, on: on) else {")!.lowerBound < fill.range(of: "player.random(songs)")!.lowerBound,
-                "an answer that arrived after the mode stopped, or after a newer fill began, touches no player")
-        #expect(fill.contains("if run == self.run {"), "only the current fill clears its own handle, so a replaced one cannot free the flight of its successor")
-        #expect(fill.range(of: "starting = false")!.lowerBound > fill.range(of: "if run == self.run {")!.lowerBound, "and only inside that guard")
+        #expect(fill.range(of: "guard discovery.finish(mine, note) else {")!.lowerBound < fill.range(of: "player.random(songs)")!.lowerBound,
+                "an answer that arrived after a newer task began touches no player")
+        #expect(body(infinity, "func toggle() {").contains("flight = Task { await self.fill(at: .start, discovery.begin()) }"),
+                "the start takes the shared token of a task the user asked for, so the menus dim and the spinner may show")
+        #expect(body(infinity, "func passed() {").contains("guard let mine = discovery.claim() else {"),
+                "a top-up claims a quiet token, and steps aside when the user has a task in flight")
         #expect(body(infinity, "func stopped(_ reason: String) {").contains("guard !starting else {"), "the mode survives the list it just started")
         #expect(body(infinity, "func toggle() {").contains("starting = true"), "and it marks that start")
         #expect(body(infinity, "func toggle() {").contains("guard discovery.ready else {"), "a click with no account is refused before any request")
-        #expect(body(infinity, "func off(_ reason: String) {").contains("run += 1"), "leaving the mode retires the fill in flight by number, not only by cancel")
         let passed = body(infinity, "func passed() {")
 
-        #expect(passed.contains("Infinity.pause(on: on, flight: flight != nil, ahead: player.ahead, kept: Infinity.keep)"), "the tick asks the rule, it does not invent one")
+        #expect(passed.contains("Infinity.pause(on: on, flight: flight != nil, ahead: player.ahead, kept: Infinity.keep)"), "the trigger asks the rule, it does not invent one")
         #expect(passed.components(separatedBy: "flight = Task").count - 1 == 1, "one door starts a fill")
-        #expect(passed.contains("run += 1\n            flight = Task { await self.fill(at: .halfway, self.run) }"), "and it takes a new run before the task begins")
         #expect(passed.range(of: "case .off:\n            return") != nil, "and an off mode returns from it without a log line of its own")
-        #expect(infinity.components(separatedBy: "run += 1").count - 1 == 3, "toggle, off, and passed are the three places a run changes")
+        #expect(body(infinity, "func off(_ reason: String) {").contains("flight?.cancel()"), "leaving the mode cancels the fill in flight")
+
+        #expect(body(infinity, "private func draw() async -> [Track] {").contains("Discovery.allowed(library.pool(excluding: served), skipping: skips)"),
+                "a denied song never enters the pool of a fill, so it never costs a request")
+        #expect(!infinity.contains("player.remove"), "the mode never takes songs out of the list: it only adds")
         #expect(body(infinity, "func off(_ reason: String) {").contains("flight?.cancel()"), "stopping cancels the fill in flight")
         #expect(body(infinity, "func off(_ reason: String) {").contains("served = []"), "and forgets what it played, for the next time")
         #expect(!body(infinity, "func off(_ reason: String) {").contains("player.remove"), "the songs already in the list stay: the user keeps what they heard")
@@ -201,9 +207,13 @@ struct InfinityTests {
         let menu = try #require(app.range(of: "CommandMenu(\"Discovery\") {")).upperBound
         #expect(String(app[menu...].prefix(400)).contains(".environment(infinity)"), "the menu builds the toggle that reads it, or the app traps at launch")
 
-        #expect(app.contains("player.halfway = { [weak infinity] in infinity?.passed() }"), "the player calls the mode at the half of a song")
+        let song = try #require(app.range(of: "CommandMenu(\"Song\") {")).upperBound
+        #expect(String(app[song...].prefix(500)).contains(".environment(skips)"), "the Song menu builds the veto item, so it needs the list too")
+
         #expect(app.contains("player.resets = { [weak infinity] reason in infinity?.stopped(reason) }"), "and when a list takes its place")
         #expect(String(app[app.range(of: "let infinity = ")!.lowerBound...].prefix(300)).contains("discovery: discovery"), "the mode borrows the readiness rule of the pickers, so it is offered on the same terms")
+        #expect(app.contains("player.buffer = { [weak infinity] in infinity?.passed() }"), "the player calls the mode whenever the list can have shrunk")
+        #expect(!app.contains("player.halfway"), "and no longer at the half of a song")
     }
 
     // MARK: - helpers

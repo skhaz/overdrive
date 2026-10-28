@@ -8,16 +8,6 @@ final class Discovery {
 
     nonisolated static let window = 4
     nonisolated static let tracks = 5
-
-    /// The milliseconds a network pick may run before the Up Next list shows its
-    /// spinner. A faster answer never flickers one.
-    nonisolated static let spinAfter: UInt64 = 200
-
-    /// The two stages a discovery announces: the pick the user chose, and the
-    /// songs that arrived. The screen opens on both, so a pick that spends
-    /// requests is on screen while it works.
-    nonisolated static let opening = "open"
-    nonisolated static let done = "done"
     nonisolated static let pool = 5
     nonisolated static let least = 20
     nonisolated static let most = 200
@@ -117,6 +107,20 @@ final class Discovery {
         return Match(track: candidates[index].track, title: candidates[index].title, candidates: candidates.count)
     }
 
+    /// The entries of a pool that hold a song the user has not denied. Every door
+    /// of a picker reads this, so no path slips past the veto, and an artist whose
+    /// every song is denied costs no request and never enters a list.
+    static func allowed(_ pool: [(name: String, songs: [Track])], skipping skips: Skips) -> [(name: String, songs: [Track])] {
+        guard !pool.isEmpty else { return pool }
+
+        return pool.compactMap { entry in
+            let held = skips.allowed(entry.songs)
+            guard !held.isEmpty else { return nil }
+
+            return (entry.name, held)
+        }
+    }
+
     /// `count` names of the pool, drawn at random and never repeated: the empty
     /// ones are out, and a name the service sent twice is one name.
     nonisolated static func draw(_ pool: [String], _ count: Int, using pick: (Int) -> Int) -> [String] {
@@ -197,54 +201,9 @@ final class Discovery {
         return found
     }
 
-    /// What a discovery that spends requests leaves on screen: the menus are
-    /// dimmed while it runs, the list spins after `Discovery.spinAfter`, and a
-    /// pick that added nothing says why. One value, so a late answer of the pick
-    /// before cannot write over the pick that replaced it.
-    nonisolated struct Work {
-        private(set) var running = false
-        private(set) var spinning = false
-        private(set) var note: String?
-        private(set) var generation = 0
-
-        /// A new pick retires the one before it and opens its screen at once.
-        mutating func begin() -> Int {
-            generation += 1
-            running = true
-            spinning = false
-            note = nil
-
-            return generation
-        }
-
-        /// The list may spin now, but only for the pick that is still current.
-        mutating func spin(_ mine: Int) -> Bool {
-            guard mine == generation, running else { return false }
-
-            spinning = true
-            return true
-        }
-
-        /// The pick is over: songs went in the list, or the note says why they
-        /// did not. False when a newer pick took over, which keeps its state.
-        mutating func end(_ mine: Int, _ note: String?) -> Bool {
-            guard mine == generation else { return false }
-
-            running = false
-            spinning = false
-            self.note = note
-
-            return true
-        }
-
-        mutating func dismiss() {
-            note = nil
-        }
-    }
-
     /// Why a network pick added no song, in the words the list shows.
     enum Cause {
-        case noChart, noBands, noSongs, noMatch
+        case noChart, noBands, noSongs, noMatch, noArtists
     }
 
     nonisolated static func reason(_ cause: Cause, _ artists: Int) -> String {
@@ -253,21 +212,96 @@ final class Discovery {
         case .noBands: "No band has a play count yet."
         case .noSongs: "None of those \(artists) artists is in your library."
         case .noMatch: "The top \(tracks) of those artists matched no song of yours."
+        case .noArtists: "No artist of your library is left to ask. Deny fewer songs, or turn the mode off and on."
         }
     }
 
-    /// The pick that is on its way, and what the Up Next list shows for it.
+    /// The task on its way and what its UI shows. One value for the pickers of
+    /// this menu and for the `Infinity` mode, so there is one spinner, one dim,
+    /// and one request budget between them.
     private(set) var work = Work()
+
+    /// The songs one local picker draws: the library as the scan holds it, and
+    /// without the songs the user denied. The unfiltered path is the common one,
+    /// so an empty denylist costs nothing and the reservoir sample stays one pass.
+    private func picked(_ pool: Pool, _ count: Int) -> [Track] {
+        guard skips.count > 0 else {
+            switch pool {
+            case .songs: return library.random(count)
+            case .unplayed: return library.unplayed(count)
+            case .played: return library.topmost(count)
+            default: return []
+            }
+        }
+
+        let store = library.plays
+        let songs = skips.allowed(library.tracks).filter { track in
+            switch pool {
+            case .songs: true
+            case .unplayed: !store.played(Plays.key(track))
+            default: store.played(Plays.key(track))
+            }
+        }
+
+        return Player.picked(songs, count)
+    }
+
+    /// The list every network task fills, and the screen that shows it.
+    func open(_ stage: String) {
+        NotificationCenter.default.post(name: .discovery, object: stage)
+    }
+
+    /// A task the user asked for: it retires the one before it and opens Up Next
+    /// at once, so the user sees the work instead of waiting in the dark.
+    func begin() -> Int {
+        let mine = work.begin()
+        open(Work.opening)
+
+        return mine
+    }
+
+    /// A background top-up. Refused while a task is in flight: the click of the
+    /// user wins the spinner and the requests, and a fill never steals either.
+    func claim() -> Int? {
+        work.claim()
+    }
+
+    /// The list may show its spinner for this task, and only while it is current.
+    func spin(_ mine: Int) {
+        guard work.spin(mine) else { return }
+
+        Log.player.debug("task waiting", metadata: ["ms": "\(Work.after)"])
+    }
+
+    /// The task is over. A newer one took over, and its state stays.
+    @discardableResult
+    func finish(_ mine: Int, _ note: String?) -> Bool {
+        work.end(mine, note)
+    }
+
+    /// The mode left, and nothing of it is on screen any more.
+    func reset() {
+        work.reset()
+    }
+
+    func dismissNote() {
+        guard work.note != nil else { return }
+
+        work.dismiss()
+        Log.player.info("discovery note", metadata: ["reason": "dismissed"])
+    }
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let player: Player
+    @ObservationIgnored private let skips: Skips
     @ObservationIgnored private var job: Task<Void, Never>?
 
-    init(library: Library, lastFM: LastFM, player: Player) {
+    init(library: Library, lastFM: LastFM, player: Player, skips: Skips) {
         self.library = library
         self.lastFM = lastFM
         self.player = player
+        self.skips = skips
     }
 
     var ready: Bool {
@@ -281,23 +315,22 @@ final class Discovery {
 
         job?.cancel()
         job = nil
-        let mine = work.begin()
+        let mine = begin()
 
         Log.player.info("discovery", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
 
         switch pool {
         case .songs:
-            start(library.random(count), mine, pool, count, nil)
+            start(picked(.songs, count), mine, pool, count, nil)
         case .unplayed:
-            start(library.unplayed(count), mine, pool, count, nil)
+            start(picked(.unplayed, count), mine, pool, count, nil)
         case .played:
-            start(library.topmost(count), mine, pool, count, nil)
+            start(picked(.played, count), mine, pool, count, nil)
         case .artists, .bands:
-            NotificationCenter.default.post(name: .discovery, object: Discovery.opening)
             job = Task {
                 let watch = Task { [weak self] in
-                    try? await Task.sleep(for: .milliseconds(Discovery.spinAfter))
-                    self?.waited(mine, pool)
+                    try? await Task.sleep(for: .milliseconds(Work.after))
+                    self?.spin(mine)
                 }
                 defer { watch.cancel() }
 
@@ -307,22 +340,19 @@ final class Discovery {
         }
     }
 
-    /// The list may show its spinner: the pick is still the current one.
-    private func waited(_ mine: Int, _ pool: Pool) {
-        guard work.spin(mine) else { return }
+    /// The one door every pool goes through, and the one place the veto of the
+    /// user is applied: no picker of this menu, local or from the internet, can
+    /// put a denied song in the list. A song the user denied stays in the
+    /// library and plays whenever they choose it; it only never comes out of a
+    /// discovery.
+    private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {
+        let tracks = skips.allowed(picked)
 
-        Log.player.debug("discovery waiting", metadata: ["pool": "\(pool.rawValue)", "ms": "\(Discovery.spinAfter)"])
-    }
+        if tracks.count < picked.count {
+            Log.player.info("discovery denied", metadata: ["pool": "\(pool.rawValue)", "asked": "\(count)", "dropped": "\(picked.count - tracks.count)"])
+        }
 
-    func dismissNote() {
-        guard work.note != nil else { return }
-
-        work.dismiss()
-        Log.player.info("discovery note", metadata: ["reason": "dismissed"])
-    }
-
-    private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {
-        guard work.end(mine, tracks.isEmpty ? why : nil) else {
+        guard finish(mine, tracks.isEmpty ? why : nil) else {
             return Log.player.debug("discovery superseded", metadata: ["pool": "\(pool.rawValue)", "songs": "\(count)"])
         }
         job = nil
@@ -332,7 +362,7 @@ final class Discovery {
         }
 
         player.random(tracks)
-        NotificationCenter.default.post(name: .discovery, object: Discovery.done)
+        open(Work.done)
     }
 
     private func walk(_ pool: Pool, _ count: Int) async -> (tracks: [Track], note: String?) {
@@ -347,10 +377,10 @@ final class Discovery {
             }
 
             let drawn = Discovery.draw(chart, count, using: { Int.random(in: 0..<$0) })
-            Log.player.info("artists drawn", metadata: ["asked": "\(count)", "chart": "\(chart.count)", "drawn": "\(drawn.count)"])
-            wanted = drawn.map { (name: $0, songs: library.songs(by: $0)) }
+            wanted = Discovery.allowed(drawn.map { (name: $0, songs: library.songs(by: $0)) }, skipping: skips)
+            Log.player.info("artists drawn", metadata: ["asked": "\(count)", "chart": "\(chart.count)", "drawn": "\(drawn.count)", "held": "\(wanted.count)", "denied": "\(skips.count)"])
         default:
-            wanted = library.topBands(count)
+            wanted = Discovery.allowed(library.topBands(count), skipping: skips)
             guard !wanted.isEmpty else {
                 Log.player.debug("discovery stopped", metadata: ["pool": "\(pool.rawValue)", "reason": "no bands"])
                 return ([], Discovery.reason(.noBands, 0))

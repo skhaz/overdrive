@@ -34,9 +34,9 @@ final class Player {
     private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
     static let saved = Persist.read(Session.self, from: session)
 
-    private(set) var queue: [Track] = [] { didSet { revision += 1 } }
+    private(set) var queue: [Track] = [] { didSet { revision += 1; buffer?() } }
     private(set) var revision = 0
-    private(set) var index = 0
+    private(set) var index = 0 { didSet { if index != oldValue { buffer?() } } }
     /// The first song of the queue that Up Next shows, and never above `index`.
     /// A forward jump leaves the songs it skipped in their own place, so they
     /// stay in the list; every other move of the current song takes the head
@@ -132,15 +132,16 @@ final class Player {
     @ObservationIgnored private var started = Date.now
     @ObservationIgnored private var scrobbled = false
     @ObservationIgnored private var counted = false
-    @ObservationIgnored private var halved = false
     @ObservationIgnored private var announced = false
     @ObservationIgnored private var restored = false
     @ObservationIgnored var view = (page: Player.saved?.page ?? "", path: Player.saved?.path ?? [], query: Player.saved?.query ?? "")
     @ObservationIgnored var intercept: ((Remote) -> Void)?
     @ObservationIgnored var resumed: (() -> Void)?
-    /// Called once per song, at the moment it passes its half. The infinity mode
-    /// tops its buffer up here, while nothing is missing yet.
-    @ObservationIgnored var halfway: (() -> Void)?
+    /// Called whenever the songs ahead of the one that plays can have shrunk:
+    /// the index moved, or the list changed. The infinity mode tops its buffer up
+    /// here, so a jump to the end of the list refills it as surely as the clock
+    /// reaching the half of a song does.
+    @ObservationIgnored var buffer: (() -> Void)?
     /// Called when a list replaced the one that was playing, when the list
     /// ended, and when the user cleared it, with the reason.
     @ObservationIgnored var resets: ((String) -> Void)?
@@ -694,7 +695,6 @@ final class Player {
         played = 0
         scrobbled = false
         counted = false
-        halved = false
         announced = false
         started = .now
         artwork = nil
@@ -822,7 +822,6 @@ final class Player {
         position = 0
         scrobbled = false
         counted = false
-        halved = false
         started = .now
         artwork = Artwork.image(track)
 
@@ -874,12 +873,6 @@ final class Player {
             counted = true
             plays.bump(track)
             Log.player.info("counted", metadata: ["path": "\(track.url.path)", "played": "\(played)", "duration": "\(track.duration)"])
-        }
-
-        if !halved, track.duration > 0, played * 2 >= track.duration {
-            halved = true
-            Log.player.info("halfway", metadata: ["path": "\(track.url.path)", "played": "\(played)", "duration": "\(track.duration)"])
-            halfway?()
         }
 
         if !scrobbled, track.duration >= 30, played >= min(track.duration / 2, 240) {

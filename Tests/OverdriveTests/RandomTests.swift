@@ -20,7 +20,7 @@ struct RandomTests {
     }
 
     private func discoveryRegion(_ source: String) throws -> String {
-        try body(source, "private func start(_ tracks: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {")
+        try body(source, "private func start(_ picked: [Track], _ mine: Int, _ pool: Pool, _ count: Int, _ why: String?) {")
     }
 
     private func handler(_ source: String, _ notification: String) throws -> String {
@@ -138,15 +138,15 @@ struct RandomTests {
         let views = try source("Views.swift")
         let discovery = try source("Discovery.swift")
 
-        #expect(try discoveryRegion(discovery).contains("player.random(tracks)\n        NotificationCenter.default.post(name: .discovery, object: Discovery.done)"), "the pick replaces Up Next, then the screen follows it")
-        #expect(try body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("NotificationCenter.default.post(name: .discovery, object: Discovery.opening)"), "a pick that spends requests opens Up Next at once, so the user sees it working")
+        #expect(try discoveryRegion(discovery).contains("player.random(tracks)\n        open(Work.done)"), "the pick replaces Up Next, then the screen follows it")
+        #expect(try body(discovery, "func pick(_ pool: Pool, _ count: Int) {").contains("let mine = begin()"), "a pick that spends requests opens Up Next at once, so the user sees it working")
         #expect(views.contains("static let discovery = Notification.Name(\"discovery\")"))
 
         let shown = try handler(views, "discovery")
         #expect(shown.contains("navigation.open(.upNext, leaving: tracker.position)"), "the picked songs show in Up Next")
         #expect(shown.contains("lyrics.settle {"), "a page change flushes a pending lyrics edit first")
         #expect(!shown.contains("player.random"), "the handler never picks a second time")
-        #expect(shown.contains("let stage = note.object as? String ?? Discovery.done"), "both stages log, so the log says when the screen opened and when the songs landed")
+        #expect(shown.contains("let stage = note.object as? String ?? Work.done"), "both stages log, so the log says when the screen opened and when the songs landed")
     }
 
     @Test func theUnplayedPickNeedsItsCount() throws {

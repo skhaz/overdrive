@@ -1,10 +1,12 @@
 import Foundation
 
-/// The endless list. It draws songs the library holds, each one a random pick
-/// of the most played tracks of a random artist of the library as Last.fm ranks
+/// The endless list. It draws songs the library holds, each one a random pick of
+/// the most played tracks of a random artist of the library as Last.fm ranks
 /// them, and it keeps the buffer full while the user plays: 20 songs at the
-/// start, and 20 more every time the song that plays passes its half. Nothing
-/// it does interrupts the song that plays, and it stops when the user stops.
+/// start, and 20 more every time the songs ahead of the one that plays fall
+/// below 20. Nothing it does interrupts the song that plays: a top-up is a quiet
+/// task, so no spinner, no dim, no screen change, and no note. The mode stops
+/// when the user stops, and it never picks a song the user denied (`Skips`).
 @Observable
 final class Infinity {
     /// The songs one fill adds, and the buffer it keeps ahead of the song that
@@ -16,6 +18,13 @@ final class Infinity {
     /// cannot spend the whole chart on a single refill.
     nonisolated static let asks = 60
 
+    /// What one fill is for: the first list of the mode, which the user asked for
+    /// and which opens Up Next and may spin, or a quiet top-up of the list that
+    /// already plays.
+    enum Stage: String {
+        case start, halfway
+    }
+
     /// Whether a fill that found no artist left to ask starts the library over.
     /// Only a mode that already played something can cycle: an empty library
     /// stays empty, and no cycle runs on a mode that never began.
@@ -23,19 +32,13 @@ final class Infinity {
         pool == 0 && served > 0
     }
 
-    /// What one fill is for: the first list of the mode, or a top-up of the one
-    /// that plays.
-    enum Stage: String {
-        case start, halfway
-    }
-
-    /// Why a tick of the clock did not, or did, start a fill.
+    /// Why a trigger did not, or did, start a fill.
     enum Pause {
         case off, filling, full, now
     }
 
-    /// The one rule of the buffer: a mode that is off spends nothing, a fill
-    /// that is on its way is never doubled, and a full list needs no request.
+    /// The one rule of the buffer: a mode that is off spends nothing, a fill that
+    /// is on its way is never doubled, and a full list needs no request.
     nonisolated static func pause(on: Bool, flight: Bool, ahead: Int, kept: Int) -> Pause {
         guard on else { return .off }
         guard !flight else { return .filling }
@@ -44,29 +47,23 @@ final class Infinity {
         return .now
     }
 
-    /// Whether the answer of one fill still belongs to the mode: a fill that was
-    /// replaced by a newer one, or that outlived a toggle off and on, lands on
-    /// nothing. The mode may be on again and still not want the old songs.
-    nonisolated static func holds(_ run: Int, current: Int, on: Bool) -> Bool {
-        on && run == current
-    }
-
     private(set) var on = false
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private let player: Player
     @ObservationIgnored private let discovery: Discovery
+    @ObservationIgnored private let skips: Skips
     @ObservationIgnored private var served: Set<Track.ID> = []
     @ObservationIgnored private var starting = false
     @ObservationIgnored private var flight: Task<Void, Never>?
-    @ObservationIgnored private var run = 0
 
-    init(library: Library, lastFM: LastFM, player: Player, discovery: Discovery) {
+    init(library: Library, lastFM: LastFM, player: Player, discovery: Discovery, skips: Skips) {
         self.library = library
         self.lastFM = lastFM
         self.player = player
         self.discovery = discovery
+        self.skips = skips
     }
 
     /// The menu item: the mode turns on with a fresh list of songs and off again
@@ -83,9 +80,8 @@ final class Infinity {
         on = true
         starting = true
         served = []
-        run += 1
-        Log.player.info("infinity", metadata: ["state": "on", "batch": "\(Infinity.batch)", "keep": "\(Infinity.keep)", "run": "\(run)"])
-        flight = Task { await self.fill(at: .start, self.run) }
+        Log.player.info("infinity", metadata: ["state": "on", "batch": "\(Infinity.batch)", "keep": "\(Infinity.keep)"])
+        flight = Task { await self.fill(at: .start, discovery.begin()) }
     }
 
     /// The mode leaves, and the songs it already put in the list stay: the user
@@ -94,12 +90,12 @@ final class Infinity {
         flight?.cancel()
         flight = nil
         starting = false
-        run += 1
 
         guard on else { return }
 
         on = false
         served = []
+        discovery.reset()
         Log.player.info("infinity", metadata: ["state": "off", "reason": "\(reason)"])
     }
 
@@ -113,8 +109,9 @@ final class Infinity {
         off(reason)
     }
 
-    /// The song that plays passed its half. Top the buffer up when it is low,
-    /// and spend nothing on a request when it is not.
+    /// The songs ahead of the one that plays can have shrunk: the index moved, or
+    /// the list changed. Top the buffer up when it is low, and spend nothing on a
+    /// request when it is not.
     func passed() {
         switch Infinity.pause(on: on, flight: flight != nil, ahead: player.ahead, kept: Infinity.keep) {
         case .off:
@@ -124,24 +121,27 @@ final class Infinity {
         case .full:
             return Log.player.debug("infinity full", metadata: ["ahead": "\(player.ahead)", "keep": "\(Infinity.keep)"])
         case .now:
-            run += 1
-            flight = Task { await self.fill(at: .halfway, self.run) }
+            guard let mine = discovery.claim() else {
+                return Log.player.debug("infinity waiting", metadata: ["reason": "the user has a task in flight"])
+            }
+
+            flight = Task { await self.fill(at: .halfway, mine) }
         }
     }
 
-    private func fill(at stage: Stage, _ run: Int) async {
+    private func fill(at stage: Infinity.Stage, _ mine: Int) async {
         defer {
-            // only the fill that is still the current one clears its own state,
-            // so a replaced fill never drops the handle of the one after it
-            if run == self.run {
-                flight = nil
-                starting = false
-            }
+            // only the fill that is still the one in flight clears its own handle,
+            // so a replaced fill never frees the successor and starts two
+            if flight != nil { flight = nil }
+            starting = false
         }
 
         let songs = await draw()
-        guard Infinity.holds(run, current: self.run, on: on) else {
-            return Log.player.debug("infinity dropped", metadata: ["at": "\(stage.rawValue)", "run": "\(run)", "current": "\(self.run)", "songs": "\(songs.count)"])
+        let note = stage == .start && songs.isEmpty ? Discovery.reason(.noArtists, 0) : nil
+
+        guard discovery.finish(mine, note) else {
+            return Log.player.debug("infinity dropped", metadata: ["at": "\(stage.rawValue)", "songs": "\(songs.count)"])
         }
 
         guard !songs.isEmpty else {
@@ -151,6 +151,7 @@ final class Infinity {
 
         if stage == .start {
             player.random(songs)
+            discovery.open(Work.done)
         } else {
             player.append(songs)
         }
@@ -160,15 +161,16 @@ final class Infinity {
     }
 
     /// The next batch of songs. An artist whose candidates the mode already
-    /// played is out of the pool before a request goes, so every song here is
-    /// new. When the library has nothing new left, the cycle starts again.
+    /// played, and one whose songs the user denied, are out of the pool before a
+    /// request goes, so every song here is new and wanted. When the library has
+    /// nothing new left, the cycle starts again.
     private func draw() async -> [Track] {
-        var pool = library.pool(excluding: served)
+        var pool = Discovery.allowed(library.pool(excluding: served), skipping: skips)
 
         if Infinity.cycles(pool: pool.count, served: served.count) {
             Log.player.info("infinity cycle", metadata: ["served": "\(served.count)", "reason": "library empty"])
             served = []
-            pool = library.pool(excluding: served)
+            pool = Discovery.allowed(library.pool(excluding: served), skipping: skips)
         }
 
         guard !pool.isEmpty else { return [] }
@@ -177,7 +179,7 @@ final class Infinity {
         let fm = lastFM
         let songs = await Discovery.collect(Infinity.batch, wanted) { await fm.topTracks($0, Discovery.tracks) }
 
-        Log.player.info("infinity drew", metadata: ["artists": "\(wanted.count)", "songs": "\(songs.count)", "pool": "\(pool.count)"])
+        Log.player.info("infinity drew", metadata: ["artists": "\(wanted.count)", "songs": "\(songs.count)", "pool": "\(pool.count)", "denied": "\(skips.count)"])
         return songs
     }
 }
