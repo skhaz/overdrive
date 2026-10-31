@@ -15,6 +15,15 @@ struct ViewStructureTests {
         return String(rest[..<end])
     }
 
+    @Test func theSpectrumDrawsOverTheContentWithNoAreaOfItsOwn() throws {
+        let source = try source()
+        let bar = region(source, from: "struct SpectrumBar: View {")
+
+        #expect(source.contains(".overlay(alignment: .bottom) {\n                if player.showsSpectrum { SpectrumBar().allowsHitTesting(false) }\n            }"), "the spectrum must draw over the bottom of the content, full width, and never take a click")
+        #expect(source.contains("            Divider()\n            Controls(open: reveal)\n                .background(.bar)"), "the bottom bar must hold only the controls")
+        #expect(!bar.contains(".padding("), "the spectrum must take the full width")
+    }
+
     @Test func theSongsTableIsRebuiltWhenTheQueryChanges() throws {
         let source = try source()
 
@@ -264,7 +273,7 @@ struct ViewStructureTests {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let player = try String(contentsOf: root.appending(path: "Sources/Overdrive/Player.swift"), encoding: .utf8)
 
-        #expect(try source().contains("if player.showsSpectrum { SpectrumBar() }"), "a disabled spectrum draws no view, so no timeline and no FFT")
+        #expect(try source().contains("if player.showsSpectrum { SpectrumBar().allowsHitTesting(false) }"), "a disabled spectrum draws no view, so no timeline and no FFT")
         #expect(player.contains("parameters.audioTapProcessor = showsSpectrum ? spectrum.tap() : nil"), "a disabled spectrum installs no tap on the audio thread")
         #expect(player.contains("guard normalize || showsSpectrum else {\n            item.audioMix = nil"), "a song with no gain and no spectrum keeps no mix, so the old tap leaves with it")
         #expect(player.contains("spectrum.listening = false\n            spectrum.clear()"), "turning the spectrum off stops the samples and empties the ring")

@@ -1880,8 +1880,6 @@ struct SpectrumBar: View {
             }
         }
         .frame(height: Self.height)
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
         .accessibilityHidden(true)
         .onChange(of: shown, initial: true) {
             Log.player.debug("spectrum", metadata: ["shown": "\(shown)"])
@@ -2132,13 +2130,13 @@ struct ContentView: View {
                         .background(Color(nsColor: .textBackgroundColor))
                 }
             }
+            .overlay(alignment: .bottom) {
+                if player.showsSpectrum { SpectrumBar().allowsHitTesting(false) }
+            }
 
             Divider()
-            VStack(spacing: 0) {
-                if player.showsSpectrum { SpectrumBar() }
-                Controls(open: reveal)
-            }
-            .background(.bar)
+            Controls(open: reveal)
+                .background(.bar)
         }
         .dropDestination(for: URL.self) { urls, _ in
             let folders = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
