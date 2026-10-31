@@ -1075,13 +1075,6 @@ struct AlbumView: View {
                                 .foregroundStyle(.secondary)
                             Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
                                 .foregroundStyle(.secondary)
-
-                            HStack {
-                                Button("Play", systemImage: "play.fill") { player.play(album) }
-                                Button("Shuffle", systemImage: "shuffle") { player.shuffle = true; player.play(album.tracks, at: .random(in: album.tracks.indices)) }
-                            }
-                            .controlSize(.large)
-                            .padding(.top, 8)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -51,6 +51,15 @@ struct ViewStructureTests {
         #expect(strip.contains(".fixedSize(horizontal: false, vertical: true)"), "the albums row must take only its own height, not half of the page")
     }
 
+    @Test func theAlbumHeaderHasNoPlayButtonsAndSitsOnTheCoverBottom() throws {
+        let album = region(try source(), from: "struct AlbumView: View {")
+        let header = String(album[..<(try #require(album.range(of: "LazyVStack")).lowerBound)])
+
+        #expect(header.contains("HStack(alignment: .bottom, spacing: 20)"), "the album text must align with the bottom of the cover")
+        #expect(!header.contains("Button(\"Play\""), "the play controls below already play the album")
+        #expect(!header.contains("Button(\"Shuffle\""), "the play controls below already shuffle")
+    }
+
     @Test func anotherPageClearsTheSearch() throws {
         let text = try source()
         let start = try #require(text.range(of: "private struct QueryFocus: ViewModifier {"))
