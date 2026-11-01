@@ -263,13 +263,38 @@ nonisolated func targets(_ ids: Set<Int>, _ selection: Set<Int>) -> Set<Int> {
     ids.isEmpty || !ids.isSubset(of: selection) ? ids : selection
 }
 
-func summary(_ tracks: some Collection<Track>) -> String {
-    count(tracks.count, "song") + " · " + tracks.reduce(0) { $0 + $1.duration }.time
+func summary(_ tracks: [Track]) -> String {
+    summary(tracks[...])
+}
+
+func summary(_ tracks: ArraySlice<Track>) -> String {
+    var artists = Set<String>()
+    var last = ""
+    var seconds = 0.0
+    for track in tracks {
+        if track.artist != last {
+            last = track.artist
+            if !last.isEmpty { artists.insert(last) }
+        }
+        seconds += track.duration
+    }
+    return summary(songs: tracks.count, artists: artists.count, seconds: seconds)
 }
 
 func summary(_ albums: [Album]) -> String {
-    let (songs, seconds) = albums.reduce((0, 0.0)) { total, album in album.tracks.reduce((total.0 + album.tracks.count, total.1)) { ($0.0, $0.1 + $1.duration) } }
-    return count(songs, "song") + " · " + seconds.time
+    var artists = Set<String>()
+    var songs = 0
+    var seconds = 0.0
+    for album in albums {
+        if !album.artist.isEmpty { artists.insert(album.artist) }
+        songs += album.tracks.count
+        for track in album.tracks { seconds += track.duration }
+    }
+    return summary(songs: songs, artists: artists.count, seconds: seconds)
+}
+
+func summary(songs: Int, artists: Int, seconds: Double) -> String {
+    count(songs, "song") + " · " + count(artists, "artist") + " · " + seconds.time
 }
 
 extension Double {
@@ -1073,7 +1098,7 @@ struct AlbumView: View {
                                 .pointerStyle(.link)
                                 .font(.title2)
                                 .foregroundStyle(.secondary)
-                            Text([album.year > 0 ? String(album.year) : nil, count(album.tracks.count, "song"), album.tracks.reduce(0) { $0 + $1.duration }.time].compactMap(\.self).joined(separator: " · "))
+                            Text([album.year > 0 ? String(album.year) : nil, summary(album.tracks)].compactMap(\.self).joined(separator: " · "))
                                 .foregroundStyle(.secondary)
                         }
                     }
