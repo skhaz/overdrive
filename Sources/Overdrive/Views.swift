@@ -268,33 +268,37 @@ func summary(_ tracks: [Track]) -> String {
 }
 
 func summary(_ tracks: ArraySlice<Track>) -> String {
-    var artists = Set<String>()
-    var last = ""
-    var seconds = 0.0
-    for track in tracks {
-        if track.artist != last {
-            last = track.artist
-            if !last.isEmpty { artists.insert(last) }
-        }
-        seconds += track.duration
-    }
-    return summary(songs: tracks.count, artists: artists.count, seconds: seconds)
+    var totals = Totals()
+    totals.add(tracks)
+    return totals.summary
 }
 
 func summary(_ albums: [Album]) -> String {
-    var artists = Set<String>()
-    var songs = 0
-    var seconds = 0.0
-    for album in albums {
-        if !album.artist.isEmpty { artists.insert(album.artist) }
-        songs += album.tracks.count
-        for track in album.tracks { seconds += track.duration }
-    }
-    return summary(songs: songs, artists: artists.count, seconds: seconds)
+    var totals = Totals()
+    for album in albums { totals.add(album.tracks[...]) }
+    return totals.summary
 }
 
-func summary(songs: Int, artists: Int, seconds: Double) -> String {
-    count(songs, "song") + " · " + count(artists, "artist") + " · " + seconds.time
+/// Every list counts the artists of its songs, never of its albums, so the same
+/// songs give the same number on every page.
+struct Totals {
+    private var artists = Set<String>()
+    private var last = ""
+    private var songs = 0
+    private var seconds = 0.0
+
+    mutating func add(_ tracks: ArraySlice<Track>) {
+        songs += tracks.count
+        for track in tracks {
+            if track.artist != last {
+                last = track.artist
+                if !last.isEmpty { artists.insert(last) }
+            }
+            seconds += track.duration
+        }
+    }
+
+    var summary: String { count(songs, "song") + " · " + count(artists.count, "artist") + " · " + seconds.time }
 }
 
 extension Double {

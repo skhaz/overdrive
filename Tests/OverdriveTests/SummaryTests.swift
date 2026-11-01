@@ -20,4 +20,12 @@ import Testing
         let third = Album(id: "z", title: "Z", artist: "One", year: 2002, tracks: [track("d", "One", "Z", 3600)])
         #expect(summary([first, second, third]) == "4 songs · 2 artists · 1:03:00")
     }
+
+    @Test func everyPageCountsTheArtistsOfTheSongs() {
+        let tracks = [track("a", "One", "X", 60), track("b", "Two", "X", 60), track("c", "Three", "Y", 60)]
+        let mixed = Album(id: "x", title: "X", artist: "Various Artists", year: 2000, tracks: Array(tracks[0...1]))
+        let single = Album(id: "y", title: "Y", artist: "Three", year: 2000, tracks: [tracks[2]])
+        #expect(summary([mixed, single]) == summary(tracks), "the albums of the same songs give the same count as the songs")
+        #expect(summary([mixed, single]) == "3 songs · 3 artists · 3:00")
+    }
 }
