@@ -2163,7 +2163,7 @@ struct ContentView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if player.showsSpectrum { SpectrumBar().allowsHitTesting(false) }
+                if player.showsSpectrum, player.playing { SpectrumBar().allowsHitTesting(false) }
             }
 
             Divider()
