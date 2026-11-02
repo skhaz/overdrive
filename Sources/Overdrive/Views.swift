@@ -1912,6 +1912,8 @@ struct SpectrumBar: View {
             }
         }
         .frame(height: Self.height)
+        .opacity(player.playing ? 1 : 0)
+        .animation(.easeOut(duration: 0.4), value: player.playing)
         .accessibilityHidden(true)
         .onChange(of: shown, initial: true) {
             Log.player.debug("spectrum", metadata: ["shown": "\(shown)"])
@@ -2163,7 +2165,7 @@ struct ContentView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if player.showsSpectrum, player.playing { SpectrumBar().allowsHitTesting(false) }
+                if player.showsSpectrum { SpectrumBar().allowsHitTesting(false) }
             }
 
             Divider()
