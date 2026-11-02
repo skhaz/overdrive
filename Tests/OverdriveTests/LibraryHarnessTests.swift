@@ -391,6 +391,28 @@ struct LibraryHarnessTests {
         library.query = ""
     }
 
+    @Test func theMatchedAlbumsFollowTheQuery() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        try put(folder, "Black Metal Commando/zebra.mp3")
+        try put(folder, "Other Album/other.mp3")
+        let library = library([folder])
+        await settle(library, [folder])
+
+        // The albums above the songs, at every step of typing the name of a
+        // song, then of its album: the album a search narrows to stays there.
+        for query in ["z", "ze", "zeb", "zebr", "zebra", "black", "black metal"] {
+            library.query = query
+            #expect(library.filtered.map(\.title) == ["Black Metal Commando"], "query \(query)")
+            #expect(library.tracks.map(\.url.lastPathComponent) == ["zebra.mp3"], "query \(query)")
+        }
+
+        library.query = "other"
+        #expect(library.filtered.map(\.title) == ["Other Album"])
+        #expect(library.tracks.map(\.url.lastPathComponent) == ["other.mp3"])
+        library.query = ""
+    }
+
     @Test func theRandomPickFollowsTheLibrary() async throws {
         let folder = try folder()
         defer { clean(folder) }

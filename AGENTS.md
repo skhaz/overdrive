@@ -71,7 +71,7 @@ Always run `swift test` before every commit. Commit only when all tests pass. Gi
 - `Library.settled` is true only after a scan reaches its end (`scan done`, `scan unchanged`) or a rebuild finishes; a scan in flight clears it, so nothing takes a partial library for the whole one.
 - Scans run one at a time. Each scan writes its adds, changes, removes, and covers in one transaction (`BEGIN IMMEDIATE` to `COMMIT`, or `ROLLBACK`). A failed write keeps the last good state.
 - The scan is progressive: first the cache, then the walk, then batches of 256 files. `Library.load` calls `progress` after each step and stops without a write when a newer scan replaces it. Adding a folder scans at once.
-- Search: fuzzy matches; FTS matches (words of 3+ characters) come first, in `bm25` order. The results (Songs with a query) show the matched albums above the songs (`AlbumStrip`). A click on an album opens it; its Play button plays it from the first song, shuffle off, and opens it on that song. Few albums fill the width; many scroll (`AlbumStrip.width`).
+- Search: fuzzy matches; FTS matches (words of 3+ characters) come first, in `bm25` order. The results (Songs with a query) show the matched albums above the songs (`AlbumStrip`). A click on an album opens it; its Play button plays it from the first song, shuffle off, and opens it on that song. Few albums fill the width; many scroll (`AlbumStrip.width`). The strip carries the query in its identity, like the Songs table under it, so every query builds it again from its first album: a strip kept across queries kept its lazy cards and could show an older list, or none, above songs that had already changed. Every search logs its outcome (`search`: query, albums, songs, first album).
 
 ## Atomic writes
 

@@ -735,6 +735,7 @@ final class Library {
         defer {
             hits = query.isEmpty ? [] : Set(tracks.map(\.id))
             version += 1
+            Log.library.debug("search", metadata: ["query": "\(query)", "albums": "\(filtered.count)", "songs": "\(tracks.count)", "first": "\(filtered.first?.title ?? "")"])
         }
 
         filtered = query.isEmpty ? [] : byYear.filter { $0.artist == query }

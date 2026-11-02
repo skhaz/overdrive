@@ -2371,7 +2371,7 @@ struct ContentView: View {
                 case .section(.songs):
                     VStack(spacing: 0) {
                         if !library.query.isEmpty, !library.filtered.isEmpty {
-                            AlbumStrip(albums: library.filtered).id(library.edits)
+                            AlbumStrip(albums: library.filtered).id("\(library.query)\u{1F}\(library.edits)")
                             Divider()
                         }
                         SongTable(tracks: library.tracks).id("\(library.query)\u{1F}\(library.members)\u{1F}\(library.edits)")

@@ -162,7 +162,7 @@ final class Records: @unchecked Sendable {
             "Persist.swift": ["read failed", "decode failed", "write", "move", "remove"],
             "Cache.swift": ["query failed", "statement failed", "begin failed", "save failed", "open failed", "discard"],
             "Picture.swift": ["covers process failed", "covers"],
-            "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved"],
+            "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved", "search"],
             "LastFM.swift": ["connected", "connect failed", "http failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "scrobble skipped", "settle", "now playing", "artist page", "open artist"],
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted", "append", "append ignored"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
