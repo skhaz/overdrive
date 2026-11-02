@@ -10,12 +10,12 @@ import Testing
         return URL(filePath: url.path.withCString { String(cString: realpath($0, nil)) })
     }
 
-    private func track(_ folder: URL, _ path: String, title: String = "Title", artist: String = "Artist", album: String = "Album") -> Track {
-        Track(url: folder.appending(path: path), title: title, artist: artist, album: album, number: 3, disc: 2, albumArtist: "Album Artist", year: 1999, duration: 123.5, albumID: "id-" + album)
+    private func track(_ folder: URL, _ path: String, title: String = "Title", artist: String = "Artist", album: String = "Album", genre: String = "") -> Track {
+        Track(url: folder.appending(path: path), title: title, artist: artist, album: album, number: 3, disc: 2, albumArtist: "Album Artist", year: 1999, duration: 123.5, albumID: "id-" + album, genre: genre)
     }
 
-    private func change(_ folder: URL, _ path: String, title: String = "Title", artist: String = "Artist", album: String = "Album", modified: Double = 1, size: Int = 10) -> Cache.Change {
-        Cache.Change(path: path, modified: modified, size: size, track: track(folder, path, title: title, artist: artist, album: album))
+    private func change(_ folder: URL, _ path: String, title: String = "Title", artist: String = "Artist", album: String = "Album", genre: String = "", modified: Double = 1, size: Int = 10) -> Cache.Change {
+        Cache.Change(path: path, modified: modified, size: size, track: track(folder, path, title: title, artist: artist, album: album, genre: genre))
     }
 
     private func execute(_ file: URL, _ sql: String) {
@@ -45,6 +45,30 @@ import Testing
         #expect(entry.track.year == expected.year)
         #expect(entry.track.duration == expected.duration)
         #expect(entry.track.albumID == expected.albumID)
+        #expect(entry.track.genre == expected.genre)
+    }
+
+    @Test func roundTripsTheGenre() throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        Cache(folder)!.save([change(folder, "one.mp3", genre: "Rock")], removed: [], covers: [:])
+
+        #expect(Cache(folder)!.entries()["one.mp3"]?.track.genre == "Rock")
+    }
+
+    @Test func discardsACacheFromAnOlderFormat() throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let file = folder.appending(path: Cache.name)
+        execute(file, "CREATE TABLE tracks (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, modified REAL NOT NULL, size INTEGER NOT NULL, hash BLOB, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, number INTEGER NOT NULL, disc INTEGER NOT NULL, album_artist TEXT NOT NULL, year INTEGER NOT NULL, duration REAL NOT NULL, album_id TEXT NOT NULL) STRICT")
+        execute(file, "CREATE TABLE covers (album_id TEXT PRIMARY KEY, data BLOB NOT NULL) STRICT")
+
+        let cache = try #require(Cache(folder))
+        #expect(cache.entries().isEmpty, "a cache without the genre column is built again, not read")
+        #expect(cache.save([change(folder, "one.mp3", genre: "Rock")], removed: [], covers: [:]))
+        #expect(cache.entries()["one.mp3"]?.track.genre == "Rock")
     }
 
     @Test func roundTripsTheHash() throws {

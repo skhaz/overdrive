@@ -18,6 +18,21 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
     let year: Int
     let duration: Double
     let albumID: String
+    let genre: String
+
+    init(url: URL, title: String, artist: String, album: String, number: Int, disc: Int, albumArtist: String, year: Int, duration: Double, albumID: String, genre: String = "") {
+        self.url = url
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.number = number
+        self.disc = disc
+        self.albumArtist = albumArtist
+        self.year = year
+        self.duration = duration
+        self.albumID = albumID
+        self.genre = genre
+    }
 
     var id: URL { url }
 
@@ -27,11 +42,11 @@ nonisolated struct Track: Identifiable, Hashable, Sendable {
 
     func same(_ other: Track) -> Bool {
         url == other.url && title == other.title && artist == other.artist && album == other.album && number == other.number && disc == other.disc
-            && albumArtist == other.albumArtist && year == other.year && duration == other.duration && albumID == other.albumID
+            && albumArtist == other.albumArtist && year == other.year && duration == other.duration && albumID == other.albumID && genre == other.genre
     }
 
     func at(_ url: URL) -> Track {
-        Track(url: url, title: title, artist: artist, album: album, number: number, disc: disc, albumArtist: albumArtist, year: year, duration: duration, albumID: Track.albumID(url, album))
+        Track(url: url, title: title, artist: artist, album: album, number: number, disc: disc, albumArtist: albumArtist, year: year, duration: duration, albumID: Track.albumID(url, album), genre: genre)
     }
 
     static func == (lhs: Track, rhs: Track) -> Bool {
@@ -83,6 +98,16 @@ nonisolated struct Album: Identifiable, Hashable, Sendable {
     let artist: String
     let year: Int
     let tracks: [Track]
+    let genre: String
+
+    init(id: String, title: String, artist: String, year: Int, tracks: [Track], genre: String = "") {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.year = year
+        self.tracks = tracks
+        self.genre = genre
+    }
 
     var directory: URL { tracks[0].url.deletingLastPathComponent() }
 }
@@ -1190,8 +1215,9 @@ final class Library {
                 : tracks.sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
             let shared = tracks.allSatisfy { $0.albumArtist == tracks[0].albumArtist } ? tracks[0].albumArtist : ""
             let artist = tracks.allSatisfy { $0.artist == tracks[0].artist } ? tracks[0].artist : shared.isEmpty ? "Various Artists" : shared
+            let genre = tracks.first { !$0.genre.isEmpty }?.genre ?? ""
 
-            return Album(id: id, title: tracks[0].album, artist: artist, year: tracks.map(\.year).max()!, tracks: ordered)
+            return Album(id: id, title: tracks[0].album, artist: artist, year: tracks.map(\.year).max()!, tracks: ordered, genre: genre)
         }
         .sorted {
             let artist = $0.artist.localizedStandardCompare($1.artist)
@@ -1326,12 +1352,14 @@ final class Library {
             tags.album = tag(kAFInfoDictionary_Album)
             tags.year = tag(kAFInfoDictionary_Year)
             if tags.year.isEmpty { tags.year = tag(kAFInfoDictionary_RecordedDate) }
+            tags.genre = Genre.name(tag(kAFInfoDictionary_Genre))
 
             let id3 = ID3.read(url)
             tags.original = id3.original
             tags.albumArtist = id3.albumArtist
             tags.disc = id3.disc
             if tags.year.isEmpty { tags.year = id3.release }
+            if tags.genre.isEmpty { tags.genre = id3.genre }
             tags.number = Int(tag(kAFInfoDictionary_TrackNumber).prefix { $0.isNumber }) ?? 0
         }
 
@@ -1349,7 +1377,8 @@ final class Library {
             albumArtist: tags.albumArtist,
             year: original > 0 ? original : Int(tags.year.prefix(4)) ?? 0,
             duration: tags.duration,
-            albumID: Track.albumID(url, album)
+            albumID: Track.albumID(url, album),
+            genre: tags.genre
         )
     }
 }

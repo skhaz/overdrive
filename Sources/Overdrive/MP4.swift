@@ -11,6 +11,7 @@ nonisolated enum MP4 {
         var number = 0
         var disc = 0
         var duration = 0.0
+        var genre = ""
     }
 
     private typealias Box = (type: UInt32, start: Int64, end: Int64)
@@ -29,6 +30,8 @@ nonisolated enum MP4 {
     private static let disk: UInt32 = 0x6469_736B
     private static let covr: UInt32 = 0x636F_7672
     private static let freeform: UInt32 = 0x2D2D_2D2D
+    private static let gen: UInt32 = 0xA967_656E
+    private static let gnre: UInt32 = 0x676E_7265
     private static let nameBox: UInt32 = 0x6E61_6D65
     private static let data: UInt32 = 0x6461_7461
     private static let originals = ["ORIGINAL YEAR", "ORIGINALYEAR", "ORIGINALDATE", "ORIGINAL DATE"].map { Array($0.utf8) }
@@ -71,6 +74,8 @@ nonisolated enum MP4 {
             case album where tags.album.isEmpty: tags.album = text(file, item)
             case albumArtist where tags.albumArtist.isEmpty: tags.albumArtist = text(file, item)
             case day where tags.year.isEmpty: tags.year = text(file, item)
+            case gen: tags.genre = text(file, item)
+            case gnre where tags.genre.isEmpty: tags.genre = Genre.id3(genreID(file, item))
             case trkn where tags.number == 0: tags.number = number(file, item)
             case disk where tags.disc == 0: tags.disc = number(file, item)
             case freeform where tags.original.isEmpty: tags.original = original(file, item)
@@ -164,6 +169,16 @@ nonisolated enum MP4 {
             guard pread(file, buffer.baseAddress, 4, data.start + 8) == 4 else { return 0 }
 
             return Int(UInt32(bigEndian: buffer.loadUnaligned(as: UInt32.self)) & 0xFFFF)
+        }
+    }
+
+    private static func genreID(_ file: Int32, _ item: Box) -> Int {
+        guard let data = header(file, item.start, item.end) else { return -1 }
+
+        return withUnsafeTemporaryAllocation(byteCount: 2, alignment: 2) { buffer in
+            guard pread(file, buffer.baseAddress, 2, data.start + 8) == 2 else { return -1 }
+
+            return Int(UInt16(bigEndian: buffer.loadUnaligned(as: UInt16.self)))
         }
     }
 

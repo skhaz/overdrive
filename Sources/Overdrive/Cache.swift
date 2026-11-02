@@ -42,7 +42,8 @@ nonisolated final class Cache {
             album_artist TEXT NOT NULL,
             year INTEGER NOT NULL,
             duration REAL NOT NULL,
-            album_id TEXT NOT NULL
+            album_id TEXT NOT NULL,
+            genre TEXT NOT NULL
         ) STRICT;
         CREATE INDEX IF NOT EXISTS tracks_album ON tracks(album_id);
         CREATE TABLE IF NOT EXISTS covers (
@@ -110,7 +111,7 @@ nonisolated final class Cache {
     func entries() -> [String: Entry] {
         var result: [String: Entry] = [:]
 
-        query("SELECT path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, hash FROM tracks") { row in
+        query("SELECT path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, genre, hash FROM tracks") { row in
             let path = Self.text(row, 0)
             let url = URL(filePath: path.hasPrefix("/") ? path : root + "/" + path)
             let track = Track(
@@ -123,9 +124,10 @@ nonisolated final class Cache {
                 albumArtist: Self.text(row, 8),
                 year: Int(sqlite3_column_int64(row, 9)),
                 duration: sqlite3_column_double(row, 10),
-                albumID: Self.text(row, 11)
+                albumID: Self.text(row, 11),
+                genre: Self.text(row, 12)
             )
-            let hash = sqlite3_column_blob(row, 12).map { Data(bytes: $0, count: Int(sqlite3_column_bytes(row, 12))) }
+            let hash = sqlite3_column_blob(row, 13).map { Data(bytes: $0, count: Int(sqlite3_column_bytes(row, 13))) }
             result[path] = Entry(modified: sqlite3_column_double(row, 1), size: Int(sqlite3_column_int64(row, 2)), hash: hash, track: track)
         }
 
@@ -165,12 +167,12 @@ nonisolated final class Cache {
         }
 
         let saved = (!replacing || exec("DELETE FROM covers") && exec("DELETE FROM tracks")) && run("""
-            INSERT INTO tracks (path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tracks (path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, genre, hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
                 modified = excluded.modified, size = excluded.size, hash = excluded.hash, title = excluded.title, artist = excluded.artist,
                 album = excluded.album, number = excluded.number, disc = excluded.disc, album_artist = excluded.album_artist,
-                year = excluded.year, duration = excluded.duration, album_id = excluded.album_id
+                year = excluded.year, duration = excluded.duration, album_id = excluded.album_id, genre = excluded.genre
             """, changes) { statement, change in
                 let track = change.track
                 Self.bind(statement, 1, change.path)
@@ -185,8 +187,9 @@ nonisolated final class Cache {
                 sqlite3_bind_int64(statement, 10, Int64(track.year))
                 sqlite3_bind_double(statement, 11, track.duration)
                 Self.bind(statement, 12, track.albumID)
+                Self.bind(statement, 13, track.genre)
                 if let hash = change.hash {
-                    _ = hash.withUnsafeBytes { sqlite3_bind_blob(statement, 13, $0.baseAddress, Int32($0.count), Self.transient) }
+                    _ = hash.withUnsafeBytes { sqlite3_bind_blob(statement, 14, $0.baseAddress, Int32($0.count), Self.transient) }
                 }
             }
             && run("DELETE FROM tracks WHERE path = ?", removed) { statement, path in Self.bind(statement, 1, path) }
@@ -218,7 +221,14 @@ nonisolated final class Cache {
             return false
         }
 
-        return exec(Self.schema) || { Log.cache.error("schema failed", metadata: ["file": "\(file.path)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"]); return false }()
+        guard exec(Self.schema) else {
+            Log.cache.error("schema failed", metadata: ["file": "\(file.path)", "sqlite": "\(String(cString: sqlite3_errmsg(db)))"])
+            return false
+        }
+
+        // The cache holds no version: a file from an older format is missing the
+        // genre column, so a read fails here and the file is discarded and built again.
+        return exec("SELECT genre FROM tracks LIMIT 0")
     }
 
     private static func discard(_ file: URL) -> Bool {

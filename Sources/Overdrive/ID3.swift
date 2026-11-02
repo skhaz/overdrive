@@ -6,6 +6,7 @@ nonisolated enum ID3 {
         var release = ""
         var albumArtist = ""
         var disc = 0
+        var genre = ""
     }
 
     private static let recorded: UInt32 = 0x5444_5243
@@ -14,6 +15,7 @@ nonisolated enum ID3 {
     private static let originalYear: UInt32 = 0x544F_5259
     private static let part: UInt32 = 0x5450_4F53
     private static let band: UInt32 = 0x5450_4532
+    private static let content: UInt32 = 0x5443_4F4E
 
     static func read(_ url: URL) -> Tags {
         let file = url.withUnsafeFileSystemRepresentation { open($0!, O_RDONLY) }
@@ -44,6 +46,8 @@ nonisolated enum ID3 {
                     result.disc = Int(String(decoding: buffer.prefix(max(count, 0)).drop { !(0x30...0x39).contains($0) }.prefix { (0x30...0x39).contains($0) }, as: UTF8.self)) ?? 0
                 } else if id == band {
                     result.albumArtist = text(file, off_t(offset + 10), size)
+                } else if id == content {
+                    result.genre = Genre.name(text(file, off_t(offset + 10), size))
                 } else if id == recorded || id == year || id == original || id == originalYear {
                     let count = pread(file, buffer.baseAddress, min(size, 16), off_t(offset + 10))
                     let digits = String(decoding: buffer.prefix(max(count, 0)).filter { (0x30...0x39).contains($0) }.prefix(4), as: UTF8.self)

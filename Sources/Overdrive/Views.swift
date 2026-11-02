@@ -1102,6 +1102,9 @@ struct AlbumView: View {
                                 .pointerStyle(.link)
                                 .font(.title2)
                                 .foregroundStyle(.secondary)
+                            if !album.genre.isEmpty {
+                                Text(album.genre).foregroundStyle(.secondary)
+                            }
                             Text([album.year > 0 ? String(album.year) : nil, summary(album.tracks)].compactMap(\.self).joined(separator: " · "))
                                 .foregroundStyle(.secondary)
                         }
