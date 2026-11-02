@@ -28,4 +28,14 @@ import Testing
         #expect(summary([mixed, single]) == summary(tracks), "the albums of the same songs give the same count as the songs")
         #expect(summary([mixed, single]) == "3 songs · 3 artists · 3:00")
     }
+
+    @Test func theAlbumGenreCollectsEveryDistinctGenre() {
+        func song(_ genre: String) -> Track {
+            Track(url: URL(fileURLWithPath: "/m/\(genre.isEmpty ? "empty" : genre).mp3"), title: "t", artist: "A", album: "B", number: 1, disc: 1, albumArtist: "", year: 2000, duration: 1, albumID: "B", genre: genre)
+        }
+
+        #expect(Library.albumGenre([song("Rock"), song("Rock"), song("Pop"), song(""), song("Jazz")]) == "Rock, Pop, Jazz")
+        #expect(Library.albumGenre([song("")]) == "")
+        #expect(Library.albumGenre([]) == "")
+    }
 }

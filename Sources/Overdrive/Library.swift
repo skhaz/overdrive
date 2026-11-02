@@ -198,6 +198,13 @@ final class Library {
         }
     }
 
+    /// Every distinct genre of the album's songs, in the order they appear.
+    nonisolated static func albumGenre(_ tracks: [Track]) -> String {
+        tracks.reduce(into: [String]()) { genres, track in
+            if !track.genre.isEmpty, !genres.contains(track.genre) { genres.append(track.genre) }
+        }.joined(separator: ", ")
+    }
+
     private static func savedFolders() -> [URL] {
         (UserDefaults.standard.stringArray(forKey: key) ?? []).map { URL(filePath: StoredPath.decode($0)) }
     }
@@ -1215,7 +1222,7 @@ final class Library {
                 : tracks.sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
             let shared = tracks.allSatisfy { $0.albumArtist == tracks[0].albumArtist } ? tracks[0].albumArtist : ""
             let artist = tracks.allSatisfy { $0.artist == tracks[0].artist } ? tracks[0].artist : shared.isEmpty ? "Various Artists" : shared
-            let genre = tracks.first { !$0.genre.isEmpty }?.genre ?? ""
+            let genre = Library.albumGenre(ordered)
 
             return Album(id: id, title: tracks[0].album, artist: artist, year: tracks.map(\.year).max()!, tracks: ordered, genre: genre)
         }
