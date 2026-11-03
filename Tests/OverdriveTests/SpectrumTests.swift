@@ -123,6 +123,43 @@ struct SpectrumTests {
         #expect(!SpectrumBar.running(shown: false, active: false, fading: true))
     }
 
+    @Test func theBarsFillTheWidthAndRiseFromTheBottom() {
+        let size = CGSize(width: 1078, height: SpectrumBar.height)
+        let count = SpectrumBar.count(size.width)
+        let first = SpectrumBar.bar(0, 0, count: count, in: size)
+        let last = SpectrumBar.bar(count - 1, 1, count: count, in: size)
+
+        #expect(first.minX == 0 && first.minY == 0, "a bar stands on the bottom edge")
+        #expect(first.height == first.width, "a silent bar is a dot, not nothing")
+        #expect(last.height == size.height, "a full bar takes the whole height")
+        #expect(abs(last.maxX - size.width) < 0.001, "the bars take the full width")
+        #expect(SpectrumBar.bar(0, 2, count: count, in: size).height == size.height * 2, "the analyzer caps the level, not the layout")
+    }
+
+    @Test func theLayersFollowTheWidthAndTheLevels() throws {
+        let view = SpectrumView(spectrum: Spectrum())
+        view.frame = CGRect(x: 0, y: 0, width: 600, height: SpectrumBar.height)
+        view.layout()
+        let mask = try #require(view.layer?.sublayers?.first?.mask)
+
+        #expect(mask.sublayers?.count == SpectrumBar.count(600), "one layer per bar")
+        #expect(mask.sublayers?.allSatisfy { $0.frame.height == $0.frame.width } == true, "a new view starts silent")
+
+        view.frame.size.width = 300
+        view.layout()
+        #expect(mask.sublayers?.count == SpectrumBar.count(300), "a new width makes the bars again")
+
+        let spectrum = Spectrum()
+        Self.feed(spectrum) { Float(sin(Double($0) / 3)) }
+        let live = SpectrumView(spectrum: spectrum)
+        live.frame = CGRect(x: 0, y: 0, width: 600, height: SpectrumBar.height)
+        live.layout()
+        live.active = true
+        for frame in 1...30 { live.advance(to: Double(frame) / 60) }
+        let bars = try #require(live.layer?.sublayers?.first?.mask?.sublayers)
+        #expect(bars.contains { $0.frame.height > $0.frame.width }, "a frame moves the bars with the sound")
+    }
+
     @Test func theSettingIsOnByDefault() {
         #expect(Spectrum.enabled(nil), "no saved state means the spectrum is on")
         #expect(Spectrum.enabled(true))

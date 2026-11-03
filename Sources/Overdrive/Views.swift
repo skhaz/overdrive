@@ -1888,22 +1888,17 @@ struct SpectrumBar: View {
 
     @Environment(Player.self) private var player
     @Environment(\.appearsActive) private var shown
-    @State private var analyzer = Analyzer()
     @State private var fading = false
 
     static func count(_ width: CGFloat) -> Int {
         max(Int((width + gap) / (Self.width + gap)), 1)
     }
 
-    static func draw(_ levels: [Float], in context: inout GraphicsContext, size: CGSize) {
-        let step = (size.width + gap) / CGFloat(max(levels.count, 1))
+    static func bar(_ index: Int, _ level: Float, count: Int, in size: CGSize) -> CGRect {
+        let step = (size.width + gap) / CGFloat(max(count, 1))
         let width = step - gap
-        var path = Path()
-        for (index, level) in levels.enumerated() {
-            let height = max(CGFloat(level) * size.height, width)
-            path.addRoundedRect(in: CGRect(x: CGFloat(index) * step, y: size.height - height, width: width, height: height), cornerSize: CGSize(width: width / 2, height: width / 2))
-        }
-        context.fill(path, with: .linearGradient(Gradient(colors: [.accentColor, .accentColor.opacity(0.35)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+        let height = max(CGFloat(level) * size.height, width)
+        return CGRect(x: CGFloat(index) * step, y: 0, width: width, height: height)
     }
 
     static func running(shown: Bool, active: Bool, fading: Bool) -> Bool {
@@ -1913,26 +1908,135 @@ struct SpectrumBar: View {
     var body: some View {
         let active = player.playing && !player.isMuted
 
-        TimelineView(.animation(minimumInterval: Self.interval, paused: !Self.running(shown: shown, active: active, fading: fading))) { timeline in
-            Canvas { context, size in
-                let levels = analyzer.update(player.spectrum, count: Self.count(size.width), active: active, time: timeline.date.timeIntervalSinceReferenceDate)
-                Self.draw(levels, in: &context, size: size)
+        SpectrumLayers(spectrum: player.spectrum, active: active, running: Self.running(shown: shown, active: active, fading: fading))
+            .frame(height: Self.height)
+            .opacity(player.playing ? 1 : 0)
+            .animation(.easeOut(duration: 0.4), value: player.playing)
+            .accessibilityHidden(true)
+            .onChange(of: shown, initial: true) {
+                Log.player.debug("spectrum", metadata: ["shown": "\(shown)"])
+                player.spectrum.listening = shown
+            }
+            .task(id: active) {
+                guard !active else { return fading = false }
+
+                fading = true
+                try? await Task.sleep(for: .seconds(1))
+                fading = false
+            }
+    }
+}
+
+/// The bars are Core Animation layers made once: a frame only moves their
+/// heights, so no SwiftUI update and no path is drawn on the CPU.
+struct SpectrumLayers: NSViewRepresentable {
+    let spectrum: Spectrum
+    let active: Bool
+    let running: Bool
+
+    func makeNSView(context: Context) -> SpectrumView {
+        SpectrumView(spectrum: spectrum)
+    }
+
+    func updateNSView(_ view: SpectrumView, context: Context) {
+        view.active = active
+        view.running = running
+    }
+}
+
+final class SpectrumView: NSView {
+    private let spectrum: Spectrum
+    private let analyzer = Analyzer()
+    private let gradient = CAGradientLayer()
+    private let mask = CALayer()
+    private var bars: [CALayer] = []
+    private var link: CADisplayLink?
+    private var time: CFTimeInterval = 0
+    var active = false
+    var running = false { didSet { link?.isPaused = !running } }
+
+    init(spectrum: Spectrum) {
+        self.spectrum = spectrum
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.addSublayer(gradient)
+        gradient.mask = mask
+        gradient.startPoint = CGPoint(x: 0.5, y: 1)
+        gradient.endPoint = CGPoint(x: 0.5, y: 0)
+        colors()
+        NotificationCenter.default.addObserver(self, selector: #selector(colors), name: NSColor.systemColorsDidChangeNotification, object: nil)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isFlipped: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        link?.invalidate()
+        link = nil
+        guard window != nil else { return }
+
+        let link = displayLink(target: self, selector: #selector(step))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: Float(1 / SpectrumBar.interval), preferred: Float(1 / SpectrumBar.interval))
+        link.isPaused = !running
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        colors()
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradient.frame = bounds
+        mask.frame = bounds
+
+        let count = SpectrumBar.count(bounds.width)
+        if bars.count != count {
+            bars.forEach { $0.removeFromSuperlayer() }
+            bars = (0..<count).map { _ in
+                let bar = CALayer()
+                bar.backgroundColor = .black
+                mask.addSublayer(bar)
+                return bar
             }
         }
-        .frame(height: Self.height)
-        .opacity(player.playing ? 1 : 0)
-        .animation(.easeOut(duration: 0.4), value: player.playing)
-        .accessibilityHidden(true)
-        .onChange(of: shown, initial: true) {
-            Log.player.debug("spectrum", metadata: ["shown": "\(shown)"])
-            player.spectrum.listening = shown
-        }
-        .task(id: active) {
-            guard !active else { return fading = false }
 
-            fading = true
-            try? await Task.sleep(for: .seconds(1))
-            fading = false
+        place(analyzer.update(spectrum, count: count, active: false, time: time))
+        CATransaction.commit()
+    }
+
+    @objc private func colors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            gradient.colors = [NSColor.controlAccentColor.cgColor, NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor]
+        }
+    }
+
+    @objc private func step(_ link: CADisplayLink) {
+        advance(to: link.timestamp)
+    }
+
+    func advance(to time: CFTimeInterval) {
+        self.time = time
+        let levels = analyzer.update(spectrum, count: bars.count, active: active, time: time)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        place(levels)
+        CATransaction.commit()
+    }
+
+    private func place(_ levels: [Float]) {
+        for index in bars.indices {
+            let frame = SpectrumBar.bar(index, levels.indices.contains(index) ? levels[index] : 0, count: bars.count, in: bounds.size)
+            bars[index].frame = frame
+            bars[index].cornerRadius = frame.width / 2
         }
     }
 }

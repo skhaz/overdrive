@@ -86,4 +86,15 @@ struct SpectrumCostTests {
         #expect(count == 0, "a frame must not allocate; only a new width does")
         #expect(sum > 0)
     }
+
+    @Test func aFrameOfTheLayersAllocatesAtMostOnce() {
+        let view = SpectrumView(spectrum: Spectrum())
+        view.frame = CGRect(x: 0, y: 0, width: 1080, height: SpectrumBar.height)
+        view.layout()
+        view.active = true
+        view.advance(to: 0)
+
+        let count = counting { for frame in 1...600 { view.advance(to: Double(frame) / 60) } }
+        #expect(count <= 600, "a frame moves the layers it has; the Canvas built and drew a new path of 180 bars, 161 allocations a frame")
+    }
 }
