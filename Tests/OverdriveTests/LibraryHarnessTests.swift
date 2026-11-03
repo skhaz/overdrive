@@ -413,6 +413,20 @@ struct LibraryHarnessTests {
         library.query = ""
     }
 
+    @Test func aPlaylistPlaysEverySongItHoldsWhateverTheSearch() async throws {
+        let folder = try folder()
+        defer { clean(folder) }
+        for name in ["one", "two", "three"] { try put(folder, "Album/\(name).mp3") }
+        let library = library([folder])
+        await settle(library, [folder])
+        let paths = ["three", "gone", "one", "three"].map { folder.appending(path: "Album/\($0).mp3").path }
+
+        library.query = "one"
+        #expect(library.tracks(at: paths).map(\.url.path) == [paths[0], paths[2], paths[3]], "the list keeps its order and its repeats, drops only a song the library lacks, and ignores the search")
+        library.query = ""
+        #expect(library.tracks(at: []).isEmpty)
+    }
+
     @Test func theRandomPickFollowsTheLibrary() async throws {
         let folder = try folder()
         defer { clean(folder) }

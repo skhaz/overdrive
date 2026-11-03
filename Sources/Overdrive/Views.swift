@@ -1510,13 +1510,17 @@ struct UpNextView: View {
                         TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.id == now).monospacedDigit() }.width(70)
                         TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.id == now).monospacedDigit() }.width(60)
                     } rows: {
-                        ForEach(rows) { TableRow($0).draggable(String($0.id)) }
-                            .dropDestination(for: String.self) { index, ids in
-                                guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
+                        if active {
+                            ForEach(rows) { TableRow($0).draggable(String($0.id)) }
+                                .dropDestination(for: String.self) { index, ids in
+                                    guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
 
-                                selection = []
-                                player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: max(player.head + index, player.index + 1))
-                            }
+                                    selection = []
+                                    player.move(Set(ids.compactMap { Int($0) }).subtracting([player.index]), to: max(player.head + index, player.index + 1))
+                                }
+                        } else {
+                            ForEach(rows) { TableRow($0) }
+                        }
                     }
                     .onDeleteCommand { if active { remove(selection) } }
                     .onChange(of: active) { if !active { sort = Sort() } }
@@ -1638,12 +1642,16 @@ struct PlaylistView: View {
                     TableColumn("Plays", value: \.plays) { Cell(text: "\($0.plays)", playing: $0.track == now).monospacedDigit() }.width(70)
                     TableColumn("Time", value: \.track.duration) { Cell(text: $0.track.duration.time, playing: $0.track == now).monospacedDigit() }.width(60)
                 } rows: {
-                    ForEach(rows) { TableRow($0).draggable(String($0.id)) }
-                        .dropDestination(for: String.self) { index, ids in
-                            guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
+                    if active {
+                        ForEach(rows) { TableRow($0).draggable(String($0.id)) }
+                            .dropDestination(for: String.self) { index, ids in
+                                guard sort.column == nil else { return Log.navigation.debug("drop ignored", metadata: ["sorted": "\(sort.rawValue)"]) }
 
-                            move(rows, ids.compactMap { Int($0) }, to: index)
-                        }
+                                move(rows, ids.compactMap { Int($0) }, to: index)
+                            }
+                    } else {
+                        ForEach(rows) { TableRow($0) }
+                    }
                 }
                 .onDeleteCommand {
                     if active { removing = rows.filter { selection.contains($0.id) } }
@@ -2074,6 +2082,10 @@ struct ContentView: View {
                             ForEach(playlists.names, id: \.self) { name in
                                 row(name, "music.note.list", .playlist(name))
                                     .contextMenu {
+                                        Button("Play") { play(name) }
+                                            .disabled(playlists.paths[name]?.isEmpty ?? true)
+                                            .buttonStyle(PressableButtonStyle())
+                                        Divider()
                                         Button("Delete Playlist", role: .destructive) { deleting = name }
                                             .keyboardShortcut(.delete, modifiers: [])
                                             .buttonStyle(PressableButtonStyle(isDestructive: true))
@@ -2308,6 +2320,15 @@ struct ContentView: View {
         .environment(\.tracker, tracker)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .frame(minWidth: 820, minHeight: 520)
+    }
+
+    private func play(_ name: String) {
+        let tracks = library.tracks(at: playlists.paths[name] ?? [])
+        Log.playlists.info("play playlist", metadata: ["name": "\(name)", "songs": "\(tracks.count)"])
+        guard !tracks.isEmpty else { return Log.playlists.debug("play ignored", metadata: ["name": "\(name)", "reason": "no song"]) }
+
+        player.play(tracks)
+        lyrics.settle { navigation.open(.playlist(name), leaving: tracker.position) }
     }
 
     private var sidebar: Binding<Page?> {

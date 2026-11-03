@@ -246,6 +246,29 @@ struct ViewStructureTests {
         #expect(source.contains("reachable(table, in: content)"), "Control-Return opens the menu of the table that shows")
     }
 
+    @Test func onlyTheListThatShowsTakesADrop() throws {
+        let source = try source()
+        let queue = region(source, from: "struct UpNextView: View {")
+        let playlist = region(source, from: "struct PlaylistView: View {")
+
+        for body in [queue, playlist] {
+            let rows = body.components(separatedBy: "} rows: {").last ?? ""
+            #expect(rows.contains("if active {\n") && rows.contains("} else {\n") && rows.contains("ForEach(rows) { TableRow($0) }"), "a hidden table is still an AppKit drag destination: a drag on a playlist moved the songs of the hidden Up Next")
+            #expect(source.components(separatedBy: ".dropDestination(for: String.self)").count == 3, "every row drop is behind its list's active flag")
+        }
+    }
+
+    @Test func thePlaylistMenuPlaysAndOpensThePlaylist() throws {
+        let source = try source()
+        let play = region(source, from: "    private func play(_ name: String) {")
+
+        #expect(source.contains(".contextMenu {\n                                        Button(\"Play\") { play(name) }"), "the sidebar menu of a playlist plays it")
+        #expect(source.contains("Button(\"Delete Playlist\", role: .destructive) { deleting = name }"), "deleting still asks first")
+        #expect(play.contains("library.tracks(at: playlists.paths[name] ?? [])"), "the whole playlist plays, not the search results")
+        #expect(play.contains("player.play(tracks)"))
+        #expect(play.contains("navigation.open(.playlist(name)"), "and the playlist page opens")
+    }
+
     @Test func emptyListsClearTheSelectedSong() throws {
         let source = try source()
 

@@ -648,6 +648,11 @@ final class Library {
         lookup[path]
     }
 
+    /// The songs of a list the library holds, in its order, whatever the search.
+    func tracks(at paths: [String]) -> [Track] {
+        paths.compactMap { lookup[$0] }
+    }
+
     func random(_ count: Int) -> [Track] {
         guard total >= count else { return [] }
 
