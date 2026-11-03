@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Testing
 @testable import Overdrive
@@ -115,12 +116,27 @@ struct SpectrumTests {
         #expect(out.allSatisfy { $0 == 1 })
     }
 
-    @Test func theBarsRunOnlyWhileTheWindowShows() {
-        #expect(SpectrumBar.running(shown: true, active: true, fading: false))
-        #expect(SpectrumBar.running(shown: true, active: false, fading: true))
-        #expect(!SpectrumBar.running(shown: true, active: false, fading: false))
-        #expect(!SpectrumBar.running(shown: false, active: true, fading: false), "a window in the background must not draw")
-        #expect(!SpectrumBar.running(shown: false, active: false, fading: true))
+    @Test func theBarsRunWhileTheWindowIsOnScreen() {
+        #expect(SpectrumBar.running(active: true, fading: false))
+        #expect(SpectrumBar.running(active: false, fading: true), "the bars fall before they stop")
+        #expect(!SpectrumBar.running(active: false, fading: false))
+        #expect(SpectrumView.runs(visible: true, running: true), "a window without focus still shows the bars")
+        #expect(!SpectrumView.runs(visible: false, running: true), "a minimized, hidden, or covered window must not draw")
+        #expect(!SpectrumView.runs(visible: true, running: false))
+    }
+
+    @Test func aWindowThatIsNotOnScreenStopsTheSamples() {
+        let spectrum = Spectrum()
+        spectrum.listening = true
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
+        let view = SpectrumView(spectrum: spectrum)
+        window.contentView = view
+
+        #expect(!view.visible, "a window that was never shown is not on screen")
+        #expect(!spectrum.listening, "so the audio thread copies nothing")
+
+        view.removeFromSuperview()
+        #expect(!view.visible)
     }
 
     @Test func theBarsFillTheWidthAndRiseFromTheBottom() {

@@ -1887,7 +1887,6 @@ struct SpectrumBar: View {
     static let interval = 1.0 / 60
 
     @Environment(Player.self) private var player
-    @Environment(\.appearsActive) private var shown
     @State private var fading = false
 
     static func count(_ width: CGFloat) -> Int {
@@ -1901,22 +1900,18 @@ struct SpectrumBar: View {
         return CGRect(x: CGFloat(index) * step, y: 0, width: width, height: height)
     }
 
-    static func running(shown: Bool, active: Bool, fading: Bool) -> Bool {
-        shown && (active || fading)
+    static func running(active: Bool, fading: Bool) -> Bool {
+        active || fading
     }
 
     var body: some View {
         let active = player.playing && !player.isMuted
 
-        SpectrumLayers(spectrum: player.spectrum, active: active, running: Self.running(shown: shown, active: active, fading: fading))
+        SpectrumLayers(spectrum: player.spectrum, active: active, running: Self.running(active: active, fading: fading))
             .frame(height: Self.height)
             .opacity(player.playing ? 1 : 0)
             .animation(.easeOut(duration: 0.4), value: player.playing)
             .accessibilityHidden(true)
-            .onChange(of: shown, initial: true) {
-                Log.player.debug("spectrum", metadata: ["shown": "\(shown)"])
-                player.spectrum.listening = shown
-            }
             .task(id: active) {
                 guard !active else { return fading = false }
 
@@ -1952,8 +1947,15 @@ final class SpectrumView: NSView {
     private var bars: [CALayer] = []
     private var link: CADisplayLink?
     private var time: CFTimeInterval = 0
+    private(set) var visible = false
     var active = false
-    var running = false { didSet { link?.isPaused = !running } }
+    var running = false { didSet { pause() } }
+
+    /// The bars run while some of the window is on screen, focused or not:
+    /// minimized, hidden, or fully covered, nobody sees them.
+    static func runs(visible: Bool, running: Bool) -> Bool {
+        visible && running
+    }
 
     init(spectrum: Spectrum) {
         self.spectrum = spectrum
@@ -1973,17 +1975,35 @@ final class SpectrumView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if let window { NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: window) }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         link?.invalidate()
         link = nil
-        guard window != nil else { return }
+        if let window {
+            let link = displayLink(target: self, selector: #selector(step))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: Float(1 / SpectrumBar.interval), preferred: Float(1 / SpectrumBar.interval))
+            link.add(to: .main, forMode: .common)
+            self.link = link
+            NotificationCenter.default.addObserver(self, selector: #selector(occlusion), name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        }
+        occlusion()
+    }
 
-        let link = displayLink(target: self, selector: #selector(step))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: Float(1 / SpectrumBar.interval), preferred: Float(1 / SpectrumBar.interval))
-        link.isPaused = !running
-        link.add(to: .main, forMode: .common)
-        self.link = link
+    @objc private func occlusion() {
+        let visible = window?.occlusionState.contains(.visible) ?? false
+        if visible != self.visible { Log.player.debug("spectrum", metadata: ["visible": "\(visible)"]) }
+        self.visible = visible
+        spectrum.listening = visible
+        pause()
+    }
+
+    private func pause() {
+        link?.isPaused = !Self.runs(visible: visible, running: running)
     }
 
     override func viewDidChangeEffectiveAppearance() {
