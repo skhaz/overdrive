@@ -2097,7 +2097,7 @@ struct Controls: View {
 
                     VStack(alignment: .leading) {
                         Marquee(text: player.current?.title ?? "Not Playing").bold()
-                        Marquee(text: player.current.map { "\($0.artist) — \($0.album)" } ?? "").foregroundStyle(.secondary)
+                        Marquee(text: player.current.map { "\($0.artist) · \($0.album)" } ?? "").foregroundStyle(.secondary)
                     }
                     .frame(minWidth: 120, maxWidth: 360, alignment: .leading)
                 }
