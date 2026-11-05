@@ -446,11 +446,6 @@ struct CopyMenu: View {
 
 struct LyricsView: View {
     static let width: CGFloat = 320
-    /// The box of the controls, the same on both tabs. The small spinner is the
-    /// tallest thing the row ever holds, and the row keeps its box when the tab
-    /// shows no button, so the tabs and the list under them never move when the
-    /// user switches, or when an answer arrives.
-    static let controls: CGFloat = 16
 
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
@@ -475,13 +470,48 @@ struct LyricsView: View {
         asking = true
     }
 
-    /// One tab of the panel: the accent pill is the house style of a chosen
-    /// thing, and it answers the press at once.
-    private func tab(_ title: String, _ value: Similar.Tab) -> some View {
-        Button { similar.select(value) } label: {
-            Text(title).frame(maxWidth: .infinity)
+    /// The two faces of the panel in one native switch. The row is the same in
+    /// both, so a choice moves nothing, and it goes through `Similar.select`,
+    /// the one that asks the service for the list.
+    private var switcher: some View {
+        Picker("Lyrics or Similar", selection: Binding { similar.tab } set: { similar.select($0) }) {
+            Text("Lyrics").tag(Similar.Tab.lyrics)
+            Text("Similar").tag(Similar.Tab.similar)
         }
-        .buttonStyle(PressableButtonStyle(isProminent: similar.tab == value))
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    /// The actions of the lyrics in the corner of the box they act on, and the
+    /// wait of a lookup in its middle: the panel keeps no row of controls, so
+    /// the lyrics and the artists list take the whole height of the sidebar.
+    @ViewBuilder private func controls(lines: [SyncedLine]) -> some View {
+        if !lyrics.hasLocalLyrics || !lines.isEmpty {
+            HStack(spacing: 6) {
+                if !lyrics.hasLocalLyrics {
+                    Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                }
+                if !lines.isEmpty {
+                    Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") { close() }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .alert("Save your lyric edit?", isPresented: $asking) {
+                            Button("Save") { lyrics.flush(); editing = false }
+                            Button("Discard", role: .destructive) { lyrics.discard(); editing = false }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("The new text is not on the disk yet. Save it, or discard it and keep the lyrics the file has.")
+                        }
+                }
+            }
+            .padding(4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .padding(6)
+        }
     }
 
     var body: some View {
@@ -490,57 +520,14 @@ struct LyricsView: View {
             let live = player.current == track
             let current = live ? LRC.index(at: player.position, in: lines) : nil
             let tabs = !lastFM.user.isEmpty
-            let showing = tabs && similar.tab == .similar
 
             VStack(alignment: .leading, spacing: 8) {
                 // No name here: the bar under the window already shows the song.
-                HStack(alignment: .center, spacing: 8) {
-                    Spacer()
-                    HStack(spacing: 8) {
-                        if showing {
-                            if similar.loading {
-                                ProgressView().controlSize(.small)
-                            }
-                        } else {
-                            if lyrics.loading {
-                                ProgressView().controlSize(.small)
-                            }
-                            if !lyrics.hasLocalLyrics {
-                                Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
-                                    .labelStyle(.iconOnly)
-                                    .buttonStyle(.borderless)
-                                    .controlSize(.small)
-                            }
-                            Button("Show in a Floating Window", systemImage: "macwindow") { lyrics.floating = true }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
-                                .controlSize(.small)
-                            if !lines.isEmpty {
-                                Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") { close() }
-                                    .labelStyle(.iconOnly)
-                                    .buttonStyle(.borderless)
-                                    .controlSize(.small)
-                                    .alert("Save your lyric edit?", isPresented: $asking) {
-                                        Button("Save") { lyrics.flush(); editing = false }
-                                        Button("Discard", role: .destructive) { lyrics.discard(); editing = false }
-                                        Button("Cancel", role: .cancel) {}
-                                    } message: {
-                                        Text("The new text is not on the disk yet. Save it, or discard it and keep the lyrics the file has.")
-                                    }
-                            }
-                        }
-                    }
-                }
-                .frame(height: Self.controls)
-
                 if tabs {
-                    HStack(spacing: 6) {
-                        tab("Lyrics", .lyrics)
-                        tab("Similar", .similar)
-                    }
+                    switcher
                 }
 
-                if showing {
+                if tabs, similar.tab == .similar {
                     SimilarArtists()
                 } else {
                     Group {
@@ -555,6 +542,13 @@ struct LyricsView: View {
                         }
                     }
                     .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(alignment: .topTrailing) { controls(lines: lines) }
+                    .overlay {
+                        if lyrics.loading {
+                            ProgressView()
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .alert("Replace local lyrics?", isPresented: Binding(
                         get: { lyrics.pendingReplace },
                         set: { if !$0 { lyrics.cancelReplace() } }
@@ -2583,9 +2577,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatLyrics)) { _ in
             player.lyrics = true
-            guard let current = player.current else { return Log.lyrics.debug("float ignored", metadata: ["reason": "no song"]) }
+            if let current = player.current { lyrics.show(current) }
+            guard lyrics.track != nil else { return Log.lyrics.debug("float ignored", metadata: ["reason": "no song"]) }
 
-            lyrics.show(current)
             lyrics.floating = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveLyrics)) { _ in

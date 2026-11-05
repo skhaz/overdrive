@@ -278,7 +278,7 @@ struct Overdrive: App {
                     .disabled(!player.lyrics)
                 Button("Show Lyrics in a Floating Window", systemImage: "macwindow") { NotificationCenter.default.post(name: .floatLyrics, object: nil) }
                     .keyboardShortcut("u")
-                    .disabled(player.current == nil)
+                    .disabled(player.current == nil && !player.lyrics)
                 Divider()
                 Toggle("Shuffle", systemImage: "shuffle", isOn: $player.shuffle)
                     .keyboardShortcut("s", modifiers: [.command, .option])

@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import SwiftUI
 import Testing
 @testable import Overdrive
 
@@ -243,10 +242,11 @@ struct ViewStructureTests {
         let row = region(source, from: "private struct SimilarArtistRow: View {")
 
         #expect(panel.contains("let tabs = !lastFM.user.isEmpty"), "the tabs only exist while a Last.fm account is connected")
-        #expect(panel.contains("Button { similar.select(value) }"), "the tabs are buttons of the panel")
-        #expect(panel.contains("PressableButtonStyle(isProminent: similar.tab == value)"), "the chosen tab takes the accent pill and answers the press")
-        #expect(!panel.contains("Picker("), "the native segmented picker did not feel alive inside the panel")
-        #expect(panel.contains("if showing {\n                    SimilarArtists()"), "the similar tab lists the artists natively, with no web view")
+        #expect(panel.contains("selection: Binding { similar.tab } set: { similar.select($0) }"), "the switch writes through `select`, the one door that logs the tab and asks for the list")
+        #expect(panel.contains("Text(\"Lyrics\").tag(Similar.Tab.lyrics)"), "each segment carries the tab itself: a tag of another type never answers the press")
+        #expect(panel.contains("Text(\"Similar\").tag(Similar.Tab.similar)"), "and so does the other one")
+        #expect(panel.contains(".pickerStyle(.segmented)"), "the switch is the segmented control of the system")
+        #expect(panel.contains("if tabs, similar.tab == .similar {\n                    SimilarArtists()"), "the similar tab lists the artists natively, with no web view")
         #expect(source.contains("similar.show(lyrics.track)"), "the panel follows the song it shows")
         #expect(row.contains("onTapGesture { similar.open(artist) }"), "a click opens the artist page")
         #expect(row.contains("Button(\"Copy Name\") { similar.copyName(artist) }"), "the right button copies the name")
@@ -256,43 +256,49 @@ struct ViewStructureTests {
         #expect(!panel.contains("WKWebView") && !row.contains("WKWebView"), "the list is never a web view")
     }
 
-    /// A tab switch changes the content and nothing else: the control row keeps
-    /// its box on both tabs, and both contents draw the same box, so the pills
-    /// and the list under them never move.
+    /// The panel is one switch over one box. The actions of the lyrics live in
+    /// the corner of the box they act on and the wait of a lookup in its middle,
+    /// so no tab choice adds a row, takes one, or moves the box.
     @Test func theTabsSwapOnlyTheContent() throws {
         let source = try source()
         let panel = region(source, from: "struct LyricsView: View {")
-
-        #expect(panel.contains("static let controls: CGFloat"), "the panel keeps one box for its controls")
-        #expect(panel.contains(".frame(height: Self.controls)"), "the box holds its place while the tab shows no button, so the pills and the list under them never move")
-        #expect(panel.components(separatedBy: "if showing").count - 1 == 2, "only the controls and the content follow the tab, and both keep their place")
-        #expect(panel.contains("if tabs {\n                    HStack(spacing: 6) {"), "the two pills are one row that no tab changes")
-
-        let box = "Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6)"
         let artists = region(source, from: "struct SimilarArtists: View {")
+        let box = "Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6)"
+
+        #expect(panel.contains(".overlay(alignment: .topTrailing) { controls(lines: lines) }"), "the actions of the lyrics sit in the corner of their own box")
+        #expect(panel.contains(".overlay {\n                        if lyrics.loading {"), "the wait shows in the middle of the lyrics, as the wait of the list shows in the middle of the list")
+        #expect(panel.components(separatedBy: "VStack(alignment: .leading, spacing: 8) {").count - 1 == 1, "one stack: a tab changes the content of the box, never the rows above it")
+        #expect(!panel.contains("Spacer()"), "nothing in the panel grows or collapses with the tab")
+        #expect(!panel.contains("Floating Window"), "the floating window is a command of the menu bar, not a button of the panel")
         #expect(panel.components(separatedBy: box).count - 1 == 1, "the lyrics draw one rounded box")
         #expect(artists.components(separatedBy: box).count - 1 == 1, "and the artists list draws the same box, in the same place")
     }
 
-    /// The reserved height has to be the height of the tallest thing the row can
-    /// show: a control taller than the box would push the pills down again.
-    @MainActor @Test func theControlBoxHoldsEveryControlItShows() {
-        func height<V: View>(_ view: @MainActor () -> V) -> CGFloat {
-            NSHostingView(rootView: view()).fittingSize.height
-        }
+    /// The corner holds the two actions of the lyrics and nothing else, and both
+    /// answer the press through the doors the rest of the app already uses.
+    @Test func theLyricsCornerHoldsTheTwoActions() throws {
+        let panel = region(try source(), from: "struct LyricsView: View {")
+        let corner = region(panel, from: "@ViewBuilder private func controls(lines: [SyncedLine]) -> some View {")
 
-        let box = LyricsView.controls
-        let spinner = height { ProgressView().controlSize(.small) }
-        let button = height {
-            Button("Refresh", systemImage: "arrow.clockwise") {}
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-        }
+        #expect(corner.contains("if !lyrics.hasLocalLyrics || !lines.isEmpty {"), "the corner draws only when it has something to offer: no empty strip over the text")
+        #expect(corner.contains("action: lyrics.refresh"), "the search for the lyric goes through the one refresh that saves a pending edit first")
+        #expect(corner.contains("{ close() }"), "and the edit goes through the one door that asks before a drop")
+        #expect(corner.contains(".padding(4)"), "the corner is a chip in the box, not a bar across it")
+        #expect(!corner.contains("Floating Window"), "and the corner holds no window button: that is a command of the menu bar")
+    }
 
-        #expect(spinner > 0, "the panel measures the real spinner, and the measure is not nothing")
-        #expect(button > 0, "and the real button")
-        #expect(box >= max(spinner, button), "the box is \(box), the small spinner is \(spinner), the small button is \(button)")
+    /// The floating window left the panel for the menu bar, and the command still
+    /// floats the song the panel shows: the one that plays, or the one picked when
+    /// nothing plays.
+    @Test func theFloatingWindowIsAMenuCommand() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let app = try String(contentsOf: root.appending(path: "Sources/Overdrive/Overdrive.swift"), encoding: .utf8)
+        let panel = region(try source(), from: ".onReceive(NotificationCenter.default.publisher(for: .floatLyrics))")
+
+        #expect(app.contains("Button(\"Show Lyrics in a Floating Window\", systemImage: \"macwindow\") { NotificationCenter.default.post(name: .floatLyrics, object: nil) }"), "Controls offers the floating window")
+        #expect(app.contains(".disabled(player.current == nil && !player.lyrics)"), "with a song the command is open, and with the panel shown it is open too")
+        #expect(panel.contains("if let current = player.current { lyrics.show(current) }"), "a song that plays is the song that floats")
+        #expect(panel.contains("guard lyrics.track != nil else"), "and with nothing playing the song the panel shows still floats")
     }
 
     @Test func theLyricsButtonHidesTheLyrics() throws {
