@@ -41,10 +41,18 @@ final class Similar {
     @ObservationIgnored var space = Similar.space
     /// The API gives the same default silhouette for every artist, so a row
     /// without a photo takes it from the artist's own page, and from the
-    /// store of Apple only when the page has no photo. A test replaces this.
+    /// store of Apple only when the page has no photo. The picture is fetched
+    /// at once, so the row shows it from the cache. A test replaces this.
     @ObservationIgnored var artwork: @Sendable (String) async -> URL? = { name in
-        if let photo = await Similar.lastFMArtwork(name) { return photo }
-        return await Similar.iTunesArtwork(name)
+        if let photo = await Similar.lastFMArtwork(name) {
+            Similar.warm(photo)
+            return photo
+        }
+        if let photo = await Similar.iTunesArtwork(name) {
+            Similar.warm(photo)
+            return photo
+        }
+        return nil
     }
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private var shown = ""
@@ -150,20 +158,35 @@ final class Similar {
         }
     }
 
-    /// One row, in its own lane: the photo first, then the counts, both after
-    /// the row's own wait, because both go to the service with a rate now.
-    /// A row that another answer already filled is never written twice.
+    /// One row, in its own lane, after the row's own wait: the photo and the
+    /// counts go out together and each lands when it arrives, so neither
+    /// waits for the round trip of the other. A row that another answer
+    /// already filled is never written twice.
     private func enrich(_ index: Int, _ name: String, _ asked: String, _ folded: String, _ place: Int) async {
         if place > 0 { try? await Task.sleep(for: space * Double(place)) }
         guard !Task.isCancelled, shown == folded, artists.indices.contains(index) else {
             return Log.similar.debug("load dropped", metadata: ["artist": "\(asked)", "reason": Task.isCancelled ? "cancelled" : "superseded", "at": "\(index)"])
         }
 
-        if artists[index].image == nil, let picture = await artwork(name),
-           !Task.isCancelled, shown == folded, artists.indices.contains(index), artists[index].image == nil {
-            artists[index].image = picture
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.takePhoto(index, name, asked, folded) }
+            group.addTask { await self.takeCounts(index, name, asked, folded) }
         }
+    }
 
+    /// The photo of one row: not asked when the service already gave a real
+    /// one, and never written over an answer that arrived first.
+    private func takePhoto(_ index: Int, _ name: String, _ asked: String, _ folded: String) async {
+        guard artists.indices.contains(index), artists[index].image == nil else { return }
+
+        guard let picture = await artwork(name),
+              !Task.isCancelled, shown == folded, artists.indices.contains(index), artists[index].image == nil else { return }
+        artists[index].image = picture
+    }
+
+    /// The counts of one row, and the photo of the service when the search
+    /// found none.
+    private func takeCounts(_ index: Int, _ name: String, _ asked: String, _ folded: String) async {
         guard let info = await lastFM.artistInfo(name) else { return }
         guard !Task.isCancelled, shown == folded, artists.indices.contains(index) else {
             return Log.similar.debug("load dropped", metadata: ["artist": "\(asked)", "reason": Task.isCancelled ? "cancelled" : "superseded", "at": "\(index)"])
@@ -215,32 +238,50 @@ final class Similar {
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
 
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let picture = pagePhoto(String(decoding: data, as: UTF8.self)) else {
+        guard let (bytes, response) = try? await URLSession.shared.bytes(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else {
             Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "false"])
             return nil
         }
 
-        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "true"])
-        return picture
+        // The tag lives a few lines into the head, so the walk stops there:
+        // the rest of the page, half a megabyte, is cancelled, not read. One
+        // picture never pays for the whole page.
+        defer { bytes.task.cancel() }
+        do {
+            for try await line in bytes.lines {
+                guard !Task.isCancelled else { return nil }
+                if let picture = pagePhoto(line) {
+                    Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "true"])
+                    return picture
+                }
+            }
+        } catch {
+            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "false", "error": "\(error.localizedDescription)"])
+            return nil
+        }
+
+        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "false"])
+        return nil
     }
 
-    /// The photo of the artist inside the HTML of the page: `og:image` holds
-    /// it in the big size (`ar0`), and the CDN cuts the same picture to the
-    /// size the row draws (`174s`). A page with no photo carries the site
-    /// logo, and a challenge page carries nothing, so only the picture of an
-    /// artist passes. The walk is a plain search of the tag, never a regex
-    /// over the whole page.
-    nonisolated static func pagePhoto(_ html: String) -> URL? {
-        var from = html.startIndex
-        while let tag = html.range(of: #"og:image""#, range: from..<html.endIndex) {
-            guard let value = html.range(of: #"content=""#, range: tag.upperBound..<html.endIndex),
-                  let end = html.range(of: #"""#, range: value.upperBound..<html.endIndex) else { return nil }
-            from = tag.upperBound
-            if let photo = pagePicture(String(html[value.upperBound..<end.lowerBound])) { return photo }
-        }
-        return nil
+    /// The hosts of the pictures keep them for years, so one fetch now puts
+    /// the bytes in the cache of the session: the row takes the picture from
+    /// there when it draws, instead of spending a second round trip.
+    private nonisolated static func warm(_ photo: URL) {
+        Task { _ = try? await URLSession.shared.data(from: photo) }
+    }
+
+    /// The photo of the artist in one line of the page: the line of `og:image`
+    /// carries it in the big size (`ar0`), and the CDN cuts the same picture
+    /// to the size the row draws (`174s`). A page with no photo carries the
+    /// site logo, a challenge page carries nothing, and the other lines carry
+    /// no `og:image` at all, so only the picture of an artist passes. The
+    /// walk reads the line as it comes, with no regex over the whole page.
+    nonisolated static func pagePhoto(_ line: String) -> URL? {
+        guard line.contains(#"og:image""#), let value = line.range(of: #"content=""#),
+              let end = line.range(of: #"""#, range: value.upperBound..<line.endIndex) else { return nil }
+        return pagePicture(String(line[value.upperBound..<end.lowerBound]))
     }
 
     /// The address of the row in the size it draws, when the content of the

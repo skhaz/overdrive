@@ -434,15 +434,15 @@ struct SimilarTests {
     }
 
     @Test func thePhotoOfThePageComesInTheSizeOfTheRow() {
-        // The shape of the tag as the site writes it: wide filler spacing, and
-        // the photo in the big size (`ar0`).
-        let html = """
-        <meta property="og:url"             content="https://www.last.fm/music/Diabolic+Force" data-replaceable-head-tag />
-        <meta property="og:image"           content="https://lastfm-img.freetls.fastly.net/i/u/ar0/564Bce3c20c40bb7653a909fe042fb88.jpg" data-replaceable-head-tag>
-        <meta property="og:image:width"     content="1200" data-replaceable-head-tag>
-        """
-        #expect(Similar.pagePhoto(html)?.absoluteString == "https://lastfm-img.freetls.fastly.net/i/u/174s/564bce3c20c40bb7653a909fe042fb88.jpg",
+        // The line as the site writes it: filler spacing, and the photo in
+        // the big size (`ar0`).
+        let line = #"<meta property="og:image"           content="https://lastfm-img.freetls.fastly.net/i/u/ar0/564Bce3c20c40bb7653a909fe042fb88.jpg" data-replaceable-head-tag>"#
+        #expect(Similar.pagePhoto(line)?.absoluteString == "https://lastfm-img.freetls.fastly.net/i/u/174s/564bce3c20c40bb7653a909fe042fb88.jpg",
                 "the photo of the artist arrives cut to the size the row draws")
+
+        let reversed = #"<meta content="https://lastfm-img.freetls.fastly.net/i/u/ar0/564bce3c20c40bb7653a909fe042fb88.jpg" property="og:image">"#
+        #expect(Similar.pagePhoto(reversed)?.absoluteString == "https://lastfm-img.freetls.fastly.net/i/u/174s/564bce3c20c40bb7653a909fe042fb88.jpg",
+                "the two parts of the tag answer in any order")
     }
 
     @Test func aPageWithNoPhotoOfTheArtistGivesNothing() {
@@ -457,6 +457,26 @@ struct SimilarTests {
 
         let other = #"<meta property="og:image:width" content="1200">"#
         #expect(Similar.pagePhoto(other) == nil, "the size tag of the photo is not the photo")
+    }
+
+    @Test func thePageIsReadToTheTagAndThePictureArrivesWarm() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let text = try String(contentsOf: root.appending(path: "Sources/Overdrive/Similar.swift"), encoding: .utf8)
+
+        #expect(text.contains("URLSession." + "shared.bytes(for: request)"), "the page streams, so the walk can stop at the tag")
+        #expect(text.contains("for try await line in bytes.lines"), "the walk reads the page line by line")
+        #expect(text.contains("bytes.task.cancel()"), "the half-megabyte rest of the page is cancelled, not downloaded")
+        #expect(text.contains("Similar.warm(photo)"), "the picture is fetched at once, so the row draws it from the cache")
+
+        if let found = text.range(of: "private func enrich") {
+            let row = String(text[found.lowerBound...]).components(separatedBy: "\n    /// The page of one artist")[0]
+            #expect(row.contains("withTaskGroup"), "the photo and the counts of one row go out together")
+            #expect(row.contains("await artwork(name)"), "the row asks the photo")
+            #expect(row.contains("await lastFM.artistInfo(name)"), "and the counts, neither waiting for the other")
+            #expect(row.contains("guard artists.indices.contains(index), artists[index].image == nil else { return }"), "a row that already has a photo asks for none")
+        } else {
+            Issue.record("the row walker is gone")
+        }
     }
 
     @Test func theCoverTakesTheArtistsOwnAnswerInStoreOrder() {
