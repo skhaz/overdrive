@@ -464,11 +464,18 @@ struct NavigationTests {
         #expect(!Navigation(page: .section(.artists)).lyrics)
         #expect(Navigation(page: songs).lyrics)
         #expect(Navigation(page: .liked).lyrics)
+        #expect(Navigation(page: .addicted).lyrics, "the addicted list shows the lyrics of the song that plays")
         #expect(Navigation(page: mix).lyrics)
         #expect(Navigation(page: albums, path: [.album(one)]).lyrics)
         #expect(!Navigation(page: .section(.artists), path: [.artist("Artist")]).lyrics)
         #expect(Navigation(page: .section(.artists), path: [.artist("Artist"), .album(one)]).lyrics)
         #expect(Navigation(page: songs, path: [.album(one)]).lyrics)
+    }
+
+    @Test func theAddictedPageSurvivesAKeyRoundTrip() {
+        #expect(Page.addicted.key == "addicted")
+        #expect(Page(key: "addicted") == .addicted, "the saved session can come back on it")
+        #expect(Page.addicted.title == "Addicted")
     }
 
     @Test func deletingAPlaylistClosesItsPage() {

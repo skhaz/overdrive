@@ -51,6 +51,37 @@ struct PlaysTests {
         #expect(keys == ["a", "b"], "a song the library does not have takes no place in the pick")
     }
 
+    @Test func rankWalksTheCountsBestFirstAndStopsAtTheCap() {
+        let plays = Plays()
+        let one = track("/m/One.mp3"), two = track("/m/Two.mp3"), three = track("/m/Three.mp3")
+
+        plays.bump(one)
+        plays.bump(three)
+        plays.bump(three)
+        for _ in 0..<3 { plays.bump(two) }
+
+        #expect(plays.rank(4) { _ in true } == [Plays.key(two), Plays.key(three), Plays.key(one)], "best first, and no draw: the same counts give the same order")
+        #expect(plays.rank(2) { _ in true } == [Plays.key(two), Plays.key(three)], "the cap cuts the list")
+        #expect(plays.rank(3) { $0 != Plays.key(one) } == [Plays.key(two), Plays.key(three)], "a key the caller rejects is skipped where it sits")
+        #expect(plays.rank(0) { _ in true }.isEmpty, "nothing asked for, nothing listed")
+    }
+
+    @Test func rankTiesByTheKeyAndTakesAFreshPlayAtOnce() {
+        let plays = Plays()
+        let one = track("/m/One.mp3"), three = track("/m/Three.mp3")
+
+        plays.bump(three)
+        plays.bump(three)
+        plays.bump(one)
+        plays.bump(one)
+
+        #expect(plays.rank(5) { _ in true } == [Plays.key(one), Plays.key(three)], "equal counts tie by the key, so the list never jumps")
+
+        let fresh = track("/m/Fresh.mp3")
+        plays.bump(fresh)
+        #expect(plays.rank(5) { _ in true }.contains(Plays.key(fresh)), "a first play enters the order at once, with no write to the disk first")
+    }
+
     @Test func theBestPlayedPickWalksOnlyWhatItNeeds() {
         let many = (0..<50_000).map { ("song\($0)", 50_000 - $0) }
         var seen = 0

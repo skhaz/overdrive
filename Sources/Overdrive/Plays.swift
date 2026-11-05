@@ -46,15 +46,29 @@ final class Plays {
     }
 
     nonisolated static func sift(_ ranks: inout [Rank], _ slots: inout [String: Int], _ slot: Int) {
-        let count = ranks[slot].count + 1
+        ranks[slot].count += 1
+        lift(&ranks, &slots, slot)
+    }
+
+    /// Move an entry up to where its count belongs: best first, and ties by
+    /// the key, so the order while you play and the order after a read are
+    /// one order, and a list that walks it never jumps between two songs of
+    /// the same count.
+    nonisolated static func lift(_ ranks: inout [Rank], _ slots: inout [String: Int], _ slot: Int) {
         var at = slot
-        while at > 0, ranks[at - 1].count < count {
+
+        while at > 0, outranked(ranks[at - 1], by: ranks[at]) {
             ranks.swapAt(at, at - 1)
             slots[ranks[at].key] = at
             slots[ranks[at - 1].key] = at - 1
             at -= 1
         }
-        ranks[at].count = count
+    }
+
+    /// True when the entry ahead holds fewer plays, or the same plays under a
+    /// later key.
+    private nonisolated static func outranked(_ ahead: Rank, by mover: Rank) -> Bool {
+        ahead.count < mover.count || (ahead.count == mover.count && ahead.key > mover.key)
     }
 
     private(set) var revision = 0
@@ -92,6 +106,25 @@ final class Plays {
         Self.top(ranked, count, live)
     }
 
+    /// The best `limit` keys in the order of the counts: best first, ties by
+    /// key. No draw: this is the list the user reads, so the same counts give
+    /// the same order. A key `live` rejects is skipped where it sits, and the
+    /// pending counts ride in, so a song that just finished ranks at once.
+    func rank(_ limit: Int, _ live: (String) -> Bool) -> [String] {
+        guard limit > 0 else { return [] }
+        _ = revision
+
+        var keys: [String] = []
+        keys.reserveCapacity(limit)
+
+        for entry in ranked where live(entry.key) {
+            keys.append(entry.key)
+            if keys.count == limit { break }
+        }
+
+        return keys
+    }
+
     func top(_ key: String) -> Int {
         (counts[key] ?? 0) + (pending[key] ?? 0)
     }
@@ -105,6 +138,7 @@ final class Plays {
         guard value > 1 else {
             ranked.append(Rank(key: key, count: 1))
             slots[key] = ranked.count - 1
+            Plays.lift(&ranked, &slots, ranked.count - 1)
             onPlay?(track)
             return
         }

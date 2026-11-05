@@ -675,6 +675,19 @@ final class Library {
         return tracks
     }
 
+    /// How many songs the Addicted list shows.
+    nonisolated static let topPlayed = 20
+
+    /// The paths of the `limit` most played songs the library holds, best
+    /// first: the Addicted list. It reads the counts live, so a song that just
+    /// finished climbs the moment it is counted, and a song the library lost
+    /// is skipped where it sits.
+    func addicted(_ limit: Int) -> [String] {
+        let index = keyIndex
+
+        return plays.rank(limit) { index[$0] != nil }.compactMap { index[$0] }.map { everything[$0].url.path }
+    }
+
     /// The artists that can still add a song: one entry per artist of the whole
     /// library, never of the search, with the songs of its own that are not in
     /// `served`. An artist whose songs all played leaves the pool, so a mode

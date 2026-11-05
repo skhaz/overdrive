@@ -168,6 +168,18 @@ struct ViewStructureTests {
 
     private func lower(_ text: String) -> String { text }
 
+    @Test func theAddictedListOpensAlwaysCurrent() throws {
+        let source = try source()
+        let list = region(source, from: "struct AddictedView: View {")
+
+        #expect(source.contains("row(\"Addicted\", \"skull\", .addicted)"), "the sidebar carries the skull row")
+        #expect(source.contains("case .addicted: AddictedView()"), "the row opens its own page")
+        #expect(list.contains("let paths = library.addicted(Library.topPlayed)"), "every pass reads the counts again, so the list a click opens is the order of that moment")
+        #expect(list.contains(".onChange(of: paths) { selection = [] }"), "a reshuffle does not leave the selection on another song")
+        #expect(!list.contains("go(.playing"), "a double-click plays the row and opens no album")
+        #expect(source.contains("case .liked, .addicted, .banned, .playlist, .upNext:"), "at launch the page opens on its list, like Liked Songs")
+    }
+
     @Test func theLyricsPanelHasTwoTabsOnlyWithAnAccount() throws {
         let source = try source()
         let panel = region(source, from: "struct LyricsView: View {")
@@ -288,7 +300,7 @@ struct ViewStructureTests {
     @Test func emptyListsClearTheSelectedSong() throws {
         let source = try source()
 
-        #expect(source.components(separatedBy: ".modifier(Selected(tracks: []").count - 1 == 4, "an empty queue, playlist, liked songs, or never-picked list shows the lyrics of the song that plays")
+        #expect(source.components(separatedBy: ".modifier(Selected(tracks: []").count - 1 == 5, "an empty queue, playlist, liked songs, addicted, or never-picked list shows the lyrics of the song that plays")
     }
 
     @Test func aDoubleClickAndEnterDoTheSame() throws {
