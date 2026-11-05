@@ -1938,7 +1938,7 @@ struct AddictedView: View {
         let now = youTube.showing ?? player.current
 
         if paths.isEmpty {
-            ContentUnavailableView("Nothing Played Yet", systemImage: "skull", description: Text("A song joins this list when it has played all the way through. The songs you play most come first."))
+            ContentUnavailableView("Nothing Played Yet", systemImage: "flame.fill", description: Text("A song joins this list when it has played all the way through. The songs you play most come first."))
                 .modifier(Selected(tracks: []))
         } else {
             ScrollViewReader { proxy in
@@ -2389,7 +2389,7 @@ struct ContentView: View {
                         }
 
                         row("Liked Songs", "heart", .liked)
-                        row("Addicted", "skull", .addicted)
+                        row("Addicted", "flame.fill", .addicted)
                         row("Banned Songs", "nosign", .banned)
                         row("Up Next", "list.bullet", .upNext)
 

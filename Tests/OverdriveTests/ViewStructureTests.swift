@@ -1,5 +1,7 @@
+import AppKit
 import Foundation
 import Testing
+@testable import Overdrive
 
 struct ViewStructureTests {
     private func source() throws -> String {
@@ -168,11 +170,34 @@ struct ViewStructureTests {
 
     private func lower(_ text: String) -> String { text }
 
+    /// A symbol that this macOS does not know renders as nothing, with no log
+    /// and no error: the row just looks empty. So every name the app draws is
+    /// asked of the system, before it is ever seen.
+    @Test @MainActor func everySymbolNameShowsOnThisMac() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        var names: Set<String> = []
+        let rows = try Regex(#"row\("[^"]*", "([^"]+)""#)
+        let systems = try Regex(#"system(?:Image|Name): "([^"]+)""#)
+
+        for file in ["Views.swift", "LyricsPanel.swift", "Overdrive.swift"] {
+            let text = try String(contentsOf: root.appending(path: "Sources/Overdrive/\(file)"), encoding: .utf8)
+            for match in text.matches(of: rows) { if let symbol = match.output[1].substring { names.insert(String(symbol)) } }
+            for match in text.matches(of: systems) { if let symbol = match.output[1].substring { names.insert(String(symbol)) } }
+        }
+
+        for section in Section.allCases { names.insert(section.symbol) }
+
+        #expect(names.count > 15, "the scan finds the symbols of the app, got \(names.count)")
+        for name in names.sorted() {
+            #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil, "\(name) is not a symbol of this macOS")
+        }
+    }
+
     @Test func theAddictedListOpensAlwaysCurrent() throws {
         let source = try source()
         let list = region(source, from: "struct AddictedView: View {")
 
-        #expect(source.contains("row(\"Addicted\", \"skull\", .addicted)"), "the sidebar carries the skull row")
+        #expect(source.contains("row(\"Addicted\", \"flame.fill\", .addicted)"), "the sidebar carries the flame row")
         #expect(source.contains("case .addicted: AddictedView()"), "the row opens its own page")
         #expect(list.contains("let paths = library.addicted(Library.topPlayed)"), "every pass reads the counts again, so the list a click opens is the order of that moment")
         #expect(list.contains(".onChange(of: paths) { selection = [] }"), "a reshuffle does not leave the selection on another song")
