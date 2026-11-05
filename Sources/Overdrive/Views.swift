@@ -470,16 +470,12 @@ struct LyricsView: View {
         asking = true
     }
 
-    /// The two faces of the panel in one native switch. The row is the same in
-    /// both, so a choice moves nothing, and it goes through `Similar.select`,
-    /// the one that asks the service for the list.
+    /// The two faces of the panel in one native switch, each one half of the
+    /// width of the box under it. The choice goes through `Similar.select`, the
+    /// one door that logs the tab and asks the service for the list.
     private var switcher: some View {
-        Picker("Lyrics or Similar", selection: Binding { similar.tab } set: { similar.select($0) }) {
-            Text("Lyrics").tag(Similar.Tab.lyrics)
-            Text("Similar").tag(Similar.Tab.similar)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        PanelSwitch(tab: similar.tab) { similar.select($0) }
+            .frame(maxWidth: .infinity)
     }
 
     /// The actions of the lyrics in the corner of the box they act on, and the
@@ -566,6 +562,58 @@ struct LyricsView: View {
                 if !lines.isEmpty { editing = true }
                 Task { typing = true }
             }
+        }
+    }
+}
+
+/// The two faces of the panel in the segmented control of the system, cut in two
+/// equal halves over the box under them. The width is set here and not by
+/// SwiftUI: the picker of the framework gives every segment the width of its own
+/// label, so "Lyrics" and "Similar" come out uneven and the row stops short of
+/// the box. The press carries the tab to `Similar.select`, the one door that
+/// logs it and asks the service for the list.
+struct PanelSwitch: NSViewRepresentable {
+    nonisolated static let lyrics = "Lyrics"
+    nonisolated static let similar = "Similar"
+
+    let tab: Similar.Tab
+    let select: (Similar.Tab) -> Void
+
+    nonisolated static func index(_ tab: Similar.Tab) -> Int { tab == .similar ? 1 : 0 }
+
+    func makeCoordinator() -> Coordinator { Coordinator(select: select) }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(labels: [Self.lyrics, Self.similar], trackingMode: .selectOne, target: context.coordinator, action: #selector(Coordinator.choose(_:)))
+        control.segmentDistribution = .fillEqually
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        control.setAccessibilityLabel("\(Self.lyrics) or \(Self.similar)")
+        control.selectedSegment = Self.index(tab)
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.select = select
+
+        let index = Self.index(tab)
+        guard control.selectedSegment != index else { return }
+
+        // The model moved on its own: a new artist takes the panel back to the
+        // lyrics, and the switch has to show where the panel really is.
+        control.selectedSegment = index
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions(by: nsView.fittingSize)
+    }
+
+    final class Coordinator: NSObject {
+        var select: (Similar.Tab) -> Void
+
+        init(select: @escaping (Similar.Tab) -> Void) { self.select = select }
+
+        @objc func choose(_ control: NSSegmentedControl) {
+            select(control.selectedSegment == 1 ? .similar : .lyrics)
         }
     }
 }
