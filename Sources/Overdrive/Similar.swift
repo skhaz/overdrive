@@ -14,9 +14,15 @@ final class Similar {
     /// The tab shows the ten artists the service ranks most similar.
     nonisolated static let top = 10
 
-    /// The wait between the requests that add the genre and the listeners to
-    /// the list. Last.fm answers 29 when one IP spends its rate.
-    nonisolated static let gap: Duration = .milliseconds(300)
+    /// The place between the requests that add the genre and the listeners to
+    /// the list. The rows run together, `lanes` at a time, but each waits its
+    /// own place times this before it asks Last.fm, so ten artists never start
+    /// ten requests in the same second and the service does not answer 29.
+    nonisolated static let space: Duration = .milliseconds(60)
+
+    /// How many rows are filled at the same time: the photos and the counts
+    /// run together, this many artists at once.
+    nonisolated static let lanes = ProcessInfo.processInfo.activeProcessorCount * 2
 
     nonisolated struct Entry: Identifiable, Equatable {
         let name: String
@@ -32,7 +38,7 @@ final class Similar {
     private(set) var artists: [Entry] = []
     private(set) var loading = false
 
-    @ObservationIgnored var gap = Similar.gap
+    @ObservationIgnored var space = Similar.space
     /// The photo the API gives is the same default silhouette for every
     /// artist, so a row without a photo asks for one elsewhere. A test
     /// replaces this.
@@ -110,28 +116,58 @@ final class Similar {
             if !found.isEmpty { filled = folded }
             Log.similar.info("loaded", metadata: ["artist": "\(asked)", "got": "\(found.count)"])
 
-            var filled = 0
-            for index in artists.indices {
-                try? await Task.sleep(for: gap)
-                guard !Task.isCancelled, shown == folded else {
-                    return Log.similar.debug("load dropped", metadata: ["artist": "\(asked)", "reason": Task.isCancelled ? "cancelled" : "superseded", "at": "\(index)"])
+            // The photo goes to the store of Apple and the counts to Last.fm.
+            // Both are asked together, `lanes` artists at a time; every row
+            // waits its own place times `space` before it asks Last.fm, so a
+            // page never spends ten requests in the same second.
+            let wanted = artists.indices.map { (index: $0, name: artists[$0].name) }
+            Log.similar.debug("lane", metadata: ["lanes": "\(Similar.lanes)", "artists": "\(wanted.count)"])
+
+            await withTaskGroup(of: Void.self) { group in
+                var next = 0
+
+                while next < wanted.count, next < Similar.lanes {
+                    let row = wanted[next]
+                    let place = next
+                    group.addTask { await self.enrich(row.index, row.name, asked, folded, place) }
+                    next += 1
                 }
 
-                let name = artists[index].name
-                let info = await lastFM.artistInfo(name)
-                var picture = info?.image ?? artists[index].image
-                if picture == nil { picture = await artwork(name) }
-                guard !Task.isCancelled, shown == folded, artists.indices.contains(index) else {
-                    return Log.similar.debug("load dropped", metadata: ["artist": "\(asked)", "reason": Task.isCancelled ? "cancelled" : "superseded", "at": "\(index)"])
+                while await group.next() != nil {
+                    guard next < wanted.count else { continue }
+                    let row = wanted[next]
+                    let place = next
+                    group.addTask { await self.enrich(row.index, row.name, asked, folded, place) }
+                    next += 1
                 }
-
-                artists[index].listeners = info?.listeners
-                artists[index].genre = info?.tag
-                artists[index].image = picture
-                filled += 1
             }
-            Log.similar.debug("filled", metadata: ["artist": "\(asked)", "of": "\(filled)"])
+
+            Log.similar.debug("filled", metadata: ["artist": "\(asked)"])
         }
+    }
+
+    /// One row, in its own lane: the photo first, because the store answers
+    /// without a rate, then the counts, after the row's own wait for Last.fm.
+    /// A row that another answer already filled is never written twice.
+    private func enrich(_ index: Int, _ name: String, _ asked: String, _ folded: String, _ place: Int) async {
+        if artists.indices.contains(index), artists[index].image == nil, let picture = await artwork(name),
+           !Task.isCancelled, shown == folded, artists.indices.contains(index), artists[index].image == nil {
+            artists[index].image = picture
+        }
+
+        if place > 0 { try? await Task.sleep(for: space * Double(place)) }
+        guard !Task.isCancelled, shown == folded, artists.indices.contains(index) else {
+            return Log.similar.debug("load dropped", metadata: ["artist": "\(asked)", "reason": Task.isCancelled ? "cancelled" : "superseded", "at": "\(index)"])
+        }
+
+        guard let info = await lastFM.artistInfo(name) else { return }
+        guard !Task.isCancelled, shown == folded, artists.indices.contains(index) else {
+            return Log.similar.debug("load dropped", metadata: ["artist": "\(asked)", "reason": Task.isCancelled ? "cancelled" : "superseded", "at": "\(index)"])
+        }
+
+        artists[index].listeners = info.listeners
+        artists[index].genre = info.tag
+        if artists[index].image == nil { artists[index].image = info.image }
     }
 
     /// The page of one artist: the one the service answered, or the page of
@@ -158,13 +194,23 @@ final class Similar {
         board.setString(artist.name, forType: .string)
     }
 
-    /// The photo of an artist from the iTunes Search API: the cover of the
-    /// artist's top song answers with no key, and the API of Last.fm stopped
-    /// answering real photos years ago. The address is asked bigger than it
-    /// arrives, the trick the store itself uses.
+    /// The photo of an artist: the cover of the latest release, from the
+    /// iTunes Search API. The store answers the albums and singles of an
+    /// artist with their dates, so the app keeps the newest that has a cover.
+    /// The service matches loose names, so the app walks the answers in
+    /// three steps: releases of the artist under the very name asked, then
+    /// ones that start with it, then the first cover of the list. Last.fm
+    /// stopped answering real photos years ago, and this needs no key. The
+    /// address of the cover is asked bigger than it arrives, the trick the
+    /// store itself uses.
     private nonisolated static func iTunesArtwork(_ artist: String) async -> URL? {
         var components = URLComponents(string: "https://itunes.apple.com/search")!
-        components.queryItems = [URLQueryItem(name: "term", value: artist), URLQueryItem(name: "entity", value: "song"), URLQueryItem(name: "limit", value: "1")]
+        components.queryItems = [
+            URLQueryItem(name: "term", value: artist),
+            URLQueryItem(name: "attribute", value: "artistTerm"),
+            URLQueryItem(name: "entity", value: "album"),
+            URLQueryItem(name: "limit", value: "200"),
+        ]
 
         var request = URLRequest(url: components.url!, timeoutInterval: 10)
         request.setValue("Overdrive", forHTTPHeaderField: "User-Agent")
@@ -172,15 +218,31 @@ final class Similar {
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = json["results"] as? [[String: Any]],
-              let text = results.first?["artworkUrl100"] as? String else {
+              let results = json["results"] as? [[String: Any]] else {
             Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "false"])
             return nil
         }
 
-        let large = text.replacingOccurrences(of: "100x100bb", with: "300x300bb")
-        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "true"])
+        let answers = results.compactMap { result -> (name: String, date: String, art: String)? in
+            guard let art = result["artworkUrl100"] as? String, !art.isEmpty, let name = result["artistName"] as? String else { return nil }
+            return (name, result["releaseDate"] as? String ?? "", art)
+        }
+        let asked = Fuzzy.fold(artist)
+        let exact = answers.filter { Fuzzy.fold($0.name) == asked }
+        let near = answers.filter { Fuzzy.fold($0.name).hasPrefix(asked) }
 
-        return URL(string: large)
+        guard let chosen = Self.newest(exact) ?? Self.newest(near) ?? answers.first else {
+            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "false"])
+            return nil
+        }
+
+        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "true", "release": "\(chosen.date.prefix(10))", "name": "\(chosen.name)"])
+        return URL(string: chosen.art.replacingOccurrences(of: "100x100bb", with: "300x300bb"))
+    }
+
+    /// The release with the newest date. The dates arrive as ISO strings, so
+    /// the later text is the later release.
+    private nonisolated static func newest(_ answers: [(name: String, date: String, art: String)]) -> (name: String, date: String, art: String)? {
+        answers.max { $0.date < $1.date }
     }
 }

@@ -16,6 +16,9 @@ final class LastFM {
         var secret = LastFM.secret
         var retry: Duration = .seconds(60)
         var settle: TimeInterval = 120
+        /// The wait before one `artist.getInfo` that the service refused with
+        /// code 29 is asked again.
+        var recover: Duration = .seconds(2)
         var monitor = true
     }
 
@@ -238,21 +241,32 @@ final class LastFM {
     }
 
     /// The listeners, the first tag, and the photo of an artist. Nil when the
-    /// service has no answer for the name.
+    /// service has no answer for the name. Code 29 means one IP spent its
+    /// rate, so it is asked again after `recover`, once.
     func artistInfo(_ artist: String) async -> LastFM.ArtistInfo? {
         guard !artist.isEmpty else { return nil }
 
-        guard let json = try? await call("artist.getInfo", ["artist": artist, "autocorrect": "1"]),
-              let info = json["artist"] as? [String: Any], info["name"] is String else { return nil }
+        for attempt in 0..<2 {
+            do {
+                let json = try await call("artist.getInfo", ["artist": artist, "autocorrect": "1"])
+                guard let info = json["artist"] as? [String: Any], info["name"] is String else { return nil }
 
-        // The service moved the counts under `stats`, and some answers still
-        // hold them at the top.
-        let listeners = LastFM.count((info["stats"] as? [String: Any])?["listeners"] ?? info["listeners"])
-        let picture = LastFM.photo(info["image"])
-        let result = ArtistInfo(listeners: listeners, tag: LastFM.items(info["tags"], "tag").first?["name"] as? String, image: LastFM.isDefault(picture) ? nil : picture)
-        Log.lastFM.debug("artist info", metadata: ["artist": "\(artist)", "name": "\(info["name"] as? String ?? artist)", "listeners": "\(result.listeners ?? 0)", "tag": "\(result.tag ?? "")", "photo": "\(result.image != nil)"])
+                // The service moved the counts under `stats`, and some answers
+                // still hold them at the top.
+                let listeners = LastFM.count((info["stats"] as? [String: Any])?["listeners"] ?? info["listeners"])
+                let picture = LastFM.photo(info["image"])
+                let result = ArtistInfo(listeners: listeners, tag: LastFM.items(info["tags"], "tag").first?["name"] as? String, image: LastFM.isDefault(picture) ? nil : picture)
+                Log.lastFM.debug("artist info", metadata: ["artist": "\(artist)", "name": "\(info["name"] as? String ?? artist)", "listeners": "\(result.listeners ?? 0)", "tag": "\(result.tag ?? "")", "photo": "\(result.image != nil)"])
+                return result
+            } catch let failure as Failure where failure.code == 29 && attempt == 0 {
+                Log.lastFM.warning("artist info limited", metadata: ["artist": "\(artist)", "code": "29", "retry": "\(configuration.recover)"])
+                try? await Task.sleep(for: configuration.recover)
+            } catch {
+                return nil
+            }
+        }
 
-        return result
+        return nil
     }
 
     /// The photo of the service for an artist with no photo. The API answers

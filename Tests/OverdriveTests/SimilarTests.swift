@@ -16,6 +16,10 @@ final class SimilarStub: @unchecked Sendable {
     private var _calls: [(method: String, artist: String)] = []
     private var _fail = false
     private var _slow = false
+    private var _slowInfo = false
+    private var _once29 = false
+    private var _infoNow = 0
+    private var _infoPeak = 0
 
     init() {
         host = "similar-\(UUID().uuidString).invalid"
@@ -39,9 +43,31 @@ final class SimilarStub: @unchecked Sendable {
     func infos(_ value: [String: [String: Any]]) { lock.withLock { _infos = value } }
     func fail(_ value: Bool) { lock.withLock { _fail = value } }
     func slow(_ value: Bool) { lock.withLock { _slow = value } }
+    func slowInfo(_ value: Bool) { lock.withLock { _slowInfo = value } }
+    func failInfoOnce() { lock.withLock { _once29 = true } }
     func clear() { lock.withLock { _calls = [] } }
 
-    func delay(_ method: String) -> Bool { lock.withLock { _slow && method == "artist.getSimilar" } }
+    var infoPeak: Int { lock.withLock { _infoPeak } }
+
+    func arrive(_ method: String) {
+        lock.withLock {
+            guard method == "artist.getInfo" else { return }
+            _infoNow += 1
+            _infoPeak = max(_infoPeak, _infoNow)
+        }
+    }
+
+    func depart(_ method: String) {
+        lock.withLock { if method == "artist.getInfo" { _infoNow -= 1 } }
+    }
+
+    func delay(_ method: String) -> TimeInterval {
+        lock.withLock {
+            if _slow && method == "artist.getSimilar" { return 0.3 }
+            if _slowInfo && method == "artist.getInfo" { return 0.08 }
+            return 0
+        }
+    }
 
     func reply(_ form: [String: String]) -> Any {
         lock.withLock {
@@ -54,6 +80,7 @@ final class SimilarStub: @unchecked Sendable {
                 guard !_fail else { return ["error": 6, "message": "The artist you supplied could not be found"] }
                 return ["similarartists": ["artist": _similar, "@attr": ["artist": artist]]]
             case "artist.getInfo":
+                if _once29 { _once29 = false; return ["error": 29, "message": "Your service limit was exceeded"] }
                 return ["artist": _infos[artist] ?? ["name": artist]]
             default:
                 return [:]
@@ -62,7 +89,10 @@ final class SimilarStub: @unchecked Sendable {
     }
 }
 
-private final class SimilarFake: URLProtocol {
+/// One instance per request, started once, answered once: the sendable claim
+/// is by that rule. (The compiler still warns because `URLProtocol` marks its
+/// own sendability unavailable; the fake never shares an instance.)
+private final class SimilarFake: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func stopLoading() {}
@@ -95,14 +125,36 @@ private final class SimilarFake: URLProtocol {
             form[parts[0]] = parts.count > 1 ? parts[1] : ""
         }
 
-        if stub.delay(form["method"] ?? "") { Thread.sleep(forTimeInterval: 0.3) }
+        let method = form["method"] ?? ""
+        let sent = form
+        let wait = stub.delay(method)
+        stub.arrive(method)
 
-        let data = try! JSONSerialization.data(withJSONObject: stub.reply(form))
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        let send: @Sendable () -> Void = {
+            let data = try! JSONSerialization.data(withJSONObject: stub.reply(sent))
+            let response = HTTPURLResponse(url: self.request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data)
+            self.client?.urlProtocolDidFinishLoading(self)
+            stub.depart(method)
+        }
+
+        if wait > 0 { DispatchQueue.global().asyncAfter(deadline: .now() + wait, execute: send) } else { send() }
     }
+}
+
+/// How many requests run at once, and how many ran at all.
+private final class Peak: @unchecked Sendable {
+    private let lock = NSLock()
+    private var now = 0
+    private var best = 0
+    private var total = 0
+
+    var value: Int { lock.withLock { best } }
+    var hits: Int { lock.withLock { total } }
+
+    func enter() { lock.withLock { now += 1; total += 1; best = max(best, now) } }
+    func leave() { lock.withLock { now -= 1 } }
 }
 
 @MainActor
@@ -121,6 +173,7 @@ struct SimilarTests {
         configuration.store = directory.appending(path: "Scrobbles.plist")
         configuration.transport = URLSession(configuration: session)
         configuration.retry = .seconds(3600)
+        configuration.recover = .milliseconds(30)
         configuration.monitor = false
 
         let lastFM = LastFM(configuration)
@@ -132,7 +185,7 @@ struct SimilarTests {
     func harness(user: String = "tester") -> (LastFM, Similar) {
         let lastFM = self.lastFM(user: user)
         let similar = Similar(lastFM: lastFM)
-        similar.gap = .zero
+        similar.space = .zero
         similar.artwork = { _ in nil }
         return (lastFM, similar)
     }
@@ -146,8 +199,15 @@ struct SimilarTests {
         [["#text": "http://example.invalid/34/\(name).png", "size": "small"], ["#text": "https://example.invalid/300/\(name).png", "size": "extralarge"]]
     }
 
+    static let silhouette = "https://lastfm-img.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png"
+
     func stub(_ names: [String], picture: String? = nil) {
-        let images: (String) -> [[String: Any]] = { picture == nil ? photo($0) : [["#text": picture!, "size": "extralarge"]] }
+        let images: (String) -> [[String: Any]]
+        if let picture {
+            images = { _ in [["#text": picture, "size": "extralarge"]] }
+        } else {
+            images = photo
+        }
         stub.similar(names.map { ["name": $0, "url": "https://www.last.fm/music/\($0)", "image": images($0)] })
         // The service writes the counts under `stats`.
         stub.infos(Dictionary(uniqueKeysWithValues: names.map { ($0, ["name": $0, "stats": ["listeners": "1234"], "tags": ["tag": [["name": "rock"]]], "image": images($0)]) }))
@@ -176,7 +236,7 @@ struct SimilarTests {
         similar.show(track("One", "Metallica"))
         similar.select(.similar)
 
-        await settle { !similar.loading && similar.artists.count == 10 && similar.artists.allSatisfy { $0.listeners != nil && $0.genre != nil && $0.image != nil } }
+        await settle { similar.artists.count == 10 && similar.artists.allSatisfy { $0.listeners != nil && $0.genre != nil && $0.image != nil } }
 
         #expect(similar.artists.count == 10, "the tab shows the top ten, not more")
         #expect(similar.artists[0].name == "Band 1")
@@ -193,7 +253,7 @@ struct SimilarTests {
         let (_, similar) = harness()
         similar.show(track("One", "Metallica"))
         similar.select(.similar)
-        await settle { !similar.loading && similar.artists.count == 1 && similar.artists[0].listeners != nil }
+        await settle { similar.artists.count == 1 && similar.artists[0].listeners != nil }
         stub.clear()
 
         similar.show(track("Two", "Metallica"))
@@ -208,7 +268,7 @@ struct SimilarTests {
         let (_, similar) = harness()
         similar.show(track("One", "Metallica"))
         similar.select(.similar)
-        await settle { !similar.loading }
+        await settle { !similar.loading && !similar.artists.isEmpty }
 
         similar.show(track("One", "Slayer"))
 
@@ -222,7 +282,7 @@ struct SimilarTests {
         let (_, similar) = harness()
         similar.show(track("One", "Metallica"))
         similar.select(.similar)
-        await settle { !similar.loading && similar.artists.count == 1 && similar.artists[0].listeners != nil }
+        await settle { similar.artists.count == 1 && similar.artists[0].listeners != nil }
 
         similar.show(track("Two", "metallica"))
 
@@ -244,7 +304,7 @@ struct SimilarTests {
         let (_, similar) = harness()
         similar.show(track("One", "Metallica"))
         similar.select(.similar)
-        await settle { !similar.loading && similar.artists.allSatisfy { $0.listeners != nil } }
+        await settle { similar.artists.count == 10 && similar.artists.allSatisfy { $0.listeners != nil } }
 
         similar.select(.lyrics)
         similar.select(.similar)
@@ -296,6 +356,87 @@ struct SimilarTests {
         #expect(stub.counts.info == 0, "and nothing keeps asking after it")
     }
 
+    @Test func theDefaultPhotoIsNoPhoto() async {
+        // The API answers the same silhouette for every artist for years: a row
+        // must not keep it, or no real photo can come after it.
+        stub(["Band 1"], picture: Self.silhouette)
+        let (lastFM, _) = harness()
+
+        #expect(await lastFM.similar("Metallica", 10).first?.image == nil, "the list drops the silhouette")
+        #expect(await lastFM.artistInfo("Band 1")?.image == nil, "and so does the artist info")
+    }
+
+    @Test func aRowWithoutAPhotoTakesTheSearchArtwork() async {
+        stub(["Band 1"], picture: Self.silhouette)
+        let (_, similar) = harness()
+        similar.artwork = { name in URL(string: "https://art.invalid/300/\(name).jpg") }
+        similar.show(track("One", "Metallica"))
+        similar.select(.similar)
+
+        await settle { similar.artists.first?.image?.absoluteString == "https://art.invalid/300/Band%201.jpg" }
+
+        #expect(similar.artists.first?.image?.absoluteString == "https://art.invalid/300/Band%201.jpg", "the artist gets a real photo")
+    }
+
+    @Test func theDataAndThePhotosComeTogether() async {
+        stub((1...10).map { "Band \($0)" }, picture: Self.silhouette)
+        let peak = Peak()
+        let (_, similar) = harness()
+        stub.slowInfo(true)
+        similar.artwork = { name in
+            peak.enter()
+            try? await Task.sleep(for: .milliseconds(30))
+            peak.leave()
+            return URL(string: "https://art.invalid/\(name).jpg")
+        }
+        similar.show(track("One", "Metallica"))
+        similar.select(.similar)
+
+        await settle { similar.artists.count == 10 && similar.artists.allSatisfy { $0.image != nil && $0.listeners != nil && $0.genre != nil } }
+
+        #expect(peak.value >= 2, "the photos are asked together, not one after the other")
+        #expect(peak.value <= Similar.lanes, "and never more than the lanes of the CPU limit")
+        #expect(peak.hits == 10, "every row without a photo asks once")
+        #expect(stub.infoPeak >= 2, "the artist data is asked together too, not in a line")
+        #expect(stub.counts.info == 10, "one request per artist, no more")
+    }
+
+    @Test func aRateLimitedArtistInfoIsAskedOnceMore() async {
+        stub(["Band 1"])
+        let (_, similar) = harness()
+        stub.failInfoOnce()
+        similar.show(track("One", "Metallica"))
+        similar.select(.similar)
+
+        await settle { similar.artists.first?.listeners != nil }
+
+        #expect(stub.counts.info == 2, "a code 29 is asked again, once")
+    }
+
+    @Test func aRealPhotoFromTheServiceIsNeverAskedForAgain() async {
+        stub((1...4).map { "Band \($0)" })
+        let asks = Peak()
+        let (_, similar) = harness()
+        similar.artwork = { _ in
+            asks.enter()
+            return nil
+        }
+        similar.show(track("One", "Metallica"))
+        similar.select(.similar)
+
+        await settle { !similar.loading && similar.artists.count == 4 && similar.artists.allSatisfy { $0.listeners != nil } }
+
+        #expect(asks.hits == 0, "a row that already has a real photo spends no search")
+    }
+
+    @Test func thePageOfARowIsTheOneTheServiceAnswered() throws {
+        let answered = Similar.Entry(name: "Band 1", url: URL(string: "https://www.last.fm/music/Band%201"), image: nil)
+        #expect(Similar.page(answered) == URL(string: "https://www.last.fm/music/Band%201"))
+
+        let bare = Similar.Entry(name: "Band 1", url: nil, image: nil)
+        #expect(Similar.page(bare) == LastFM.artistPage("Band 1"), "a row with no page opens the page of its name")
+    }
+
     @Test func thePhotoPicksTheBiggestSizeAndSecuresTheAddress() {
         let images: [[String: Any]] = [
             ["#text": "http://example.invalid/34/a.png", "size": "small"],
@@ -308,6 +449,7 @@ struct SimilarTests {
         #expect(LastFM.photo(nil) == nil)
         #expect(LastFM.secure("www.last.fm/music/Metallica")?.absoluteString == "https://www.last.fm/music/Metallica")
         #expect(LastFM.secure("mailto:nobody@example.invalid") == nil, "only https pages and photos")
+        #expect(LastFM.isDefault(URL(string: Self.silhouette)), "and the silhouette is known")
     }
 
     @Test func oneArtistInfoCarriesListenersAndTheFirstTag() async {
@@ -325,37 +467,6 @@ struct SimilarTests {
         #expect(info?.image?.absoluteString == "https://example.invalid/300/Band%201.png")
         #expect(await lastFM.artistInfo("Band 2")?.listeners == 42, "the old place still works")
         #expect(await lastFM.artistInfo("") == nil, "no name, no request")
-    }
-
-    @Test func theDefaultPhotoIsNoPhoto() async {
-        // The API answers the same silhouette for every artist for years: a row
-        // must not keep it, or no real photo can come after it.
-        let silhouette = "https://lastfm-img.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png"
-        stub(["Band 1"], picture: silhouette)
-        let (lastFM, _) = harness()
-
-        #expect(await lastFM.similar("Metallica", 10).first?.image == nil, "the list drops the silhouette")
-        #expect(await lastFM.artistInfo("Band 1")?.image == nil, "and so does the artist info")
-    }
-
-    @Test func aRowWithoutAPhotoTakesTheSearchArtwork() async {
-        stub(["Band 1"], picture: "https://lastfm-img.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png")
-        let (_, similar) = harness()
-        similar.artwork = { name in URL(string: "https://art.invalid/300/\(name).jpg") }
-        similar.show(track("One", "Metallica"))
-        similar.select(.similar)
-
-        await settle { !similar.loading && similar.artists.first?.image?.absoluteString == "https://art.invalid/300/Band%201.jpg" }
-
-        #expect(similar.artists.first?.image?.absoluteString == "https://art.invalid/300/Band%201.jpg", "the artist gets a real photo")
-    }
-
-    @Test func thePageOfARowIsTheOneTheServiceAnswered() throws {
-        let answered = Similar.Entry(name: "Band 1", url: URL(string: "https://www.last.fm/music/Band%201"), image: nil)
-        #expect(Similar.page(answered) == URL(string: "https://www.last.fm/music/Band%201"))
-
-        let bare = Similar.Entry(name: "Band 1", url: nil, image: nil)
-        #expect(Similar.page(bare) == LastFM.artistPage("Band 1"), "a row with no page opens the page of its name")
     }
 
     @Test func theListStopsAtTenAndSurvivesOddAnswers() async {
