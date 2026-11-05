@@ -447,9 +447,28 @@ struct SimilarTests {
             (name: "Megadeth Live", art: "b"),
         ]
         #expect(Similar.cover(near, "Megadeth")?.art == "b", "no exact name takes one that starts with it")
-        #expect(Similar.cover(answers, "Anything Else")?.name == "Cover Megadeth Tribute", "with nothing alike the store order answers")
+        let alike: [(name: String, art: String)] = [
+            (name: "Totally Different", art: "a"),
+            (name: "Beastie Boy", art: "b"),
+        ]
+        #expect(Similar.cover(alike, "Beastie Boys")?.art == "b", "a store name close to the one asked gives its cover")
+        #expect(Similar.cover(answers, "Anything Else") == nil, "with nothing alike no answer is taken")
         let nothing: [(name: String, art: String)] = []
         #expect(Similar.cover(nothing, "Megadeth") == nil, "no answers, no cover")
+    }
+
+    @Test func theCoverNeverBorrowsTheTopHitOfALooseSearch() {
+        // The shape the store really answers when asked for Empire of Souls:
+        // Iron Maiden first, for the song "Empire of the Clouds", and no
+        // answer is the band. The old walk took the first answer, and the
+        // row showed the Maiden cover.
+        let loose: [(name: String, art: String)] = [
+            (name: "Iron Maiden", art: "https://example.invalid/maiden.jpg"),
+            (name: "Morifade", art: "https://example.invalid/morifade.jpg"),
+            (name: "FESTA DAVIDE", art: "https://example.invalid/festa.jpg"),
+        ]
+
+        #expect(Similar.cover(loose, "Empire of Souls") == nil, "an artist the store does not hold borrows no cover")
     }
 
     @Test func thePageOfARowIsTheOneTheServiceAnswered() throws {

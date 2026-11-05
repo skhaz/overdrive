@@ -237,12 +237,16 @@ final class Similar {
     /// The cover of the artist among the answers, in the order the store
     /// ranks them: its popular songs come first. The store matches loose
     /// names, so the app takes the first answer that is the very name it
-    /// asked (folded), then a name that starts with it, then the first
-    /// answer. Without this walk a cover band stands for the artist.
+    /// asked (folded), then a name that starts with it, then a name close
+    /// enough to it (`Similarity`). With none of these the artist has no
+    /// cover: asked for Empire of Souls, the store puts Iron Maiden first
+    /// (the song "Empire of the Clouds"), and without this walk a cover
+    /// band or the top hit of a loose search stands for the artist.
     nonisolated static func cover(_ answers: [(name: String, art: String)], _ artist: String) -> (name: String, art: String)? {
         let asked = Fuzzy.fold(artist)
         if let exact = answers.first(where: { Fuzzy.fold($0.name) == asked }) { return exact }
         if let near = answers.first(where: { Fuzzy.fold($0.name).hasPrefix(asked) }) { return near }
-        return answers.first
+        let mine = Similarity.letters(artist)
+        return answers.first { Similarity.close(Similarity.letters($0.name), mine) != nil }
     }
 }
