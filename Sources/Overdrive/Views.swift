@@ -488,11 +488,8 @@ struct LyricsView: View {
             let showing = tabs && similar.tab == .similar
 
             VStack(alignment: .leading, spacing: 8) {
+                // No name here: the bar under the window already shows the song.
                 HStack(alignment: .center, spacing: 8) {
-                    VStack(alignment: .leading) {
-                        Text(track.title).font(.headline).lineLimit(2)
-                        Text(track.artist).foregroundStyle(.secondary).lineLimit(1)
-                    }
                     Spacer()
                     HStack(spacing: 8) {
                         if showing {
