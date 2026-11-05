@@ -226,7 +226,8 @@ final class Similar {
     /// gave the artist, and carries it in `og:image`; the app reads the page
     /// itself, as it reads the page of YouTube. The request looks like the
     /// browser it stands in for: a plain client gets a fingerprint challenge
-    /// instead of the page.
+    /// instead of the page. No `Range` is asked: the edge cuts the page
+    /// before its own compression, and the answer comes broken half way.
     private nonisolated static func lastFMArtwork(_ artist: String) async -> URL? {
         guard let page = LastFM.artistPage(artist) else {
             Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "false", "reason": "no page"])
@@ -244,9 +245,9 @@ final class Similar {
             return nil
         }
 
-        // The tag lives a few lines into the head, so the walk stops there:
-        // the rest of the page, half a megabyte, is cancelled, not read. One
-        // picture never pays for the whole page.
+        // The tag lives a few lines into the head, so the walk stops there and
+        // cancels the rest: the half megabyte left is never read. One picture
+        // never pays for the whole page.
         defer { bytes.task.cancel() }
         do {
             for try await line in bytes.lines {

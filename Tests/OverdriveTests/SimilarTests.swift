@@ -466,6 +466,7 @@ struct SimilarTests {
         #expect(text.contains("URLSession." + "shared.bytes(for: request)"), "the page streams, so the walk can stop at the tag")
         #expect(text.contains("for try await line in bytes.lines"), "the walk reads the page line by line")
         #expect(text.contains("bytes.task.cancel()"), "the half-megabyte rest of the page is cancelled, not downloaded")
+        #expect(!text.contains("forHTTPHeaderField: \"Range\""), "no range is asked: the edge cuts the page before its own compression, and the answer comes broken half way")
         #expect(text.contains("Similar.warm(photo)"), "the picture is fetched at once, so the row draws it from the cache")
 
         if let found = text.range(of: "private func enrich") {
