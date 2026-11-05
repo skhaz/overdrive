@@ -604,7 +604,9 @@ struct PanelSwitch: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
-        proposal.replacingUnspecifiedDimensions(by: nsView.fittingSize)
+        // The switch takes the width it is offered and keeps its own height: the
+        // box under it is what has to fill the panel.
+        CGSize(width: proposal.width ?? nsView.fittingSize.width, height: nsView.fittingSize.height)
     }
 
     final class Coordinator: NSObject {

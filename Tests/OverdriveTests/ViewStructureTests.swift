@@ -274,12 +274,12 @@ struct ViewStructureTests {
         #expect(artists.components(separatedBy: box).count - 1 == 1, "and the artists list draws the same box, in the same place")
     }
 
-    /// The switch spans the box it sits over, shares its width between the two
-    /// faces, and answers the press with the tab that was chosen.
+    /// The switch spans the box it sits over, stays one row tall whatever it is
+    /// offered, and answers the press with the tab that was chosen.
     @MainActor @Test func thePanelSwitchFillsTheWidthAndAnswersThePress() {
         var picked: Similar.Tab?
-        let host = NSHostingView(rootView: PanelSwitch(tab: .lyrics) { picked = $0 }.frame(width: 288))
-        host.setFrameSize(host.fittingSize)
+        let host = NSHostingView(rootView: PanelSwitch(tab: .lyrics) { picked = $0 }.frame(width: 288, height: 300))
+        host.setFrameSize(NSSize(width: 288, height: 300))
         host.layoutSubtreeIfNeeded()
 
         func search(_ view: NSView) -> NSSegmentedControl? {
@@ -300,6 +300,7 @@ struct ViewStructureTests {
         let lyrics = control.width(forSegment: 0), listed = control.width(forSegment: 1)
         #expect(lyrics == listed, "no half carries a width of its own: both take what the control is given (\(lyrics) and \(listed))")
         #expect(control.frame.width > 280, "and the control takes the width of the box under it, not the width of its labels: \(control.frame.width)")
+        #expect(control.frame.height < 40, "the switch stays one row at the top of what it was offered, and the box keeps the rest: \(control.frame.height) of 300")
 
         control.selectedSegment = 1
         guard let action = control.action, let target = control.target else { Issue.record("a press has nothing to answer it"); return }
