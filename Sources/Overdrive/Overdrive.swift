@@ -161,7 +161,6 @@ struct Overdrive: App {
                 .environment(player)
                 .environment(playlists)
                 .environment(likes)
-                .environment(lastFM)
                 .environment(discovery)
                 .environment(infinity)
                 .environment(bans)
@@ -221,8 +220,15 @@ struct Overdrive: App {
                     .environment(playlists)
                     .environment(likes)
                     .environment(bans)
-                    .environment(lastFM)
                     .environment(youTube)
+            }
+
+            if !lastFM.user.isEmpty {
+                CommandMenu("Last.fm") {
+                    LastFMMenu()
+                        .environment(player)
+                        .environment(lastFM)
+                }
             }
 
             CommandMenu("Controls") {

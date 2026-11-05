@@ -88,7 +88,6 @@ Right-click a song, an album, or the bottom bar. You can:
 - **Add to Playlist**.
 - **Watch Video on YouTube**.
 - **Go to Album** or **Go to Artist**.
-- **Go to Last.fm** opens the artist page in your browser. The app asks Last.fm for the spelling it keeps, so the page is the right one even when your tags spell the name differently; when Last.fm does not know the artist, it opens the Last.fm page of that name, which says the artist was not found. Without a connected account the item is dimmed.
 - **Copy** the song name, the artist, the album, or "Artist - Song Name".
 - See the **Information** of the song file. Click an item to copy it.
 - **Open in Mp3tag** or **Show in Finder**.
@@ -145,6 +144,8 @@ Drag the window to move it to a different corner. Put the pointer on the video t
 ### Connect Last.fm
 
 Choose Overdrive > Settings > Last.fm. Type your Last.fm username (not the email) and password, and click **Connect**.
+
+When you are connected, the menu bar shows a **Last.fm** menu: **Go to Profile** opens your account in the browser, and **Go to Artist** and **Go to Album** open the pages of the song that plays. The app asks Last.fm for the spelling it keeps, so the page is the right one even when your tags spell the name differently; when Last.fm does not know the name, it opens the Last.fm page of that name, which says it was not found. Without a connected account the menu is not there.
 
 ### Settings
 

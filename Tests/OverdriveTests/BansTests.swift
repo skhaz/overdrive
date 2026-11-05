@@ -199,7 +199,7 @@ import Testing
         #expect(body.contains("delete: { remove(rows.filter { selection.contains($0.id) }.map(\\.track)) }"), "Delete does the same for the whole selection")
         #expect(body.contains("selection = []\n        bans.remove(tracks)"), "the action clears the selection before the rows change, so the next action never hits a moved row")
         #expect(body.contains("TrackMenu(tracks: picked.map(\\.track))"), "and the song menu is there, so a row can go back into the ban from the same screen")
-        #expect(body.contains("GoMenu(track: picked[0].track)"), "a single row keeps Go to Album, Go to Artist, and Go to Last.fm")
+        #expect(body.contains("GoMenu(track: picked[0].track)"), "a single row keeps Go to Album and Go to Artist")
         #expect(body.contains(".onChange(of: bans.paths) { selection = [] }"), "a ban that changed elsewhere empties the selection instead of pointing at another row")
         #expect(!body.contains("Persist."), "the screen writes nothing but through Bans")
         #expect(!body.contains("library.remove") && !body.contains("FileManager"), "the list never touches a song file")

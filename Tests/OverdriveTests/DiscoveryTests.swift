@@ -8,6 +8,7 @@ private final class Chart: @unchecked Sendable {
         var tracks: [String: [String]] = [:]
         var plays: [String: [Int]] = [:]
         var known: [String: String] = [:]
+        var knownAlbums: [String: (artist: String, album: String)] = [:]
         var calls: [String] = []
         var limits: [Int] = []
         var offline = false
@@ -17,15 +18,19 @@ private final class Chart: @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var state = State()
 
-    static func reset(_ artists: [String], _ tracks: [String: [String]], plays: [String: [Int]] = [:], known: [String: String] = [:], offline: Bool = false, single: Bool = false) {
-        lock.withLock { state = State(artists: artists, tracks: tracks, plays: plays, known: known, calls: [], limits: [], offline: offline, single: single) }
+    static func reset(_ artists: [String], _ tracks: [String: [String]], plays: [String: [Int]] = [:], known: [String: String] = [:], albums: [String: (artist: String, album: String)] = [:], offline: Bool = false, single: Bool = false) {
+        lock.withLock { state = State(artists: artists, tracks: tracks, plays: plays, known: known, knownAlbums: albums, calls: [], limits: [], offline: offline, single: single) }
     }
+
+    /// How the fake files an album: the two names the app has, joined with a
+    /// character no name can hold.
+    static func albumKey(_ artist: String, _ album: String) -> String { artist + "\u{1F}" + album }
 
     static var calls: [String] { lock.withLock { state.calls } }
 
     static var limits: [Int] { lock.withLock { state.limits } }
 
-    static func reply(_ method: String?, _ artist: String?, _ limit: String?) -> [String: Any]? {
+    static func reply(_ method: String?, _ artist: String?, _ album: String?, _ limit: String?) -> [String: Any]? {
         lock.withLock {
             state.calls.append(method ?? "")
             state.limits.append(Int(limit ?? "") ?? 0)
@@ -52,6 +57,17 @@ private final class Chart: @unchecked Sendable {
                 let encoded = name.addingPercentEncoding(withAllowedCharacters: allowed) ?? name
 
                 return ["artist": ["name": name, "url": "https://www.last.fm/music/" + encoded]]
+            case "album.getInfo":
+                guard let held = state.knownAlbums[Chart.albumKey(artist ?? "", album ?? "")] else {
+                    return ["error": 6, "message": "The album you supplied could not be found"]
+                }
+                let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
+                guard let one = held.artist.addingPercentEncoding(withAllowedCharacters: allowed),
+                      let two = held.album.addingPercentEncoding(withAllowedCharacters: allowed) else {
+                    return ["error": 6, "message": "The album you supplied could not be found"]
+                }
+
+                return ["album": ["name": held.album, "url": "https://www.last.fm/music/" + one + "/_/" + two]]
             default:
                 return ["error": 3, "message": "Invalid Method"]
             }
@@ -91,7 +107,7 @@ private final class ChartFake: URLProtocol {
             form[parts[0]] = parts.count > 1 ? parts[1] : ""
         }
 
-        guard let object = Chart.reply(form["method"], form["artist"], form["limit"]) else {
+        guard let object = Chart.reply(form["method"], form["artist"], form["album"], form["limit"]) else {
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
         }
@@ -673,30 +689,94 @@ struct DiscoveryTests {
         #expect(offline.url.absoluteString == "https://www.last.fm/music/Death", "the browser still gets a page")
     }
 
-    @Test func everyHostOfTheSongMenuCarriesTheAccount() throws {
+    @Test func theAlbumPageIsPercentEncoded() {
+        #expect(LastFM.albumPage("AC/DC", "The Radio One Sessions")?.absoluteString == "https://www.last.fm/music/AC%2FDC/_/The%20Radio%20One%20Sessions")
+        #expect(LastFM.albumPage("Motörhead", "") == nil, "an album without a name has no page")
+        #expect(LastFM.albumPage("", "Overnite Sensation") == nil, "an artist without a name has no page")
+    }
+
+    @Test func theProfilePageIsPercentEncoded() {
+        #expect(LastFM.profilePage("Calibre 12")?.absoluteString == "https://www.last.fm/user/Calibre%2012")
+        #expect(LastFM.profilePage("a/b")?.absoluteString == "https://www.last.fm/user/a%2Fb", "a slash stays inside the name")
+        #expect(LastFM.profilePage("") == nil, "no account, no page")
+    }
+
+    @Test func theAlbumPageFollowsTheSpellingOfLastFM() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        Chart.reset([], [:], albums: [Chart.albumKey("motorhead", "Overnite Sensation"): (artist: "Motörhead", album: "Overnite Sensation")])
+
+        let lastFM = client()
+        let page = try #require(await lastFM.albumURL("motorhead", "Overnite Sensation"))
+
+        #expect(page.known, "the spelling the app has is not the spelling the service keeps")
+        #expect(page.url.absoluteString == "https://www.last.fm/music/Mot%C3%B6rhead/_/Overnite%20Sensation", "the page is the one of the spelling that Last.fm answers")
+        #expect(Chart.calls == ["album.getInfo"], "one request, and the spelling comes from the service")
+    }
+
+    @Test func anAlbumLastFMDoesNotKnowFallsBackToItsPage() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        Chart.reset([], [:], offline: false)
+
+        let lastFM = client()
+        let page = try #require(await lastFM.albumURL("Banda Que Nao Existe", "Primeiro Disco"))
+
+        #expect(!page.known, "the service answered that the album does not exist")
+        #expect(page.url.absoluteString == "https://www.last.fm/music/Banda%20Que%20Nao%20Existe/_/Primeiro%20Disco", "the 404 page of the service, under the names the app has")
+        #expect(Chart.calls == ["album.getInfo"])
+
+        Chart.reset([], [:], offline: true)
+        let offline = try #require(await lastFM.albumURL("Death", "Symbol of Mortality"))
+        #expect(!offline.known, "an answer that never comes is not an album")
+        #expect(offline.url.absoluteString == "https://www.last.fm/music/Death/_/Symbol%20of%20Mortality", "the browser still gets a page")
+    }
+
+    @Test func anEmptyNameOpensNoAlbumPage() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        Chart.reset([], [:])
+
+        let lastFM = client()
+        #expect(await lastFM.albumURL("", "Overnite Sensation") == nil, "an empty name spends no request")
+        #expect(Chart.calls.isEmpty)
+    }
+
+    @Test func theLastFMMenuShowsOnlyWithAnAccountAndCarriesWhatItReads() throws {
         let app = try source("Overdrive.swift")
 
-        let menu = try #require(app.range(of: "CommandMenu(\"Song\") {")).upperBound
-        #expect(String(app[menu...].prefix(600)).contains(".environment(lastFM)"), "the Song menu builds GoMenu, which reads the account: without it the app traps at launch")
+        #expect(app.contains("if !lastFM.user.isEmpty {"), "the Last.fm menu shows only while an account is connected")
+
+        let menu = try #require(app.range(of: "CommandMenu(\"Last.fm\") {")).upperBound
+        let body = String(app[menu...].prefix(300))
+        #expect(body.contains(".environment(lastFM)"), "the menu reads the account: without it the app traps at launch")
+        #expect(body.contains(".environment(player)"), "and the song that plays")
 
         let content = try #require(app.range(of: "ContentView()")).upperBound
         let window = String(app[content...].prefix(600))
-        #expect(window.contains(".environment(lastFM)"), "the main window builds GoMenu too")
-        #expect(window.contains(".environment(discovery)"), "and it builds Up NextView, which reads the discovery for its spinner and its note")
+        #expect(window.contains(".environment(discovery)"), "the main window builds Up NextView, which reads the discovery for its spinner and its note")
     }
 
-    @Test func theLastFMPageIsOfferedOnlyWithAnAccount() throws {
+    @Test func theLastFMPagesFollowTheSongThatPlays() throws {
         let views = try source("Views.swift")
-        let menu = body(views, "struct GoMenu: View {")
 
-        #expect(menu.contains("Button(\"Go to Last.fm\") { lastFM.openArtist(track.artist) }"), "the song menu opens the artist page")
-        #expect(menu.contains(".disabled(lastFM.user.isEmpty)"), "no account, no Last.fm page")
+        let go = body(views, "struct GoMenu: View {")
+        #expect(!go.contains("Last.fm"), "the song menu gives no Last.fm page: the menu bar owns them")
+
+        let menu = body(views, "struct LastFMMenu: View {")
+        #expect(menu.contains("Button(\"Go to Profile\") { lastFM.openProfile() }"), "the menu opens the account of the user")
+        #expect(menu.contains("Button(\"Go to Artist\")"), "the page of the artist of the song that plays")
+        #expect(menu.contains("Button(\"Go to Album\")"), "and the page of its album")
+        #expect(menu.contains("player.current"), "the pages follow the song that plays")
+        #expect(menu.contains(".disabled(player.current == nil)"), "no song, no page to open")
         #expect(menu.contains("@Environment(LastFM.self) private var lastFM"), "the menu reads the account")
+        #expect(menu.contains("@Environment(Player.self) private var player"), "and the player")
 
         let lastFM = try source("LastFM.swift")
-        #expect(body(lastFM, "func openArtist(_ artist: String) {").contains("guard !user.isEmpty else {"), "a click without an account spends no request")
-        #expect(body(lastFM, "func openArtist(_ artist: String) {").contains("NSWorkspace.shared.open"), "the default browser opens the page")
-        #expect(body(lastFM, "func artistURL(_ artist: String) async -> (url: URL, known: Bool)? {").contains("call(\"artist.getInfo\""), "the spelling comes from the API before the browser opens")
+        for name in ["openArtist(_ artist: String)", "openAlbum(_ artist: String, _ album: String)", "openProfile()"] {
+            #expect(body(lastFM, "func \(name) {").contains("guard !user.isEmpty"), "a click of \(name) without an account spends no request")
+            #expect(body(lastFM, "func \(name) {").contains("NSWorkspace.shared.open"), "the default browser opens the page")
+        }
+
+        #expect(body(lastFM, "func artistURL(_ artist: String) async -> (url: URL, known: Bool)? {").contains("call(\"artist.getInfo\""), "the artist spelling comes from the API before the browser opens")
+        #expect(body(lastFM, "func albumURL(_ artist: String, _ album: String) async -> (url: URL, known: Bool)? {").contains("call(\"album.getInfo\""), "the album spelling comes from the API before the browser opens")
     }
 
     // MARK: - helpers

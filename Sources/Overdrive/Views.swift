@@ -214,6 +214,27 @@ struct SongMenu: View {
     }
 }
 
+struct LastFMMenu: View {
+    @Environment(Player.self) private var player
+    @Environment(LastFM.self) private var lastFM
+
+    var body: some View {
+        Button("Go to Profile") { lastFM.openProfile() }
+
+        Divider()
+
+        Button("Go to Artist") {
+            if let track = player.current { lastFM.openArtist(track.artist) }
+        }
+        .disabled(player.current == nil)
+
+        Button("Go to Album") {
+            if let track = player.current { lastFM.openAlbum(track.artist, track.album) }
+        }
+        .disabled(player.current.map { $0.album.isEmpty } ?? true)
+    }
+}
+
 struct DiscoveryMenu: View {
     @Environment(Library.self) private var library
     @Environment(Discovery.self) private var discovery
@@ -1288,7 +1309,6 @@ struct ArtistList: View {
 struct GoMenu: View {
     let track: Track
     @Environment(Library.self) private var library
-    @Environment(LastFM.self) private var lastFM
     @Environment(\.go) private var go
 
     var body: some View {
@@ -1299,9 +1319,6 @@ struct GoMenu: View {
         if !library.albums(by: track.artist).isEmpty {
             Button("Go to Artist") { go(.artist(track.artist)) }
         }
-
-        Button("Go to Last.fm") { lastFM.openArtist(track.artist) }
-            .disabled(lastFM.user.isEmpty)
 
         Divider()
     }
