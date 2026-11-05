@@ -446,6 +446,11 @@ struct CopyMenu: View {
 
 struct LyricsView: View {
     static let width: CGFloat = 320
+    /// The box of the controls, the same on both tabs. The small spinner is the
+    /// tallest thing the row ever holds, and the row keeps its box when the tab
+    /// shows no button, so the tabs and the list under them never move when the
+    /// user switches, or when an answer arrives.
+    static let controls: CGFloat = 16
 
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
@@ -526,6 +531,7 @@ struct LyricsView: View {
                         }
                     }
                 }
+                .frame(height: Self.controls)
 
                 if tabs {
                     HStack(spacing: 6) {

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Overdrive
 
@@ -253,6 +254,45 @@ struct ViewStructureTests {
         #expect(row.contains("minHeight: Self.size"), "the row never changes height as the genre and the listeners arrive")
         #expect(row.contains("Text(detail)"), "one detail line, kept empty until the answers come")
         #expect(!panel.contains("WKWebView") && !row.contains("WKWebView"), "the list is never a web view")
+    }
+
+    /// A tab switch changes the content and nothing else: the control row keeps
+    /// its box on both tabs, and both contents draw the same box, so the pills
+    /// and the list under them never move.
+    @Test func theTabsSwapOnlyTheContent() throws {
+        let source = try source()
+        let panel = region(source, from: "struct LyricsView: View {")
+
+        #expect(panel.contains("static let controls: CGFloat"), "the panel keeps one box for its controls")
+        #expect(panel.contains(".frame(height: Self.controls)"), "the box holds its place while the tab shows no button, so the pills and the list under them never move")
+        #expect(panel.components(separatedBy: "if showing").count - 1 == 2, "only the controls and the content follow the tab, and both keep their place")
+        #expect(panel.contains("if tabs {\n                    HStack(spacing: 6) {"), "the two pills are one row that no tab changes")
+
+        let box = "Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6)"
+        let artists = region(source, from: "struct SimilarArtists: View {")
+        #expect(panel.components(separatedBy: box).count - 1 == 1, "the lyrics draw one rounded box")
+        #expect(artists.components(separatedBy: box).count - 1 == 1, "and the artists list draws the same box, in the same place")
+    }
+
+    /// The reserved height has to be the height of the tallest thing the row can
+    /// show: a control taller than the box would push the pills down again.
+    @MainActor @Test func theControlBoxHoldsEveryControlItShows() {
+        func height<V: View>(_ view: @MainActor () -> V) -> CGFloat {
+            NSHostingView(rootView: view()).fittingSize.height
+        }
+
+        let box = LyricsView.controls
+        let spinner = height { ProgressView().controlSize(.small) }
+        let button = height {
+            Button("Refresh", systemImage: "arrow.clockwise") {}
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+        }
+
+        #expect(spinner > 0, "the panel measures the real spinner, and the measure is not nothing")
+        #expect(button > 0, "and the real button")
+        #expect(box >= max(spinner, button), "the box is \(box), the small spinner is \(spinner), the small button is \(button)")
     }
 
     @Test func theLyricsButtonHidesTheLyrics() throws {
