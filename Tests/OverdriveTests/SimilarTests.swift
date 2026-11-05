@@ -433,6 +433,32 @@ struct SimilarTests {
         #expect(asks.hits == 0, "a row that already has a real photo spends no search")
     }
 
+    @Test func thePhotoOfThePageComesInTheSizeOfTheRow() {
+        // The shape of the tag as the site writes it: wide filler spacing, and
+        // the photo in the big size (`ar0`).
+        let html = """
+        <meta property="og:url"             content="https://www.last.fm/music/Diabolic+Force" data-replaceable-head-tag />
+        <meta property="og:image"           content="https://lastfm-img.freetls.fastly.net/i/u/ar0/564Bce3c20c40bb7653a909fe042fb88.jpg" data-replaceable-head-tag>
+        <meta property="og:image:width"     content="1200" data-replaceable-head-tag>
+        """
+        #expect(Similar.pagePhoto(html)?.absoluteString == "https://lastfm-img.freetls.fastly.net/i/u/174s/564bce3c20c40bb7653a909fe042fb88.jpg",
+                "the photo of the artist arrives cut to the size the row draws")
+    }
+
+    @Test func aPageWithNoPhotoOfTheArtistGivesNothing() {
+        let logo = #"<meta property="og:image" content="https://www.last.fm/static/images/lastfm_logo_facebook.15d8133be114.png">"#
+        #expect(Similar.pagePhoto(logo) == nil, "a page the service does not hold carries the site logo, not a photo")
+
+        let silhouette = #"<meta property="og:image" content="https://lastfm-img.freetls.fastly.net/i/u/ar0/2a96cbd8b46e442fc41c2b86b821562f.jpg">"#
+        #expect(Similar.pagePhoto(silhouette) == nil, "the default of the service is never taken as a photo")
+
+        let challenge = "<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\">"
+        #expect(Similar.pagePhoto(challenge) == nil, "a fingerprint challenge has no photo to take")
+
+        let other = #"<meta property="og:image:width" content="1200">"#
+        #expect(Similar.pagePhoto(other) == nil, "the size tag of the photo is not the photo")
+    }
+
     @Test func theCoverTakesTheArtistsOwnAnswerInStoreOrder() {
         let answers = [
             (name: "Cover Megadeth Tribute", art: "https://example.invalid/cover.jpg"),

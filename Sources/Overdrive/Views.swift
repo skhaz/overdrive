@@ -609,7 +609,7 @@ struct SimilarArtists: View {
 private struct SimilarArtistRow: View {
     /// The size of the photo and of the row: fixed, so nothing moves when the
     /// genre and the listeners arrive.
-    static let size: CGFloat = 56
+    static let size: CGFloat = 72
 
     let artist: Similar.Entry
     @Environment(Similar.self) private var similar

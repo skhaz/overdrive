@@ -39,10 +39,13 @@ final class Similar {
     private(set) var loading = false
 
     @ObservationIgnored var space = Similar.space
-    /// The photo the API gives is the same default silhouette for every
-    /// artist, so a row without a photo asks for one elsewhere. A test
-    /// replaces this.
-    @ObservationIgnored var artwork: @Sendable (String) async -> URL? = { await Similar.iTunesArtwork($0) }
+    /// The API gives the same default silhouette for every artist, so a row
+    /// without a photo takes it from the artist's own page, and from the
+    /// store of Apple only when the page has no photo. A test replaces this.
+    @ObservationIgnored var artwork: @Sendable (String) async -> URL? = { name in
+        if let photo = await Similar.lastFMArtwork(name) { return photo }
+        return await Similar.iTunesArtwork(name)
+    }
     @ObservationIgnored private let lastFM: LastFM
     @ObservationIgnored private var shown = ""
     @ObservationIgnored private var artist = ""
@@ -116,10 +119,11 @@ final class Similar {
             if !found.isEmpty { filled = folded }
             Log.similar.info("loaded", metadata: ["artist": "\(asked)", "got": "\(found.count)"])
 
-            // The photo goes to the store of Apple and the counts to Last.fm.
-            // Both are asked together, `lanes` artists at a time; every row
-            // waits its own place times `space` before it asks Last.fm, so a
-            // page never spends ten requests in the same second.
+            // The photo and the counts go to the services together, `lanes`
+            // artists at a time. The photo goes to the same service as the
+            // counts now, so every row waits its own place times `space`
+            // before it asks anything, and a page never spends ten requests
+            // in the same second.
             let wanted = artists.indices.map { (index: $0, name: artists[$0].name) }
             Log.similar.debug("lane", metadata: ["lanes": "\(Similar.lanes)", "artists": "\(wanted.count)"])
 
@@ -146,18 +150,18 @@ final class Similar {
         }
     }
 
-    /// One row, in its own lane: the photo first, because the store answers
-    /// without a rate, then the counts, after the row's own wait for Last.fm.
+    /// One row, in its own lane: the photo first, then the counts, both after
+    /// the row's own wait, because both go to the service with a rate now.
     /// A row that another answer already filled is never written twice.
     private func enrich(_ index: Int, _ name: String, _ asked: String, _ folded: String, _ place: Int) async {
-        if artists.indices.contains(index), artists[index].image == nil, let picture = await artwork(name),
-           !Task.isCancelled, shown == folded, artists.indices.contains(index), artists[index].image == nil {
-            artists[index].image = picture
-        }
-
         if place > 0 { try? await Task.sleep(for: space * Double(place)) }
         guard !Task.isCancelled, shown == folded, artists.indices.contains(index) else {
             return Log.similar.debug("load dropped", metadata: ["artist": "\(asked)", "reason": Task.isCancelled ? "cancelled" : "superseded", "at": "\(index)"])
+        }
+
+        if artists[index].image == nil, let picture = await artwork(name),
+           !Task.isCancelled, shown == folded, artists.indices.contains(index), artists[index].image == nil {
+            artists[index].image = picture
         }
 
         guard let info = await lastFM.artistInfo(name) else { return }
@@ -194,12 +198,68 @@ final class Similar {
         board.setString(artist.name, forType: .string)
     }
 
-    /// The photo of an artist from the iTunes Search API: the cover of one of
-    /// their songs. The store puts its popular songs first, so the app takes
-    /// the first answer that is really the artist it asked for. Last.fm
-    /// stopped answering real photos years ago, and this needs no key. The
-    /// address of the cover is asked bigger than it arrives, the trick the
-    /// store itself uses.
+    /// The photo of the artist from their own page on Last.fm. The API only
+    /// answers one default silhouette, but the site keeps the photo the users
+    /// gave the artist, and carries it in `og:image`; the app reads the page
+    /// itself, as it reads the page of YouTube. The request looks like the
+    /// browser it stands in for: a plain client gets a fingerprint challenge
+    /// instead of the page.
+    private nonisolated static func lastFMArtwork(_ artist: String) async -> URL? {
+        guard let page = LastFM.artistPage(artist) else {
+            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "false", "reason": "no page"])
+            return nil
+        }
+
+        var request = URLRequest(url: page, timeoutInterval: 10)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let picture = pagePhoto(String(decoding: data, as: UTF8.self)) else {
+            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "false"])
+            return nil
+        }
+
+        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "last.fm", "found": "true"])
+        return picture
+    }
+
+    /// The photo of the artist inside the HTML of the page: `og:image` holds
+    /// it in the big size (`ar0`), and the CDN cuts the same picture to the
+    /// size the row draws (`174s`). A page with no photo carries the site
+    /// logo, and a challenge page carries nothing, so only the picture of an
+    /// artist passes. The walk is a plain search of the tag, never a regex
+    /// over the whole page.
+    nonisolated static func pagePhoto(_ html: String) -> URL? {
+        var from = html.startIndex
+        while let tag = html.range(of: #"og:image""#, range: from..<html.endIndex) {
+            guard let value = html.range(of: #"content=""#, range: tag.upperBound..<html.endIndex),
+                  let end = html.range(of: #"""#, range: value.upperBound..<html.endIndex) else { return nil }
+            from = tag.upperBound
+            if let photo = pagePicture(String(html[value.upperBound..<end.lowerBound])) { return photo }
+        }
+        return nil
+    }
+
+    /// The address of the row in the size it draws, when the content of the
+    /// tag is really the picture of an artist on the image host of the
+    /// service: a big-size name (`ar0`, 32 hex digits) and nothing else.
+    private nonisolated static func pagePicture(_ content: String) -> URL? {
+        guard content.hasPrefix("https://lastfm-img"), content.hasSuffix(".jpg"), let mark = content.range(of: "/i/u/ar0/") else { return nil }
+        let hash = content[mark.upperBound..<content.index(content.endIndex, offsetBy: -4)]
+        guard hash.count == 32, hash.allSatisfy(\.isHexDigit) else { return nil }
+        guard let photo = URL(string: "https://lastfm-img.freetls.fastly.net/i/u/174s/\(hash.lowercased()).jpg"), !LastFM.isDefault(photo) else { return nil }
+        return photo
+    }
+
+    /// The photo of an artist from the iTunes Search API, the second choice
+    /// when the page of the artist holds no photo: the cover of one of their
+    /// songs. The store puts its popular songs first, so the app takes
+    /// the first answer that is really the artist it asked for. It needs no
+    /// key. The address of the cover is asked bigger than it arrives, the
+    /// trick the store itself uses.
     private nonisolated static func iTunesArtwork(_ artist: String) async -> URL? {
         var components = URLComponents(string: "https://itunes.apple.com/search")!
         components.queryItems = [
@@ -216,7 +276,7 @@ final class Similar {
               (response as? HTTPURLResponse)?.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let results = json["results"] as? [[String: Any]] else {
-            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "false"])
+            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "store", "found": "false"])
             return nil
         }
 
@@ -226,11 +286,11 @@ final class Similar {
         }
 
         guard let chosen = Self.cover(answers, artist) else {
-            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "false"])
+            Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "store", "found": "false"])
             return nil
         }
 
-        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "true", "name": "\(chosen.name)"])
+        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "from": "store", "found": "true", "name": "\(chosen.name)"])
         return URL(string: chosen.art.replacingOccurrences(of: "100x100bb", with: "300x300bb"))
     }
 
