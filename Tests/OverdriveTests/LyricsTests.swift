@@ -46,7 +46,7 @@ import Testing
         let track = track(folder)
         try Data("[00:01.00]Hello".utf8).write(to: folder.appending(path: "Song.lyrics"))
 
-        let lyrics = Lyrics(enabled: false)
+        let lyrics = Lyrics(enabled: false, drafts: folder.appending(path: "Drafts.plist"))
         lyrics.show(track)
 
         #expect(lyrics.track == nil, "hidden lyrics must not read the disk or the internet")

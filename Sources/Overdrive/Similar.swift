@@ -194,12 +194,9 @@ final class Similar {
         board.setString(artist.name, forType: .string)
     }
 
-    /// The photo of an artist: the cover of the latest release, from the
-    /// iTunes Search API. The store answers the albums and singles of an
-    /// artist with their dates, so the app keeps the newest that has a cover.
-    /// The service matches loose names, so the app walks the answers in
-    /// three steps: releases of the artist under the very name asked, then
-    /// ones that start with it, then the first cover of the list. Last.fm
+    /// The photo of an artist from the iTunes Search API: the cover of one of
+    /// their songs. The store puts its popular songs first, so the app takes
+    /// the first answer that is really the artist it asked for. Last.fm
     /// stopped answering real photos years ago, and this needs no key. The
     /// address of the cover is asked bigger than it arrives, the trick the
     /// store itself uses.
@@ -208,8 +205,8 @@ final class Similar {
         components.queryItems = [
             URLQueryItem(name: "term", value: artist),
             URLQueryItem(name: "attribute", value: "artistTerm"),
-            URLQueryItem(name: "entity", value: "album"),
-            URLQueryItem(name: "limit", value: "200"),
+            URLQueryItem(name: "entity", value: "song"),
+            URLQueryItem(name: "limit", value: "25"),
         ]
 
         var request = URLRequest(url: components.url!, timeoutInterval: 10)
@@ -223,26 +220,29 @@ final class Similar {
             return nil
         }
 
-        let answers = results.compactMap { result -> (name: String, date: String, art: String)? in
+        let answers = results.compactMap { result -> (name: String, art: String)? in
             guard let art = result["artworkUrl100"] as? String, !art.isEmpty, let name = result["artistName"] as? String else { return nil }
-            return (name, result["releaseDate"] as? String ?? "", art)
+            return (name, art)
         }
-        let asked = Fuzzy.fold(artist)
-        let exact = answers.filter { Fuzzy.fold($0.name) == asked }
-        let near = answers.filter { Fuzzy.fold($0.name).hasPrefix(asked) }
 
-        guard let chosen = Self.newest(exact) ?? Self.newest(near) ?? answers.first else {
+        guard let chosen = Self.cover(answers, artist) else {
             Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "false"])
             return nil
         }
 
-        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "true", "release": "\(chosen.date.prefix(10))", "name": "\(chosen.name)"])
+        Log.similar.debug("artist artwork", metadata: ["artist": "\(artist)", "found": "true", "name": "\(chosen.name)"])
         return URL(string: chosen.art.replacingOccurrences(of: "100x100bb", with: "300x300bb"))
     }
 
-    /// The release with the newest date. The dates arrive as ISO strings, so
-    /// the later text is the later release.
-    private nonisolated static func newest(_ answers: [(name: String, date: String, art: String)]) -> (name: String, date: String, art: String)? {
-        answers.max { $0.date < $1.date }
+    /// The cover of the artist among the answers, in the order the store
+    /// ranks them: its popular songs come first. The store matches loose
+    /// names, so the app takes the first answer that is the very name it
+    /// asked (folded), then a name that starts with it, then the first
+    /// answer. Without this walk a cover band stands for the artist.
+    nonisolated static func cover(_ answers: [(name: String, art: String)], _ artist: String) -> (name: String, art: String)? {
+        let asked = Fuzzy.fold(artist)
+        if let exact = answers.first(where: { Fuzzy.fold($0.name) == asked }) { return exact }
+        if let near = answers.first(where: { Fuzzy.fold($0.name).hasPrefix(asked) }) { return near }
+        return answers.first
     }
 }

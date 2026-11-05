@@ -170,6 +170,37 @@ struct ViewStructureTests {
 
     private func lower(_ text: String) -> String { text }
 
+    /// Tests never make an external request and never touch the real user
+    /// folders: no live host, no shared session, no home directory. Network
+    /// objects run over fake `URLProtocol` sessions against `.invalid`
+    /// endpoints, files go only into a temp folder of the test itself, and
+    /// every seam (`source`, `refresher`, `artwork`, `transport`) is set
+    /// before the object is used. The needles are split so this file, which
+    /// names them to search, does not fail its own search.
+    @Test func testsNeverReachTheRealWorld() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Tests/OverdriveTests")
+        let forbidden = [
+            "URLSession." + "shared",
+            "homeDirectory" + "ForCurrentUser",
+            "application" + "SupportDirectory",
+            "audio" + "scrobbler.com",
+            "lrclib." + "net",
+            "lyrics." + "ovh",
+            "itunes." + "apple.com",
+            "api." + "github.com",
+        ]
+
+        let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).filter { $0.pathExtension == "swift" }
+        #expect(files.count > 30, "the scan covers the whole test tree")
+
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for needle in forbidden {
+                #expect(!text.contains(needle), "\(file.lastPathComponent) must never contain \(needle)")
+            }
+        }
+    }
+
     /// A symbol that this macOS does not know renders as nothing, with no log
     /// and no error: the row just looks empty. So every name the app draws is
     /// asked of the system, before it is ever seen.
@@ -218,6 +249,9 @@ struct ViewStructureTests {
         #expect(source.contains("similar.show(lyrics.track)"), "the panel follows the song it shows")
         #expect(row.contains("onTapGesture { similar.open(artist) }"), "a click opens the artist page")
         #expect(row.contains("Button(\"Copy Name\") { similar.copyName(artist) }"), "the right button copies the name")
+        #expect(row.contains(".frame(width: Self.size, height: Self.size)"), "the photo holds its box from the first draw")
+        #expect(row.contains("minHeight: Self.size"), "the row never changes height as the genre and the listeners arrive")
+        #expect(row.contains("Text(detail)"), "one detail line, kept empty until the answers come")
         #expect(!panel.contains("WKWebView") && !row.contains("WKWebView"), "the list is never a web view")
     }
 

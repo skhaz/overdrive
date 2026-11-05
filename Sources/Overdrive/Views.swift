@@ -607,11 +607,15 @@ struct SimilarArtists: View {
 }
 
 private struct SimilarArtistRow: View {
+    /// The size of the photo and of the row: fixed, so nothing moves when the
+    /// genre and the listeners arrive.
+    static let size: CGFloat = 56
+
     let artist: Similar.Entry
     @Environment(Similar.self) private var similar
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             AsyncImage(url: artist.image) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
@@ -620,20 +624,16 @@ private struct SimilarArtistRow: View {
                     Image(systemName: "person.circle").foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: Self.size, height: Self.size)
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(artist.name).lineLimit(1)
-                if let genre = artist.genre, !genre.isEmpty {
-                    Text(genre).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                if let listeners = artist.listeners {
-                    Text("\(listeners.formatted()) listeners").font(.caption).foregroundStyle(.secondary)
-                }
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, minHeight: Self.size, alignment: .leading)
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture { similar.open(artist) }
@@ -642,6 +642,15 @@ private struct SimilarArtistRow: View {
             Divider()
             Button("Open Last.fm Page") { similar.open(artist) }
         }
+    }
+
+    /// One line that holds both answers, and keeps its place empty until they
+    /// come: the row never changes height as the data arrives.
+    private var detail: String {
+        var parts: [String] = []
+        if let genre = artist.genre, !genre.isEmpty { parts.append(genre) }
+        if let listeners = artist.listeners { parts.append("\(listeners.formatted()) listeners") }
+        return parts.joined(separator: " \u{00B7} ")
     }
 }
 

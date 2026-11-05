@@ -158,9 +158,10 @@ final class Fake: URLProtocol {
 @MainActor
 @Suite(.serialized)
 struct LastFMTests {
-    let directory = FileManager.default.temporaryDirectory.appending(path: "OverdriveTests-\(UUID().uuidString)")
+    let directory = FileManager.default.temporaryDirectory.appending(path: "OverdriveLastFM")
 
     init() {
+        try? FileManager.default.removeItem(at: directory)
         Server.current = Server()
     }
 

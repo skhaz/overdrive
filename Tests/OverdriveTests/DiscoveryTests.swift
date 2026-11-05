@@ -132,9 +132,10 @@ private final class Counter: @unchecked Sendable {
 @MainActor
 @Suite(.serialized)
 struct DiscoveryTests {
-    let directory = FileManager.default.temporaryDirectory.appending(path: "OverdriveDiscovery-\(UUID().uuidString)")
+    let directory = FileManager.default.temporaryDirectory.appending(path: "OverdriveDiscovery")
 
     init() {
+        try? FileManager.default.removeItem(at: directory)
         Chart.reset([], [:])
     }
 

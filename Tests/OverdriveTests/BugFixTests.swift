@@ -92,7 +92,7 @@ struct LyricsRaceTests {
         let first = track(folder, "First"), second = track(folder, "Second")
         try Data("second kept".utf8).write(to: folder.appending(path: "Second.lyrics"))
 
-        let lyrics = Lyrics()
+        let lyrics = Lyrics(drafts: folder.appending(path: "Drafts-\(UUID().uuidString).plist"))
         lyrics.source = { _ in .success("") }
         lyrics.refresher = { _ in
             try? await Task.sleep(for: .milliseconds(200))
@@ -114,7 +114,7 @@ struct LyricsRaceTests {
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
         let song = track(folder, "Song")
 
-        let lyrics = Lyrics()
+        let lyrics = Lyrics(drafts: folder.appending(path: "Drafts-\(UUID().uuidString).plist"))
         lyrics.source = { _ in .success("") }
         lyrics.refresher = { _ in .success("online") }
         lyrics.show(song)
@@ -419,7 +419,7 @@ struct ExpiredLyricsTests {
         let (folder, track) = try setup()
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let lyrics = Lyrics()
+        let lyrics = Lyrics(drafts: folder.appending(path: "Drafts.plist"))
         lyrics.source = { _ in
             try? await Task.sleep(for: .milliseconds(200))
             return .success("new")
@@ -437,7 +437,7 @@ struct ExpiredLyricsTests {
         let (folder, track) = try setup()
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let lyrics = Lyrics()
+        let lyrics = Lyrics(drafts: folder.appending(path: "Drafts.plist"))
         lyrics.source = { _ in .failure(.offline) }
         lyrics.show(track)
         try await Task.sleep(for: .milliseconds(200))
@@ -448,7 +448,7 @@ struct ExpiredLyricsTests {
         let (folder, track) = try setup()
         defer { Persist.flush(); try? FileManager.default.removeItem(at: folder) }
 
-        let lyrics = Lyrics()
+        let lyrics = Lyrics(drafts: folder.appending(path: "Drafts.plist"))
         lyrics.source = { _ in
             try? await Task.sleep(for: .milliseconds(200))
             return .success("new")

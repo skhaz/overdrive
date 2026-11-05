@@ -281,7 +281,9 @@ final class Records: @unchecked Sendable {
         }
 
         try Data("[00:01.00]line".utf8).write(to: track.url.deletingPathExtension().appendingPathExtension("lyrics"))
-        let lyrics = Lyrics()
+        let lyrics = Lyrics(drafts: folder.appending(path: "Drafts.plist"))
+        lyrics.source = { _ in .failure(.offline) }
+        lyrics.refresher = { _ in .failure(.offline) }
         lyrics.show(track)
         lyrics.save("[00:02.00]new", for: track)
         #expect(records.find("lyrics", "show", "path", "one.mp3"))

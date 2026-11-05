@@ -160,8 +160,12 @@ private final class Peak: @unchecked Sendable {
 @MainActor
 @Suite(.serialized)
 struct SimilarTests {
-    let directory = FileManager.default.temporaryDirectory.appending(path: "OverdriveSimilar-\(UUID().uuidString)")
+    let directory = FileManager.default.temporaryDirectory.appending(path: "OverdriveSimilar")
     let stub = SimilarStub()
+
+    init() {
+        try? FileManager.default.removeItem(at: directory)
+    }
 
     func lastFM(user: String = "tester") -> LastFM {
         let session = URLSessionConfiguration.ephemeral
@@ -427,6 +431,25 @@ struct SimilarTests {
         await settle { !similar.loading && similar.artists.count == 4 && similar.artists.allSatisfy { $0.listeners != nil } }
 
         #expect(asks.hits == 0, "a row that already has a real photo spends no search")
+    }
+
+    @Test func theCoverTakesTheArtistsOwnAnswerInStoreOrder() {
+        let answers = [
+            (name: "Cover Megadeth Tribute", art: "https://example.invalid/cover.jpg"),
+            (name: "MEGADETH", art: "https://example.invalid/megadeth.jpg"),
+            (name: "Megadeth Fan Club", art: "https://example.invalid/fan.jpg"),
+        ]
+
+        #expect(Similar.cover(answers, "Megadeth")?.art == "https://example.invalid/megadeth.jpg", "the folded exact name wins over the store's first answer")
+        #expect(Similar.cover(answers, "megadeth")?.name == "MEGADETH", "case and accents score nothing")
+        let near: [(name: String, art: String)] = [
+            (name: "Nothing Here", art: "a"),
+            (name: "Megadeth Live", art: "b"),
+        ]
+        #expect(Similar.cover(near, "Megadeth")?.art == "b", "no exact name takes one that starts with it")
+        #expect(Similar.cover(answers, "Anything Else")?.name == "Cover Megadeth Tribute", "with nothing alike the store order answers")
+        let nothing: [(name: String, art: String)] = []
+        #expect(Similar.cover(nothing, "Megadeth") == nil, "no answers, no cover")
     }
 
     @Test func thePageOfARowIsTheOneTheServiceAnswered() throws {
