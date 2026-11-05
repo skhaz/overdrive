@@ -168,6 +168,18 @@ struct ViewStructureTests {
 
     private func lower(_ text: String) -> String { text }
 
+    @Test func theLyricsPanelHasTwoTabsOnlyWithAnAccount() throws {
+        let source = try source()
+        let panel = region(source, from: "struct LyricsView: View {")
+
+        #expect(panel.contains("let tabs = !lastFM.user.isEmpty"), "the tabs only exist while a Last.fm account is connected")
+        #expect(panel.contains("Picker(\"Panel\", selection: Binding(get: { similar.tab }, set: { similar.select($0) }))"), "the panel offers the Lyrics and the Similar tab")
+        #expect(panel.contains(".pickerStyle(.segmented)"), "the tabs are the native segmented control")
+        #expect(panel.contains("if showing {\n                    SimilarArtists()"), "the similar tab lists the artists natively, with no web view")
+        #expect(source.contains("similar.show(lyrics.track)"), "the panel follows the song it shows")
+        #expect(!panel.contains("WKWebView") && !panel.contains("loadHTMLString"), "the list is never a web view")
+    }
+
     @Test func theLyricsButtonHidesTheLyrics() throws {
         let source = try source()
 

@@ -100,6 +100,7 @@ struct Overdrive: App {
         player.resets = { [weak infinity] reason in infinity?.stopped(reason) }
         let likes = Likes(file: { Likes.file(in: library.folders.first) }, folder: { library.folders.first })
         let loves = Loves(library: library, lastFM: lastFM, likes: likes)
+        let similar = Similar(lastFM: lastFM)
         library.loaded = { [unowned library] complete in
             player.restore(complete: complete) { library.track($0) }
             guard complete else { return }
@@ -139,7 +140,7 @@ struct Overdrive: App {
             return event
         }
 
-        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, infinity: infinity, bans: bans, likes: likes, loves: loves)
+        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, infinity: infinity, bans: bans, likes: likes, loves: loves, similar: similar)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
@@ -153,6 +154,7 @@ struct Overdrive: App {
     @State private var discovery = Overdrive.shared.discovery
     @State private var infinity = Overdrive.shared.infinity
     @State private var bans = Overdrive.shared.bans
+    @State private var similar = Overdrive.shared.similar
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
@@ -165,6 +167,8 @@ struct Overdrive: App {
                 .environment(infinity)
                 .environment(bans)
                 .environment(youTube)
+                .environment(lastFM)
+                .environment(similar)
                 .modifier(Reopen(delegate: delegate))
         }
         .defaultWindowPlacement { _, context in

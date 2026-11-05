@@ -449,6 +449,8 @@ struct LyricsView: View {
 
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
+    @Environment(Similar.self) private var similar
+    @Environment(LastFM.self) private var lastFM
     @State private var editing = false {
         didSet { if editing != oldValue { Log.lyrics.info("editing", metadata: ["on": "\(editing)"]) } }
     }
@@ -473,6 +475,8 @@ struct LyricsView: View {
             let lines = lyrics.synced
             let live = player.current == track
             let current = live ? LRC.index(at: player.position, in: lines) : nil
+            let tabs = !lastFM.user.isEmpty
+            let showing = tabs && similar.tab == .similar
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 8) {
@@ -482,55 +486,74 @@ struct LyricsView: View {
                     }
                     Spacer()
                     HStack(spacing: 8) {
-                        if lyrics.loading {
-                            ProgressView().controlSize(.small)
-                        }
-                        if !lyrics.hasLocalLyrics {
-                            Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
+                        if showing {
+                            if similar.loading {
+                                ProgressView().controlSize(.small)
+                            }
+                        } else {
+                            if lyrics.loading {
+                                ProgressView().controlSize(.small)
+                            }
+                            if !lyrics.hasLocalLyrics {
+                                Button("Refresh", systemImage: "arrow.clockwise", action: lyrics.refresh)
+                                    .labelStyle(.iconOnly)
+                                    .buttonStyle(.borderless)
+                                    .controlSize(.small)
+                            }
+                            Button("Show in a Floating Window", systemImage: "macwindow") { lyrics.floating = true }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
                                 .controlSize(.small)
-                        }
-                        Button("Show in a Floating Window", systemImage: "macwindow") { lyrics.floating = true }
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
-                            .controlSize(.small)
-                        if !lines.isEmpty {
-                            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") { close() }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
-                                .controlSize(.small)
-                                .alert("Save your lyric edit?", isPresented: $asking) {
-                                    Button("Save") { lyrics.flush(); editing = false }
-                                    Button("Discard", role: .destructive) { lyrics.discard(); editing = false }
-                                    Button("Cancel", role: .cancel) {}
-                                } message: {
-                                    Text("The new text is not on the disk yet. Save it, or discard it and keep the lyrics the file has.")
-                                }
+                            if !lines.isEmpty {
+                                Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") { close() }
+                                    .labelStyle(.iconOnly)
+                                    .buttonStyle(.borderless)
+                                    .controlSize(.small)
+                                    .alert("Save your lyric edit?", isPresented: $asking) {
+                                        Button("Save") { lyrics.flush(); editing = false }
+                                        Button("Discard", role: .destructive) { lyrics.discard(); editing = false }
+                                        Button("Cancel", role: .cancel) {}
+                                    } message: {
+                                        Text("The new text is not on the disk yet. Save it, or discard it and keep the lyrics the file has.")
+                                    }
+                            }
                         }
                     }
                 }
 
-                Group {
-                    if !editing, !lines.isEmpty {
-                        SyncedLyrics(lines: lines, current: current, playing: live && player.playing) { player.seek($0) }
-                    } else {
-                        TextEditor(text: Binding { lyrics.text } set: { lyrics.edit($0) })
-                            .focused($typing)
-                            .font(.body)
-                            .scrollContentBackground(.hidden)
-                            .padding(6)
+                if tabs {
+                    Picker("Panel", selection: Binding(get: { similar.tab }, set: { similar.select($0) })) {
+                        Text("Lyrics").tag(Similar.Tab.lyrics)
+                        Text("Similar").tag(Similar.Tab.similar)
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
-                .alert("Replace local lyrics?", isPresented: Binding(
-                    get: { lyrics.pendingReplace },
-                    set: { if !$0 { lyrics.cancelReplace() } }
-                )) {
-                    Button("Replace", role: .destructive) { lyrics.confirmReplace() }
-                    Button("Cancel", role: .cancel) { lyrics.cancelReplace() }
-                } message: {
-                    Text("New lyrics found online. Replace your local version?")
+
+                if showing {
+                    SimilarArtists()
+                } else {
+                    Group {
+                        if !editing, !lines.isEmpty {
+                            SyncedLyrics(lines: lines, current: current, playing: live && player.playing) { player.seek($0) }
+                        } else {
+                            TextEditor(text: Binding { lyrics.text } set: { lyrics.edit($0) })
+                                .focused($typing)
+                                .font(.body)
+                                .scrollContentBackground(.hidden)
+                                .padding(6)
+                        }
+                    }
+                    .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
+                    .alert("Replace local lyrics?", isPresented: Binding(
+                        get: { lyrics.pendingReplace },
+                        set: { if !$0 { lyrics.cancelReplace() } }
+                    )) {
+                        Button("Replace", role: .destructive) { lyrics.confirmReplace() }
+                        Button("Cancel", role: .cancel) { lyrics.cancelReplace() }
+                    } message: {
+                        Text("New lyrics found online. Replace your local version?")
+                    }
                 }
             }
             .padding()
@@ -539,6 +562,69 @@ struct LyricsView: View {
                 if !lines.isEmpty { editing = true }
                 Task { typing = true }
             }
+        }
+    }
+}
+
+/// The Similar tab: the artists Last.fm says sound like the song that plays,
+/// drawn natively, with the photo, the name, the genre, and the listeners.
+struct SimilarArtists: View {
+    @Environment(Similar.self) private var similar
+
+    var body: some View {
+        Group {
+            if similar.artists.isEmpty {
+                VStack(spacing: 10) {
+                    if similar.loading {
+                        ProgressView()
+                        Text("Loading similar artists").foregroundStyle(.secondary)
+                    } else {
+                        Text("No similar artists").foregroundStyle(.secondary)
+                        Button("Retry", action: similar.reload)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(similar.artists) { artist in
+                            SimilarArtistRow(artist: artist)
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+        }
+        .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+private struct SimilarArtistRow: View {
+    let artist: Similar.Entry
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AsyncImage(url: artist.image) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                ZStack {
+                    Rectangle().fill(.quaternary)
+                    Image(systemName: "person.circle").foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(artist.name).lineLimit(1)
+                if let genre = artist.genre, !genre.isEmpty {
+                    Text(genre).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let listeners = artist.listeners {
+                    Text("\(listeners.formatted()) listeners").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
         }
     }
 }
@@ -2188,6 +2274,7 @@ struct ContentView: View {
     @Environment(Likes.self) private var likes
     @Environment(Bans.self) private var bans
     @Environment(YouTube.self) private var youTube
+    @Environment(Similar.self) private var similar
     @Environment(\.openWindow) private var openWindow
     @State private var lyrics = Lyrics(enabled: Player.saved?.lyrics ?? true)
     @State private var navigation = Navigation(page: Page(key: Player.saved?.page ?? "") ?? .section(.albums), query: Player.saved?.query ?? "")
@@ -2420,6 +2507,9 @@ struct ContentView: View {
             Log.lyrics.info("shown", metadata: ["on": "\(player.lyrics)"])
             lyrics.enabled = player.lyrics
             if let current = player.current { lyrics.show(current) }
+        }
+        .onChange(of: lyrics.track, initial: true) {
+            similar.show(lyrics.track)
         }
         .onAppear {
             navigator.available = { (navigation.canGoBack, !navigation.forward.isEmpty) }

@@ -203,6 +203,78 @@ final class LastFM {
         return picked.map { $0.name }
     }
 
+    /// One artist like the one the service put in a similar list.
+    nonisolated struct SimilarArtist: Sendable, Equatable {
+        let name: String
+        let url: URL?
+        let image: URL?
+    }
+
+    /// The `count` artists most similar to `artist`, in the order the service
+    /// ranks them, in one request. The answer carries the name, the page, and
+    /// the photo of each artist: the genre and the listeners come only from
+    /// `artist.getInfo`, asked artist by artist.
+    func similar(_ artist: String, _ count: Int) async -> [LastFM.SimilarArtist] {
+        guard count > 0, !artist.isEmpty else { return [] }
+
+        guard let json = try? await call("artist.getSimilar", ["artist": artist, "limit": String(count), "autocorrect": "1"]) else { return [] }
+        let picked = LastFM.items(json["similarartists"], "artist").prefix(count).compactMap { item -> LastFM.SimilarArtist? in
+            guard let name = item["name"] as? String, !name.isEmpty else { return nil }
+
+            return SimilarArtist(name: name, url: (item["url"] as? String).flatMap(LastFM.secure), image: LastFM.photo(item["image"]))
+        }
+        Log.lastFM.debug("similar artists", metadata: ["artist": "\(artist)", "asked": "\(count)", "got": "\(picked.count)"])
+
+        return picked
+    }
+
+    /// What `artist.getInfo` answers about one artist: the listeners, the
+    /// first tag, and the photo.
+    nonisolated struct ArtistInfo: Sendable {
+        let listeners: Int?
+        let tag: String?
+        let image: URL?
+    }
+
+    /// The listeners, the first tag, and the photo of an artist. Nil when the
+    /// service has no answer for the name.
+    func artistInfo(_ artist: String) async -> LastFM.ArtistInfo? {
+        guard !artist.isEmpty else { return nil }
+
+        guard let json = try? await call("artist.getInfo", ["artist": artist, "autocorrect": "1"]),
+              let info = json["artist"] as? [String: Any], info["name"] is String else { return nil }
+
+        let result = ArtistInfo(listeners: LastFM.count(info["listeners"]), tag: LastFM.items(info["tags"], "tag").first?["name"] as? String, image: LastFM.photo(info["image"]))
+        Log.lastFM.debug("artist info", metadata: ["artist": "\(artist)", "name": "\(info["name"] as? String ?? artist)", "listeners": "\(result.listeners ?? 0)", "tag": "\(result.tag ?? "")"])
+
+        return result
+    }
+
+    /// The biggest photo in an `image` array of the service.
+    nonisolated static func photo(_ value: Any?) -> URL? {
+        guard let images = value as? [[String: Any]] else { return nil }
+
+        for size in ["extralarge", "mega", "large", "medium", "small"] {
+            for image in images where image["size"] as? String == size {
+                if let text = image["#text"] as? String, let url = LastFM.secure(text) { return url }
+            }
+        }
+
+        return nil
+    }
+
+    /// A page or a photo of the service as a secure address: it has answered
+    /// `http`, or a bare host, in the past, and the app only loads https.
+    nonisolated static func secure(_ text: String) -> URL? {
+        let address = text.hasPrefix("http://") ? "https://" + text.dropFirst("http://".count)
+            : text.hasPrefix("//") ? "https:" + text
+            : text.hasPrefix("www.") ? "https://" + text
+            : text
+        guard address.hasPrefix("https://") else { return nil }
+
+        return URL(string: address)
+    }
+
     /// The page of an artist under the name the app has, for a name that
     /// Last.fm does not know: the service answers 404 there.
     nonisolated static func artistPage(_ name: String) -> URL? {
