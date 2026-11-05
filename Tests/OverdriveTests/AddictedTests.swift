@@ -26,6 +26,7 @@ struct AddictedTests {
         }
 
         let library = Library(loudness: Loudness(), folders: [music])
+        library.query = ""
         let end = ContinuousClock.now + .seconds(30)
         while ContinuousClock.now < end, !library.settled { try? await Task.sleep(for: .milliseconds(20)) }
         guard library.settled, library.tracks.count == names.count else {
