@@ -171,13 +171,17 @@ struct ViewStructureTests {
     @Test func theLyricsPanelHasTwoTabsOnlyWithAnAccount() throws {
         let source = try source()
         let panel = region(source, from: "struct LyricsView: View {")
+        let row = region(source, from: "private struct SimilarArtistRow: View {")
 
         #expect(panel.contains("let tabs = !lastFM.user.isEmpty"), "the tabs only exist while a Last.fm account is connected")
-        #expect(panel.contains("Picker(\"Panel\", selection: Binding(get: { similar.tab }, set: { similar.select($0) }))"), "the panel offers the Lyrics and the Similar tab")
-        #expect(panel.contains(".pickerStyle(.segmented)"), "the tabs are the native segmented control")
+        #expect(panel.contains("Button { similar.select(value) }"), "the tabs are buttons of the panel")
+        #expect(panel.contains("PressableButtonStyle(isProminent: similar.tab == value)"), "the chosen tab takes the accent pill and answers the press")
+        #expect(!panel.contains("Picker("), "the native segmented picker did not feel alive inside the panel")
         #expect(panel.contains("if showing {\n                    SimilarArtists()"), "the similar tab lists the artists natively, with no web view")
         #expect(source.contains("similar.show(lyrics.track)"), "the panel follows the song it shows")
-        #expect(!panel.contains("WKWebView") && !panel.contains("loadHTMLString"), "the list is never a web view")
+        #expect(row.contains("onTapGesture { similar.open(artist) }"), "a click opens the artist page")
+        #expect(row.contains("Button(\"Copy Name\") { similar.copyName(artist) }"), "the right button copies the name")
+        #expect(!panel.contains("WKWebView") && !row.contains("WKWebView"), "the list is never a web view")
     }
 
     @Test func theLyricsButtonHidesTheLyrics() throws {

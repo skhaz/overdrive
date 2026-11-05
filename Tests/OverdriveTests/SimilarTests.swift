@@ -133,6 +133,7 @@ struct SimilarTests {
         let lastFM = self.lastFM(user: user)
         let similar = Similar(lastFM: lastFM)
         similar.gap = .zero
+        similar.artwork = { _ in nil }
         return (lastFM, similar)
     }
 
@@ -145,9 +146,11 @@ struct SimilarTests {
         [["#text": "http://example.invalid/34/\(name).png", "size": "small"], ["#text": "https://example.invalid/300/\(name).png", "size": "extralarge"]]
     }
 
-    func stub(_ names: [String]) {
-        stub.similar(names.map { ["name": $0, "url": "https://www.last.fm/music/\($0)", "image": photo($0)] })
-        stub.infos(Dictionary(uniqueKeysWithValues: names.map { ($0, ["name": $0, "listeners": "1234", "tags": ["tag": [["name": "rock"]]], "image": photo($0)]) }))
+    func stub(_ names: [String], picture: String? = nil) {
+        let images: (String) -> [[String: Any]] = { picture == nil ? photo($0) : [["#text": picture!, "size": "extralarge"]] }
+        stub.similar(names.map { ["name": $0, "url": "https://www.last.fm/music/\($0)", "image": images($0)] })
+        // The service writes the counts under `stats`.
+        stub.infos(Dictionary(uniqueKeysWithValues: names.map { ($0, ["name": $0, "stats": ["listeners": "1234"], "tags": ["tag": [["name": "rock"]]], "image": images($0)]) }))
     }
 
     func settle(_ condition: () -> Bool) async {
@@ -308,14 +311,51 @@ struct SimilarTests {
     }
 
     @Test func oneArtistInfoCarriesListenersAndTheFirstTag() async {
-        stub.infos(["Band 1": ["name": "Band 1", "listeners": "987", "tags": ["tag": ["name": "metal"]], "image": photo("Band 1")]])
+        // The service puts the counts under `stats` now, and older answers held
+        // them at the top: the app reads both.
+        stub.infos([
+            "Band 1": ["name": "Band 1", "stats": ["listeners": "987"], "tags": ["tag": ["name": "metal"]], "image": photo("Band 1")],
+            "Band 2": ["name": "Band 2", "listeners": "42"],
+        ])
         let (lastFM, _) = harness()
 
         let info = await lastFM.artistInfo("Band 1")
         #expect(info?.listeners == 987, "Last.fm writes counts as strings")
         #expect(info?.tag == "metal", "a lone tag arrives as one object, not a list")
         #expect(info?.image?.absoluteString == "https://example.invalid/300/Band%201.png")
+        #expect(await lastFM.artistInfo("Band 2")?.listeners == 42, "the old place still works")
         #expect(await lastFM.artistInfo("") == nil, "no name, no request")
+    }
+
+    @Test func theDefaultPhotoIsNoPhoto() async {
+        // The API answers the same silhouette for every artist for years: a row
+        // must not keep it, or no real photo can come after it.
+        let silhouette = "https://lastfm-img.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png"
+        stub(["Band 1"], picture: silhouette)
+        let (lastFM, _) = harness()
+
+        #expect(await lastFM.similar("Metallica", 10).first?.image == nil, "the list drops the silhouette")
+        #expect(await lastFM.artistInfo("Band 1")?.image == nil, "and so does the artist info")
+    }
+
+    @Test func aRowWithoutAPhotoTakesTheSearchArtwork() async {
+        stub(["Band 1"], picture: "https://lastfm-img.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png")
+        let (_, similar) = harness()
+        similar.artwork = { name in URL(string: "https://art.invalid/300/\(name).jpg") }
+        similar.show(track("One", "Metallica"))
+        similar.select(.similar)
+
+        await settle { !similar.loading && similar.artists.first?.image?.absoluteString == "https://art.invalid/300/Band%201.jpg" }
+
+        #expect(similar.artists.first?.image?.absoluteString == "https://art.invalid/300/Band%201.jpg", "the artist gets a real photo")
+    }
+
+    @Test func thePageOfARowIsTheOneTheServiceAnswered() throws {
+        let answered = Similar.Entry(name: "Band 1", url: URL(string: "https://www.last.fm/music/Band%201"), image: nil)
+        #expect(Similar.page(answered) == URL(string: "https://www.last.fm/music/Band%201"))
+
+        let bare = Similar.Entry(name: "Band 1", url: nil, image: nil)
+        #expect(Similar.page(bare) == LastFM.artistPage("Band 1"), "a row with no page opens the page of its name")
     }
 
     @Test func theListStopsAtTenAndSurvivesOddAnswers() async {

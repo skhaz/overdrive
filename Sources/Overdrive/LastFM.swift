@@ -212,7 +212,7 @@ final class LastFM {
 
     /// The `count` artists most similar to `artist`, in the order the service
     /// ranks them, in one request. The answer carries the name, the page, and
-    /// the photo of each artist: the genre and the listeners come only from
+    /// the photo of each artist; the genre and the listeners come only from
     /// `artist.getInfo`, asked artist by artist.
     func similar(_ artist: String, _ count: Int) async -> [LastFM.SimilarArtist] {
         guard count > 0, !artist.isEmpty else { return [] }
@@ -220,8 +220,9 @@ final class LastFM {
         guard let json = try? await call("artist.getSimilar", ["artist": artist, "limit": String(count), "autocorrect": "1"]) else { return [] }
         let picked = LastFM.items(json["similarartists"], "artist").prefix(count).compactMap { item -> LastFM.SimilarArtist? in
             guard let name = item["name"] as? String, !name.isEmpty else { return nil }
+            let picture = LastFM.photo(item["image"])
 
-            return SimilarArtist(name: name, url: (item["url"] as? String).flatMap(LastFM.secure), image: LastFM.photo(item["image"]))
+            return SimilarArtist(name: name, url: (item["url"] as? String).flatMap(LastFM.secure), image: LastFM.isDefault(picture) ? nil : picture)
         }
         Log.lastFM.debug("similar artists", metadata: ["artist": "\(artist)", "asked": "\(count)", "got": "\(picked.count)"])
 
@@ -244,11 +245,23 @@ final class LastFM {
         guard let json = try? await call("artist.getInfo", ["artist": artist, "autocorrect": "1"]),
               let info = json["artist"] as? [String: Any], info["name"] is String else { return nil }
 
-        let result = ArtistInfo(listeners: LastFM.count(info["listeners"]), tag: LastFM.items(info["tags"], "tag").first?["name"] as? String, image: LastFM.photo(info["image"]))
-        Log.lastFM.debug("artist info", metadata: ["artist": "\(artist)", "name": "\(info["name"] as? String ?? artist)", "listeners": "\(result.listeners ?? 0)", "tag": "\(result.tag ?? "")"])
+        // The service moved the counts under `stats`, and some answers still
+        // hold them at the top.
+        let listeners = LastFM.count((info["stats"] as? [String: Any])?["listeners"] ?? info["listeners"])
+        let picture = LastFM.photo(info["image"])
+        let result = ArtistInfo(listeners: listeners, tag: LastFM.items(info["tags"], "tag").first?["name"] as? String, image: LastFM.isDefault(picture) ? nil : picture)
+        Log.lastFM.debug("artist info", metadata: ["artist": "\(artist)", "name": "\(info["name"] as? String ?? artist)", "listeners": "\(result.listeners ?? 0)", "tag": "\(result.tag ?? "")", "photo": "\(result.image != nil)"])
 
         return result
     }
+
+    /// The photo of the service for an artist with no photo. The API answers
+    /// it for every artist now, so a list takes the photo from elsewhere.
+    nonisolated static func isDefault(_ image: URL?) -> Bool {
+        image?.absoluteString.contains(LastFM.placeholder) ?? false
+    }
+
+    nonisolated private static let placeholder = "2a96cbd8b46e442fc41c2b86b821562f"
 
     /// The biggest photo in an `image` array of the service.
     nonisolated static func photo(_ value: Any?) -> URL? {

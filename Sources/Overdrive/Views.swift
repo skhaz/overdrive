@@ -470,6 +470,15 @@ struct LyricsView: View {
         asking = true
     }
 
+    /// One tab of the panel: the accent pill is the house style of a chosen
+    /// thing, and it answers the press at once.
+    private func tab(_ title: String, _ value: Similar.Tab) -> some View {
+        Button { similar.select(value) } label: {
+            Text(title).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(PressableButtonStyle(isProminent: similar.tab == value))
+    }
+
     var body: some View {
         if let track = lyrics.track {
             let lines = lyrics.synced
@@ -522,12 +531,10 @@ struct LyricsView: View {
                 }
 
                 if tabs {
-                    Picker("Panel", selection: Binding(get: { similar.tab }, set: { similar.select($0) })) {
-                        Text("Lyrics").tag(Similar.Tab.lyrics)
-                        Text("Similar").tag(Similar.Tab.similar)
+                    HStack(spacing: 6) {
+                        tab("Lyrics", .lyrics)
+                        tab("Similar", .similar)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
                 }
 
                 if showing {
@@ -601,6 +608,7 @@ struct SimilarArtists: View {
 
 private struct SimilarArtistRow: View {
     let artist: Similar.Entry
+    @Environment(Similar.self) private var similar
 
     var body: some View {
         HStack(spacing: 8) {
@@ -625,6 +633,14 @@ private struct SimilarArtistRow: View {
                 }
             }
             Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { similar.open(artist) }
+        .contextMenu {
+            Button("Copy Name") { similar.copyName(artist) }
+            Divider()
+            Button("Open Last.fm Page") { similar.open(artist) }
         }
     }
 }
