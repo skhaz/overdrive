@@ -128,14 +128,16 @@ private final class SimilarFake: URLProtocol, @unchecked Sendable {
         let method = form["method"] ?? ""
         let sent = form
         let wait = stub.delay(method)
+        // A release build rejects the capture of self even though the class is @unchecked Sendable.
+        nonisolated(unsafe) let fake = self
         stub.arrive(method)
 
         let send: @Sendable () -> Void = {
             let data = try! JSONSerialization.data(withJSONObject: stub.reply(sent))
-            let response = HTTPURLResponse(url: self.request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            self.client?.urlProtocol(self, didLoad: data)
-            self.client?.urlProtocolDidFinishLoading(self)
+            let response = HTTPURLResponse(url: fake.request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            fake.client?.urlProtocol(fake, didReceive: response, cacheStoragePolicy: .notAllowed)
+            fake.client?.urlProtocol(fake, didLoad: data)
+            fake.client?.urlProtocolDidFinishLoading(fake)
             stub.depart(method)
         }
 

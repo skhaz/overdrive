@@ -203,6 +203,27 @@ final class Plays {
         return true
     }
 
+    /// The hourly save: one snapshot of every count, merged, encoded, and
+    /// written on the `Persist` queue, so the main thread never waits. The
+    /// plays stay in `pending` until a synchronous `flush`, so a failed write
+    /// loses nothing and the next save writes them again.
+    func save() {
+        guard !pending.isEmpty else { return }
+        guard let url = target, let root, FileManager.default.fileExists(atPath: root.path) else {
+            Log.plays.debug("save skipped", metadata: ["pending": "\(pending.count)", "folder": "\(root?.path ?? "")"])
+            return
+        }
+
+        let counts = counts
+        let pending = pending
+        Persist.later {
+            let merged = Plays.merged(counts, pending)
+            guard let data = Persist.encode(merged, for: url) else { return [] }
+            return [(url, data)]
+        }
+        Log.plays.info("save", metadata: ["file": "\(url.path)", "pending": "\(pending.count)"])
+    }
+
     private func order() {
         let totals = pending.isEmpty ? counts : Self.merged(counts, pending)
         ranked = totals.map { Rank(key: $0.key, count: $0.value) }.sorted {

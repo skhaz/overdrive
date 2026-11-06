@@ -42,6 +42,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         Log.app.info("quit")
         Overdrive.shared.library.plays.flush()
+        Persist.flush()
         Log.flush()
     }
 

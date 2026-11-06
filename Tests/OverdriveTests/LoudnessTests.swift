@@ -121,4 +121,28 @@ struct LoudnessTests {
         loudness.update([Album(id: track.albumID, title: "Album", artist: "Artist", year: 2020, tracks: [track])])
         #expect(try await measured(track, in: [directory]))
     }
+
+    @Test func aSaveNeverWaitsForTheDisk() throws {
+        let directory = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: directory) }
+
+        let file = directory.appending(path: Loudness.name)
+        let entry = Loudness.Entry(size: 1, modified: 1, lufs: -14, peak: 0.5, seconds: 1)
+        #expect(Persist.write(try #require(Persist.encode(["A.wav": entry], for: file)), to: file))
+        let loudness = Loudness(folders: [directory])
+        try FileManager.default.removeItem(at: file)
+
+        let gate = DispatchSemaphore(value: 0)
+        Persist.later { _ = gate.wait(timeout: .now() + 2); return [] }
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        loudness.save()
+        #expect(clock.now - start < .milliseconds(500), "the save returns while the disk is busy; it waited for the encode and the write")
+
+        gate.signal()
+        Persist.flush()
+        let stored = try #require(Persist.read([String: Loudness.Entry].self, from: file))
+        #expect(Array(stored.keys) == ["A.wav"], "the queue writes the snapshot with paths relative to the folder")
+    }
 }

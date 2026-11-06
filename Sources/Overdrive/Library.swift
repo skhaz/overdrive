@@ -348,7 +348,7 @@ final class Library {
                 ticks += 1
                 if ticks.isMultiple(of: Library.full), !scanning {
                     Log.library.info("sync full scan", metadata: ["every": "\(Library.period * Library.full)"])
-                    plays.flush()
+                    plays.save()
                     scan("periodic full")
                     continue
                 }

@@ -147,7 +147,13 @@ final class Loudness {
         }
     }
 
-    private func save() {
+    func save() {
+        let entries = entries
+        let roots = roots
+        Persist.later { Loudness.files(entries, roots) }
+    }
+
+    private nonisolated static func files(_ entries: [String: Entry], _ roots: [(folder: URL, real: String)]) -> [(url: URL, data: Data)] {
         var stored = Array(repeating: [String: Entry](), count: roots.count)
 
         let prefixes = roots.map { $0.real + "/" }
@@ -163,12 +169,14 @@ final class Loudness {
             stored[best][String(path.dropFirst(lengths[best]))] = entry
         }
 
+        var files: [(url: URL, data: Data)] = []
         for index in roots.indices where !stored[index].isEmpty {
             let file = roots[index].folder.appending(path: Self.name)
             guard let data = Persist.encode(stored[index], for: file) else { continue }
 
-            Persist.write(data, to: file)
+            files.append((file, data))
         }
+        return files
     }
 
     private nonisolated static func idle() async {

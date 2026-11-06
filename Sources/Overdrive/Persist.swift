@@ -11,6 +11,18 @@ nonisolated enum Persist {
         return done
     }
 
+    /// Builds and writes the files on the queue and returns at once, so the
+    /// caller never waits for the encode or the disk. The order stays, and
+    /// `flush` waits for it.
+    static func later(_ files: @escaping @Sendable () -> [(url: URL, data: Data)]) {
+        queue.async {
+            for file in files() {
+                let done = store(file.data, file.url)
+                Log.persist.log(level: done ? .debug : .error, "write", metadata: ["path": "\(file.url.path)", "bytes": "\(file.data.count)", "result": Self.result(done), "mode": "later"])
+            }
+        }
+    }
+
     static func read<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
         let data: Data
         do {

@@ -381,3 +381,65 @@ struct PlaysTests {
         #expect(!FileManager.default.fileExists(atPath: file.appendingPathExtension("tmp").path), "the temporary file is renamed, never left behind")
     }
 }
+
+extension PlaysTests {
+    @Test func theHourlySaveNeverWaitsForTheDisk() throws {
+        let root = try folder()
+        defer { Persist.flush(); try? FileManager.default.removeItem(at: root) }
+
+        let plays = Plays(root: root)
+        plays.bump(track("/m/One.mp3"))
+        let gate = DispatchSemaphore(value: 0)
+        Persist.later { _ = gate.wait(timeout: .now() + 2); return [] }
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        plays.save()
+        #expect(clock.now - start < .milliseconds(500), "the save returns while the disk is busy; it waited for the encode and the write")
+
+        gate.signal()
+        Persist.flush()
+        #expect(Persist.read([String: Int].self, from: Plays.file(in: root)) == ["One.mp3\u{1F}Album\u{1F}Artist": 1])
+    }
+
+    @Test func theHourlySaveWritesEveryCountOnceAndKeepsThemInMemory() throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let song = track("/m/One.mp3")
+        let plays = Plays(root: root)
+        plays.bump(song)
+        plays.save()
+        plays.bump(song)
+        plays.save()
+        Persist.flush()
+
+        #expect(Persist.read([String: Int].self, from: Plays.file(in: root))?.values.first == 2, "a second save writes the total, never the first plays twice")
+        #expect(plays.count(song) == 2)
+
+        plays.flush()
+        Persist.flush()
+        #expect(Persist.read([String: Int].self, from: Plays.file(in: root))?.values.first == 2, "a flush after a save adds nothing twice")
+        #expect(Plays(root: root).count(song) == 2)
+    }
+
+    @Test func aFailedHourlySaveLosesNoPlay() throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let song = track("/m/One.mp3")
+        let file = Plays.file(in: root)
+        try FileManager.default.createDirectory(at: file.appending(path: "blocker"), withIntermediateDirectories: true)
+
+        let plays = Plays(root: root)
+        plays.bump(song)
+        plays.save()
+        Persist.flush()
+        #expect(plays.count(song) == 1, "a write that fails keeps the play in memory")
+
+        try FileManager.default.removeItem(at: file)
+        plays.save()
+        Persist.flush()
+        #expect(Persist.read([String: Int].self, from: file) == ["One.mp3\u{1F}Album\u{1F}Artist": 1], "the next save writes the play the failed one could not")
+    }
+}
