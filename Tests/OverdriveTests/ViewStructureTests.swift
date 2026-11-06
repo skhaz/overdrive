@@ -229,7 +229,7 @@ struct ViewStructureTests {
         let source = try source()
         let list = region(source, from: "struct AddictedView: View {")
 
-        #expect(source.contains("row(\"Addicted\", \"flame.fill\", .addicted)"), "the sidebar carries the flame row")
+        #expect(source.contains("row(\"Addicted\", \"headphones\", .addicted)"), "the sidebar carries the headphones row")
         #expect(source.contains("case .addicted: AddictedView()"), "the row opens its own page")
         #expect(list.contains("let paths = library.addicted(Library.topPlayed)"), "every pass reads the counts again, so the list a click opens is the order of that moment")
         #expect(list.contains(".onChange(of: paths) { selection = [] }"), "a reshuffle does not leave the selection on another song")
