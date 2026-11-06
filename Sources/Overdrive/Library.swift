@@ -255,18 +255,29 @@ final class Library {
     @ObservationIgnored private let loudness: Loudness
     @ObservationIgnored private let persistent: Bool
     @ObservationIgnored var loaded: ((_ complete: Bool) -> Void)?
+    @ObservationIgnored private var early: Early?
     let plays: Plays
 
-    init(loudness: Loudness, folders: [URL]? = nil) {
+    init(loudness: Loudness, folders: [URL]? = nil, launch: Bool = false) {
         self.loudness = loudness
         persistent = folders == nil
         let folders = folders ?? Library.savedFolders()
         self.folders = folders
         plays = Plays(root: folders.first)
-        loudness.folders = folders
+        if launch { loudness.open(folders) } else { loudness.folders = folders }
         plays.onPlay = { [weak self] track in self?.songPlayed(track) }
         watch()
-        scan()
+        if launch {
+            let early = Early()
+            let covers = Artwork.covers
+            DispatchQueue.global(qos: .userInitiated).async {
+                early.warm = Library.warm(folders, covers)
+                early.done.signal()
+            }
+            self.early = early
+        } else {
+            scan()
+        }
         if persistent { sync() }
 
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
@@ -453,7 +464,31 @@ final class Library {
         }
     }
 
-    func scan(_ reason: String = "direct") {
+    /// The launch: waits for the cache read that `init` started on another
+    /// thread, then shows the library, gives the loudness its albums, and lets
+    /// the player restore, all before the window draws its first frame. The
+    /// first scan then walks the disk against the same rows, so an unchanged
+    /// library ends as `scan unchanged`, with no second redraw.
+    func open() {
+        guard let early else { return }
+
+        self.early = nil
+        let clock = ContinuousClock()
+        let start = clock.now
+        early.done.wait()
+        let waited = clock.now - start
+        guard let warm = early.warm else { return scan("launch") }
+
+        if warm.cached > 0 {
+            show(warm.snapshot, warm.folders)
+            loudness.update(warm.snapshot.albums)
+            loaded?(false)
+        }
+        Log.library.info("open", metadata: ["songs": "\(warm.cached)", "albums": "\(warm.snapshot.albums.count)", "waited": "\(waited)"])
+        scan("launch", warm: warm)
+    }
+
+    func scan(_ reason: String = "direct", warm: Warm? = nil) {
         pending?.cancel()
         pending = nil
         generation += 1
@@ -482,7 +517,7 @@ final class Library {
             guard generation == self.generation else { return }
 
             var shown = false
-            let result = await Library.load(folders, covers, cached: first, unreadable: unreadable) { snapshot in
+            let result = await Library.load(folders, covers, cached: first, unreadable: unreadable, warm: warm) { snapshot in
                 await MainActor.run {
                     guard generation == self.generation else { return false }
 
@@ -976,14 +1011,23 @@ final class Library {
     nonisolated static let playable = Set(types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() })
     nonisolated static let images = Set(CGImageSourceCopyTypeIdentifiers() as? [String] ?? []).compactMap { UTType($0) }.filter { $0.conforms(to: .image) }.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() }.reduce(into: Set<String>()) { $0.insert($1) }
 
-    @concurrent
-    nonisolated static func load(_ folders: [URL], _ previous: [String: Data], cached emit: Bool = true, unreadable: Unreadable? = nil, progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
-        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
-        let caches = folders.map { Cache($0) }
+    /// What the caches hold, read once: the rows, the covers, and the library
+    /// they make. The app reads it at launch, before the window draws, and the
+    /// first scan walks the disk against it instead of reading SQLite again.
+    nonisolated struct Warm: Sendable {
+        let folders: [URL]
+        let stored: [String: Data]
+        let saved: [Set<String>]
+        let knowns: [[String: Cache.Entry]]
+        let snapshot: Snapshot
+        let cached: Int
+    }
+
+    nonisolated static func warm(_ folders: [URL], _ previous: [String: Data], assemble build: Bool = true, caches open: [Cache?]? = nil) -> Warm {
+        let caches = open ?? folders.map { Cache($0) }
         var stored: [String: Data] = [:]
         var saved: [Set<String>] = []
         var knowns: [[String: Cache.Entry]] = []
-        var stamps: [String: Cache.Stamp] = [:]
 
         for cache in caches {
             let covers = cache?.covers() ?? [:]
@@ -991,13 +1035,26 @@ final class Library {
             stored.merge(covers) { current, _ in current }
             knowns.append(cache?.entries() ?? [:])
         }
-        let display = Library.shown(stored, previous)
 
-        let cached = knowns.flatMap { $0.values.map { $0.track.at($0.track.url) } }
-        Log.library.info("load", metadata: ["folders": Log.list(folders.map(\.path)), "cached": "\(cached.count)", "caches": Log.list(caches.map { $0 != nil })])
-        if emit, !cached.isEmpty {
-            let (albums, index) = assemble(cached)
-            guard await progress((albums, index, display)) else { return (albums, index, display) }
+        let count = knowns.reduce(0) { $0 + $1.count }
+        let (albums, index) = build && count > 0 ? assemble(knowns.flatMap { $0.values.map { $0.track.at($0.track.url) } }) : ([], Index())
+        Log.library.info("load", metadata: ["folders": Log.list(folders.map(\.path)), "cached": "\(count)", "caches": Log.list(caches.map { $0 != nil })])
+        return Warm(folders: folders, stored: stored, saved: saved, knowns: knowns, snapshot: (albums, index, Library.shown(stored, previous)), cached: count)
+    }
+
+    @concurrent
+    nonisolated static func load(_ folders: [URL], _ previous: [String: Data], cached emit: Bool = true, unreadable: Unreadable? = nil, warm: Warm? = nil, progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
+        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        let caches = folders.map { Cache($0) }
+        let warmed = warm.flatMap { $0.folders == folders ? $0 : nil } ?? Library.warm(folders, previous, assemble: emit, caches: caches)
+        let stored = warmed.stored
+        let saved = warmed.saved
+        let knowns = warmed.knowns
+        let display = warmed.snapshot.covers
+        var stamps: [String: Cache.Stamp] = [:]
+
+        if emit, warmed.cached > 0 {
+            guard await progress(warmed.snapshot) else { return warmed.snapshot }
         }
 
         var slots: [Track?] = []
@@ -1431,4 +1488,12 @@ enum Artwork {
         cache.setObject(image, forKey: key)
         return image
     }
+}
+
+/// The cache read that the launch starts on another thread, and the signal
+/// that it ended. Written once on that thread before the signal, read once on
+/// the main thread after the wait.
+nonisolated final class Early: @unchecked Sendable {
+    var warm: Library.Warm?
+    let done = DispatchSemaphore(value: 0)
 }

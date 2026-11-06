@@ -2674,7 +2674,7 @@ struct ContentView: View {
             monitor = nil
             lyrics.flush()
         }
-        .onChange(of: library.scans, refreshed)
+        .onChange(of: library.scans, initial: true, refreshed)
         .onChange(of: library.folders) {
             lyrics.flush()
             playlists.load()

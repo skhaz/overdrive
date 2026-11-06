@@ -37,6 +37,8 @@ final class Loudness {
     private var roots: [(folder: URL, real: String)] = []
     var albums: [String: [String]] = [:]
     private var worker: Task<Void, Never>?
+    private var reading: Reading?
+    private var launching = false
 
     static let interval = Duration.seconds(30)
 
@@ -49,9 +51,41 @@ final class Loudness {
         load()
     }
 
+    /// The launch: sets the folders and reads their files on another thread,
+    /// while the app builds the rest. The first use of the measurements waits
+    /// for the read (`join`), so nothing ever sees a partial list.
+    func open(_ folders: [URL]) {
+        launching = true
+        self.folders = folders
+        launching = false
+    }
+
     private func load() {
+        join()
         roots = folders.map { folder in (folder, folder.path.withCString { path in realpath(path, nil).map { defer { free($0) }; return String(cString: $0) } } ?? folder.path) }
         entries = [:]
+        let roots = roots
+
+        guard launching else { return entries = Loudness.stored(roots) }
+
+        let reading = Reading()
+        DispatchQueue.global(qos: .userInitiated).async {
+            reading.entries = Loudness.stored(roots)
+            reading.done.signal()
+        }
+        self.reading = reading
+    }
+
+    private func join() {
+        guard let reading else { return }
+
+        self.reading = nil
+        reading.done.wait()
+        entries = reading.entries
+    }
+
+    private nonisolated static func stored(_ roots: [(folder: URL, real: String)]) -> [String: Entry] {
+        var entries: [String: Entry] = [:]
 
         for root in roots {
             guard let stored = Persist.read([String: Entry].self, from: root.folder.appending(path: Self.name)) else { continue }
@@ -61,9 +95,12 @@ final class Loudness {
                 entries[root.real + "/" + key] = entry
             }
         }
+
+        return entries
     }
 
     func gain(_ track: Track, album: Bool) -> Float? {
+        join()
         if album, let paths = albums[track.albumID] {
             let values = paths.compactMap { entries[$0] }
             if values.count == paths.count { return Loudness.gain(values) }
@@ -73,6 +110,7 @@ final class Loudness {
     }
 
     func measure(_ track: Track, album: Bool) async {
+        join()
         if entries[track.url.path] == nil, let file = Loudness.file(track.url), let entry = await Loudness.measure(file) {
             entries[track.url.path] = entry
             save()
@@ -97,6 +135,7 @@ final class Loudness {
     }
 
     func update(_ albums: [Album]) {
+        join()
         self.albums = Dictionary(albums.map { ($0.id, $0.tracks.map(\.url.path)) }) { first, _ in first }
 
         worker?.cancel()
@@ -148,6 +187,7 @@ final class Loudness {
     }
 
     func save() {
+        join()
         let entries = entries
         let roots = roots
         Persist.later { Loudness.files(entries, roots) }
@@ -355,4 +395,11 @@ final class Loudness {
         Log.loudness.debug("measured", metadata: ["path": "\(file.url.path)", "lufs": "\(entry.lufs)", "peak": "\(entry.peak)"])
         return entry
     }
+}
+
+/// The read of the measurements that the launch starts on another thread.
+/// Written once on that thread before the signal, read once after the wait.
+private nonisolated final class Reading: @unchecked Sendable {
+    var entries: [String: Loudness.Entry] = [:]
+    let done = DispatchSemaphore(value: 0)
 }

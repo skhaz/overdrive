@@ -91,7 +91,7 @@ struct Overdrive: App {
 
         let lastFM = LastFM()
         let loudness = Loudness()
-        let library = Library(loudness: loudness)
+        let library = Library(loudness: loudness, launch: true)
         let player = Player(lastFM: lastFM, loudness: loudness, plays: library.plays)
         let youTube = YouTube(player: player)
         let bans = Bans(file: { Bans.file(in: library.folders.first) }, folder: { library.folders.first })
@@ -110,6 +110,7 @@ struct Overdrive: App {
 
             Task { await loves.arrive() }
         }
+        library.open()
 
         Task { await lastFM.flush() }
         AppleMusic.block()
