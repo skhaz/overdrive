@@ -71,17 +71,18 @@ import Testing
         #expect(cache.entries()["one.mp3"]?.track.genre == "Rock")
     }
 
-    @Test func roundTripsTheHash() throws {
+    @Test func aCacheWithTheOldHashColumnIsBuiltAgain() throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        var hashed = change(folder, "one.mp3")
-        hashed.hash = Data([1, 2, 3])
 
-        Cache(folder)!.save([hashed, change(folder, "two.mp3")], removed: [], covers: [:])
+        let file = folder.appending(path: Cache.name)
+        execute(file, "CREATE TABLE tracks (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, modified REAL NOT NULL, size INTEGER NOT NULL, hash BLOB, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, number INTEGER NOT NULL, disc INTEGER NOT NULL, album_artist TEXT NOT NULL, year INTEGER NOT NULL, duration REAL NOT NULL, album_id TEXT NOT NULL, genre TEXT NOT NULL) STRICT")
+        execute(file, "INSERT INTO tracks (path, modified, size, hash, title, artist, album, number, disc, album_artist, year, duration, album_id, genre) VALUES ('one.mp3', 1, 2, x'00', 'Kept', '', '', 1, 1, '', 0, 1, 'x', '')")
 
-        let entries = Cache(folder)!.entries()
-        #expect(entries["one.mp3"]?.hash == Data([1, 2, 3]))
-        #expect(entries["two.mp3"]?.hash == nil)
+        let cache = try #require(Cache(folder))
+        #expect(cache.entries().isEmpty, "a cache with the old hash column is an older format: it is discarded and built again")
+        #expect(cache.save([change(folder, "two.mp3")], removed: [], covers: [:]))
+        #expect(Set(cache.entries().keys) == ["two.mp3"])
     }
 
     @Test func usesTheMeasuredSettings() throws {

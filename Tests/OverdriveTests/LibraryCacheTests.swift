@@ -339,30 +339,17 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: seconds)], ofItemAtPath: folder.appending(path: path).path)
     }
 
-    @Test func newFilesHaveNoHash() async throws {
+    @Test func aNewDateReadsTheTagsAgainWithoutAHash() async throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
         try add("cbr.mp3", to: folder, as: "one.mp3")
+        let first = await Library.load([folder], [:])
 
-        _ = await Library.load([folder], [:])
-
-        #expect(Cache(folder)!.entries()["one.mp3"]?.hash == nil)
-    }
-
-    @Test func sameSizeAndContentKeepTheCachedTags() async throws {
-        let folder = try folder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try add("cbr.mp3", to: folder, as: "one.mp3")
-        _ = await Library.load([folder], [:])
-        try touch(folder, "one.mp3", 5_000_000)
-        _ = await Library.load([folder], [:])
-        #expect(Cache(folder)!.entries()["one.mp3"]?.hash == Library.hash(folder.appending(path: "one.mp3")))
-
-        execute(folder, "UPDATE tracks SET title = 'Kept'")
+        execute(folder, "UPDATE tracks SET title = 'Stale'")
         try touch(folder, "one.mp3", 6_000_000)
         let result = await Library.load([folder], [:])
 
-        #expect(title(result, folder.path + "/one.mp3") == "Kept")
+        #expect(title(result, folder.path + "/one.mp3") == title(first, folder.path + "/one.mp3"), "same size and a new date read the tags again: cheaper than a hash of the whole file")
         #expect(Cache(folder)!.entries()["one.mp3"]?.modified == Date(timeIntervalSince1970: 6_000_000).timeIntervalSinceReferenceDate)
     }
 
@@ -373,7 +360,6 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         let first = await Library.load([folder], [:])
         try touch(folder, "one.mp3", 5_000_000)
         _ = await Library.load([folder], [:])
-        let before = Cache(folder)!.entries()["one.mp3"]?.hash
 
         execute(folder, "UPDATE tracks SET title = 'Stale'")
         let file = folder.appending(path: "one.mp3")
@@ -384,21 +370,18 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         let result = await Library.load([folder], [:])
 
         #expect(title(result, file.path) == title(first, file.path))
-        #expect(Cache(folder)!.entries()["one.mp3"]?.hash != before)
-        #expect(Cache(folder)!.entries()["one.mp3"]?.hash == Library.hash(file))
     }
 
-    @Test func aNewSizeIsReadAgainWithoutAHash() async throws {
+    @Test func aNewSizeIsReadAgain() async throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
         try add("cbr.mp3", to: folder, as: "one.mp3")
         let first = await Library.load([folder], [:])
 
-        execute(folder, "UPDATE tracks SET title = 'Stale', size = size + 1, hash = x'00'")
+        execute(folder, "UPDATE tracks SET title = 'Stale', size = size + 1")
         let result = await Library.load([folder], [:])
 
         #expect(title(result, folder.path + "/one.mp3") == title(first, folder.path + "/one.mp3"))
-        #expect(Cache(folder)!.entries()["one.mp3"]?.hash == nil)
     }
 
     @Test func neverWritesTheMusicFiles() async throws {

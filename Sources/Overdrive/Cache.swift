@@ -13,7 +13,6 @@ nonisolated final class Cache {
     struct Entry {
         let modified: Double
         let size: Int
-        let hash: Data?
         let track: Track
     }
 
@@ -21,9 +20,10 @@ nonisolated final class Cache {
         let path: String
         let modified: Double
         let size: Int
-        var hash: Data?
         let track: Track
     }
+
+    static let columns = ["id", "path", "modified", "size", "title", "artist", "album", "number", "disc", "album_artist", "year", "duration", "album_id", "genre"]
 
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -33,7 +33,6 @@ nonisolated final class Cache {
             path TEXT NOT NULL UNIQUE,
             modified REAL NOT NULL,
             size INTEGER NOT NULL,
-            hash BLOB,
             title TEXT NOT NULL,
             artist TEXT NOT NULL,
             album TEXT NOT NULL,
@@ -111,7 +110,7 @@ nonisolated final class Cache {
     func entries() -> [String: Entry] {
         var result: [String: Entry] = [:]
 
-        query("SELECT path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, genre, hash FROM tracks") { row in
+        query("SELECT path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, genre FROM tracks") { row in
             let path = Self.text(row, 0)
             let url = URL(filePath: path.hasPrefix("/") ? path : root + "/" + path)
             let track = Track(
@@ -127,8 +126,7 @@ nonisolated final class Cache {
                 albumID: Self.text(row, 11),
                 genre: Self.text(row, 12)
             )
-            let hash = sqlite3_column_blob(row, 13).map { Data(bytes: $0, count: Int(sqlite3_column_bytes(row, 13))) }
-            result[path] = Entry(modified: sqlite3_column_double(row, 1), size: Int(sqlite3_column_int64(row, 2)), hash: hash, track: track)
+            result[path] = Entry(modified: sqlite3_column_double(row, 1), size: Int(sqlite3_column_int64(row, 2)), track: track)
         }
 
         return result
@@ -167,10 +165,10 @@ nonisolated final class Cache {
         }
 
         let saved = (!replacing || exec("DELETE FROM covers") && exec("DELETE FROM tracks")) && run("""
-            INSERT INTO tracks (path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, genre, hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tracks (path, modified, size, title, artist, album, number, disc, album_artist, year, duration, album_id, genre)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
-                modified = excluded.modified, size = excluded.size, hash = excluded.hash, title = excluded.title, artist = excluded.artist,
+                modified = excluded.modified, size = excluded.size, title = excluded.title, artist = excluded.artist,
                 album = excluded.album, number = excluded.number, disc = excluded.disc, album_artist = excluded.album_artist,
                 year = excluded.year, duration = excluded.duration, album_id = excluded.album_id, genre = excluded.genre
             """, changes) { statement, change in
@@ -188,9 +186,6 @@ nonisolated final class Cache {
                 sqlite3_bind_double(statement, 11, track.duration)
                 Self.bind(statement, 12, track.albumID)
                 Self.bind(statement, 13, track.genre)
-                if let hash = change.hash {
-                    _ = hash.withUnsafeBytes { sqlite3_bind_blob(statement, 14, $0.baseAddress, Int32($0.count), Self.transient) }
-                }
             }
             && run("DELETE FROM tracks WHERE path = ?", removed) { statement, path in Self.bind(statement, 1, path) }
             && run("INSERT INTO covers (album_id, data) VALUES (?, ?) ON CONFLICT(album_id) DO UPDATE SET data = excluded.data", Array(covers)) { statement, cover in
@@ -226,9 +221,11 @@ nonisolated final class Cache {
             return false
         }
 
-        // The cache holds no version: a file from an older format is missing the
-        // genre column, so a read fails here and the file is discarded and built again.
-        return exec("SELECT genre FROM tracks LIMIT 0")
+        // The cache holds no version: a file whose columns are not the current
+        // ones (an older format) is discarded and built again.
+        var columns: [String] = []
+        query("SELECT name FROM pragma_table_info('tracks')") { columns.append(Self.text($0, 0)) }
+        return columns == Self.columns
     }
 
     private static func discard(_ file: URL) -> Bool {

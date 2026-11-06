@@ -272,7 +272,6 @@ private let samples = ["cbr.mp3", "vbr.mp3", "abr.mp3", "cbr-320.mp3", "vbr-mono
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 4_000_000)], ofItemAtPath: file.path)
 
         verify([folder], await load(folder))
-        #expect(Cache(folder)!.entries()["Album/flipped.mp3"]?.hash == Library.hash(file))
     }
 
     @Test func touchingWithoutChanges() async throws {

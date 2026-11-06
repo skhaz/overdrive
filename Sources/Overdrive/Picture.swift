@@ -154,8 +154,8 @@ nonisolated enum Picture {
     }
 
     private static func folder(_ url: URL) -> URL? {
-        let files = (try? FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(), includingPropertiesForKeys: [.contentTypeKey], options: .skipsHiddenFiles)) ?? []
-        let images = files.filter { (try? $0.resourceValues(forKeys: [.contentTypeKey]).contentType?.conforms(to: .image)) == true }
+        let files = (try? FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(), includingPropertiesForKeys: [.isRegularFileKey], options: .skipsHiddenFiles)) ?? []
+        let images = files.filter { Library.images.contains($0.pathExtension.lowercased()) && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
 
         return images.first { names.contains($0.deletingPathExtension().lastPathComponent.lowercased()) } ?? images.first
     }

@@ -1,7 +1,6 @@
 import AppKit
 import AudioToolbox
 import AVFoundation
-import CryptoKit
 import ImageIO
 import Logging
 import CoreServices
@@ -413,7 +412,7 @@ final class Library {
 
     @concurrent
     nonisolated static func changed(_ folders: [URL], _ stamps: [[String: Cache.Stamp]], unreadable: Unreadable? = nil) async -> String? {
-        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        let keys = Library.walked
 
         for (number, folder) in folders.enumerated() {
             guard let cache = Cache(folder), stamps.indices.contains(number) else { return "no cache for \(folder.path)" }
@@ -428,7 +427,7 @@ final class Library {
             }) else { return "unreadable \(folder.path)" }
 
             while let url = enumerator.nextObject() as? URL {
-                guard let values = Library.attributes(url, keys, misses), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+                guard Library.song(url) != nil, let values = Library.attributes(url, keys, misses), values.isRegularFile == true else { continue }
 
                 let path = cache.relative(url)
                 let modified = values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
@@ -1009,6 +1008,19 @@ final class Library {
     private nonisolated static let batch = 256
     nonisolated static let types = AVURLAsset.audiovisualContentTypes.filter { $0.conforms(to: .audio) }
     nonisolated static let playable = Set(types.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() })
+    nonisolated static let mpeg4 = Set(types.filter { $0.conforms(to: .mpeg4Audio) }.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() })
+    /// What a walk asks of each file. No content type: the kind of a file comes
+    /// from its extension (`song`, `images`), so no file costs a LaunchServices
+    /// lookup, and the walk and the watcher read the same sets.
+    nonisolated static let walked: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
+
+    /// nil when the player does not play the file, else whether it is MPEG-4.
+    nonisolated static func song(_ url: URL) -> Bool? {
+        let kind = url.pathExtension.lowercased()
+        guard playable.contains(kind) else { return nil }
+
+        return mpeg4.contains(kind)
+    }
     nonisolated static let images = Set(CGImageSourceCopyTypeIdentifiers() as? [String] ?? []).compactMap { UTType($0) }.filter { $0.conforms(to: .image) }.flatMap { $0.tags[.filenameExtension] ?? [] }.map { $0.lowercased() }.reduce(into: Set<String>()) { $0.insert($1) }
 
     /// What the caches hold, read once: the rows, the covers, and the library
@@ -1044,7 +1056,7 @@ final class Library {
 
     @concurrent
     nonisolated static func load(_ folders: [URL], _ previous: [String: Data], cached emit: Bool = true, unreadable: Unreadable? = nil, warm: Warm? = nil, progress: @Sendable (Snapshot) async -> Bool = { _ in true }) async -> Snapshot {
-        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        let keys = Library.walked
         let caches = folders.map { Cache($0) }
         let warmed = warm.flatMap { $0.folders == folders ? $0 : nil } ?? Library.warm(folders, previous, assemble: emit, caches: caches)
         let stored = warmed.stored
@@ -1077,7 +1089,7 @@ final class Library {
 
             if let enumerator {
                 while let url = enumerator.nextObject() as? URL {
-                    guard let values = Library.attributes(url, keys, misses), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+                    guard let mp4 = Library.song(url), let values = Library.attributes(url, keys, misses), values.isRegularFile == true else { continue }
 
                     let path = cache?.relative(url) ?? url.path
                     let modified = values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
@@ -1089,10 +1101,10 @@ final class Library {
                         let track = entry.track.at(url)
                         slots.append(track)
                         if track.albumID != entry.track.albumID {
-                            relabel[number].append(Cache.Change(path: path, modified: modified, size: size, hash: entry.hash, track: track))
+                            relabel[number].append(Cache.Change(path: path, modified: modified, size: size, track: track))
                         }
                     } else {
-                        pending.append((slots.count, url, type.conforms(to: .mpeg4Audio), number, path, modified, size, entry))
+                        pending.append((slots.count, url, mp4, number, path, modified, size, entry))
                         slots.append(entry?.track.at(url))
                     }
                 }
@@ -1129,26 +1141,19 @@ final class Library {
         for start in stride(from: 0, to: work.count, by: batch) {
             let part = work[start..<min(start + batch, work.count)]
 
-            nonisolated(unsafe) let read = UnsafeMutableBufferPointer<(track: Track?, hash: Data?)>.allocate(capacity: part.count)
+            nonisolated(unsafe) let read = UnsafeMutableBufferPointer<Track?>.allocate(capacity: part.count)
             defer { read.deinitialize().deallocate() }
 
             DispatchQueue.concurrentPerform(iterations: part.count) { offset in
                 let item = part[part.startIndex + offset]
-
-                guard let old = item.old, old.size == item.size else {
-                    read.initializeElement(at: offset, to: (Library.read(item.url, item.mp4), nil))
-                    return
-                }
-
-                let hash = Library.hash(item.url)
-                read.initializeElement(at: offset, to: (hash != nil && hash == old.hash ? old.track.at(item.url) : Library.read(item.url, item.mp4), hash))
+                read.initializeElement(at: offset, to: Library.read(item.url, item.mp4))
             }
 
             var changes = Array(repeating: [Cache.Change](), count: folders.count)
             var failed = Array(repeating: [String](), count: folders.count)
             var reasons: [String: [String]] = [:]
             for (offset, item) in part.enumerated() {
-                let reason = item.old == nil ? "new" : item.old?.size != item.size ? "size" : read[offset].hash == item.old?.hash ? "date only" : "content"
+                let reason = item.old == nil ? "new" : item.old?.size != item.size ? "size" : "date"
                 reasons[reason, default: []].append(item.path)
             }
             for (reason, paths) in reasons {
@@ -1156,16 +1161,16 @@ final class Library {
             }
 
             for (offset, item) in part.enumerated() {
-                slots[item.slot] = read[offset].track
+                slots[item.slot] = read[offset]
 
-                if read[offset].track == nil {
+                if read[offset] == nil {
                     unreadable?.add(item.url.path, Cache.Stamp(modified: item.modified, size: item.size))
                 } else {
                     unreadable?.remove(item.url.path)
                 }
 
-                if let track = read[offset].track {
-                    changes[item.folder].append(Cache.Change(path: item.path, modified: item.modified, size: item.size, hash: read[offset].hash, track: track))
+                if let track = read[offset] {
+                    changes[item.folder].append(Cache.Change(path: item.path, modified: item.modified, size: item.size, track: track))
                 } else {
                     failed[item.folder].append(item.path)
                 }
@@ -1214,7 +1219,7 @@ final class Library {
 
     @concurrent
     nonisolated static func rebuild(_ folders: [URL]) async -> Snapshot? {
-        let keys: Set<URLResourceKey> = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        let keys = Library.walked
         let caches = folders.map { Cache($0) }
         var files: [(url: URL, mp4: Bool, folder: Int, path: String, modified: Double, size: Int)] = []
         let misses = Failures()
@@ -1233,9 +1238,9 @@ final class Library {
             }
 
             while let url = enumerator.nextObject() as? URL {
-                guard let values = Library.attributes(url, keys, misses), let type = values.contentType, types.contains(where: type.conforms) else { continue }
+                guard let mp4 = Library.song(url), let values = Library.attributes(url, keys, misses), values.isRegularFile == true else { continue }
 
-                files.append((url, type.conforms(to: .mpeg4Audio), number, cache?.relative(url) ?? url.path, values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0, values.fileSize ?? 0))
+                files.append((url, mp4, number, cache?.relative(url) ?? url.path, values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0, values.fileSize ?? 0))
             }
 
             guard failures.items.isEmpty else {
@@ -1260,7 +1265,7 @@ final class Library {
             guard let track = read[offset] else { continue }
 
             tracks.append(track)
-            changes[file.folder].append(Cache.Change(path: file.path, modified: file.modified, size: file.size, hash: nil, track: track))
+            changes[file.folder].append(Cache.Change(path: file.path, modified: file.modified, size: file.size, track: track))
         }
 
         let (albums, index) = assemble(tracks)
@@ -1331,12 +1336,6 @@ final class Library {
         return (albums, index)
     }
 
-    nonisolated static func hash(_ url: URL) -> Data? {
-        guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return nil }
-
-        return Data(SHA256.hash(data: data))
-    }
-
     nonisolated static let mark = "\u{1F}"
 
     nonisolated static func fingerprint(_ album: Album, _ stamps: [String: Cache.Stamp]) -> String {
@@ -1350,11 +1349,11 @@ final class Library {
             mix("\(path)\t\(stamp?.modified ?? 0)\t\(stamp?.size ?? -1)\n")
         }
 
-        let keys: [URLResourceKey] = [.contentTypeKey, .contentModificationDateKey, .fileSizeKey]
+        let keys = Library.walked
         for directory in Set(album.tracks.map { $0.url.deletingLastPathComponent().path }).sorted() {
-            let files = (try? FileManager.default.contentsOfDirectory(at: URL(filePath: directory), includingPropertiesForKeys: keys, options: .skipsHiddenFiles)) ?? []
+            let files = (try? FileManager.default.contentsOfDirectory(at: URL(filePath: directory), includingPropertiesForKeys: Array(keys), options: .skipsHiddenFiles)) ?? []
             for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                guard let values = try? file.resourceValues(forKeys: Set(keys)), values.contentType?.conforms(to: .image) == true else { continue }
+                guard images.contains(file.pathExtension.lowercased()), let values = try? file.resourceValues(forKeys: keys), values.isRegularFile == true else { continue }
 
                 mix("\(file.lastPathComponent)\t\(values.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0)\t\(values.fileSize ?? 0)\n")
             }

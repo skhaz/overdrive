@@ -239,7 +239,6 @@ struct LibraryHarnessTests {
             try? await Task.sleep(for: .milliseconds(50))
         }
 
-        #expect(Cache(folder)!.entries()["Album/touched.mp3"]?.hash == Library.hash(folder.appending(path: "Album/touched.mp3")))
         await settle(library, [folder])
     }
 
