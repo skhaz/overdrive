@@ -4,7 +4,7 @@ Technical rules live here. `README.md` is for users: plain words, no internals. 
 
 ## Commits
 
-Commit each change when it is complete. Do not ask first. Run `swift test` before every commit and commit only when all tests pass. CI only builds.
+Commit each change when it is complete. Do not ask first. Run `swift test` only when a commit changes source code, and commit only when all tests pass. CI only builds.
 
 ## Build and test
 
@@ -35,7 +35,7 @@ Commit each change when it is complete. Do not ask first. Run `swift test` befor
 
 ## Music library
 
-- The library is read-only. The app never writes, moves, renames, or deletes an audio file. It never reads or writes `.lrc` files.
+- The library is read-only. The app never writes, moves, renames, or deletes an audio file.
 - The filesystem, the cache, and the FTS5 index stay in strict sync. The cache and the index change only in one transaction (the triggers).
 - Each scan commits atomically, then shows the result. The UI never shows a state the cache does not have. A failed write keeps the last good state.
 - A folder that cannot be walked keeps its cached songs.
@@ -83,8 +83,10 @@ Commit each change when it is complete. Do not ask first. Run `swift test` befor
 
 ## Lyrics
 
+- Lyrics live in `.lyrics` and `.cache.lyrics` files, which hold LRC text. The app never reads or writes a file with the `.lrc` extension.
 - A `.lyrics` file next to the song wins, and then the app never consults the internet. What the user types always wins over a lookup.
-- Edits go to the disk at once through `Keeper`. A write that fails goes to `Drafts.plist`.
+- Edits go to the disk at once through `Keeper`, in the `.lyrics` file and in the cache file. A write that fails goes to `Drafts.plist`.
+- A `.cache.lyrics` file is valid for one month. After that the old lyric shows at once and the app asks the internet in the background. A non-empty, different answer replaces the file and the lyric on screen, unless the user edited it or another song shows. An empty answer or a failure keeps the old file.
 - Hidden lyrics do nothing: no disk reads, no requests, no floating window.
 
 ## Deploy
