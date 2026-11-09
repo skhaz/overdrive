@@ -15,6 +15,7 @@ A music player for the Mac (macOS 26 or later). It plays the music that is alrea
 - **Album covers** from your music files or from the image in the album folder.
 - **Lyrics** that move with the song. If a song has no lyrics, the app finds them on the internet. You can also type and save your own, and show them in a small window that stays on top.
 - **Similar artists.** With a Last.fm account, the lyrics panel gets two tabs: **Lyrics** and **Similar**. The Similar tab shows the ten artists most like the one that plays, with the cover of their most popular song, their name, their style, and their listeners. It loads them together and keeps its shape while they arrive, so nothing jumps. Click one to open its Last.fm page, or right-click it to copy its name. Staying on this tab through songs of the same artist keeps it; a new artist brings the lyrics back.
+- **Curiosities.** Add an OpenRouter API key in Settings and the lyrics panel gets a **Curiosity** tab: up to five curious facts about the artist that plays, in the language of your system. The facts are written by an online service and can be wrong.
 - **Same volume for all songs**, so you do not have to change the volume between songs.
 - **Last.fm:** keeps a list of the songs that you listen to in your Last.fm profile.
 - **Music videos from YouTube** in a small window that stays on top.

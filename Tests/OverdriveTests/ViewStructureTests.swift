@@ -189,6 +189,7 @@ struct ViewStructureTests {
             "lyrics." + "ovh",
             "itunes." + "apple.com",
             "api." + "github.com",
+            "openrouter." + "ai",
         ]
 
         let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).filter { $0.pathExtension == "swift" }
@@ -242,11 +243,13 @@ struct ViewStructureTests {
         let panel = region(source, from: "struct LyricsView: View {")
         let row = region(source, from: "private struct SimilarArtistRow: View {")
 
-        #expect(panel.contains("let tabs = !lastFM.user.isEmpty"), "the tabs only exist while a Last.fm account is connected")
-        #expect(panel.contains("PanelSwitch(tab: similar.tab) { similar.select($0) }"), "the switch writes through `select`, the one door that logs the tab and asks for the list")
+        #expect(panel.contains("let tabs = similar.tabs"), "the model says which tabs exist")
+        #expect(panel.contains("if tabs.count > 1 {"), "only the lyrics means no switch")
+        #expect(panel.contains("PanelSwitch(tabs: tabs, tab: similar.face) { similar.select($0) }"), "the switch writes through `select`, the one door that logs the tab and asks for the list")
         #expect(!panel.contains("Picker("), "the panel draws no picker of SwiftUI: it sizes a segment to its label and leaves the row short of the box")
-        #expect(panel.contains("if tabs, similar.tab == .similar {\n                    SimilarArtists()"), "the similar tab lists the artists natively, with no web view")
-        #expect(panel.contains("PanelSwitch(tab: similar.tab) { similar.select($0) }\n            .frame(maxWidth: .infinity)"), "the switch spans the width of the box under it")
+        #expect(panel.contains("if face == .similar {\n                    SimilarArtists()"), "the similar tab lists the artists natively, with no web view")
+        #expect(panel.contains("} else if face == .curiosity {\n                    CuriosityFacts()"), "the curiosity tab draws its facts natively")
+        #expect(panel.contains("PanelSwitch(tabs: tabs, tab: similar.face) { similar.select($0) }\n            .frame(maxWidth: .infinity)"), "the switch spans the width of the box under it")
         #expect(source.contains("similar.show(lyrics.track)"), "the panel follows the song it shows")
         #expect(row.contains("onTapGesture { similar.open(artist) }"), "a click opens the artist page")
         #expect(row.contains("Button(\"Copy Name\") { similar.copyName(artist) }"), "the right button copies the name")
@@ -278,7 +281,7 @@ struct ViewStructureTests {
     /// offered, and answers the press with the tab that was chosen.
     @MainActor @Test func thePanelSwitchFillsTheWidthAndAnswersThePress() {
         var picked: Similar.Tab?
-        let host = NSHostingView(rootView: PanelSwitch(tab: .lyrics) { picked = $0 }.frame(width: 288, height: 300))
+        let host = NSHostingView(rootView: PanelSwitch(tabs: [.lyrics, .similar, .curiosity], tab: .lyrics) { picked = $0 }.frame(width: 288, height: 300))
         host.setFrameSize(NSSize(width: 288, height: 300))
         host.layoutSubtreeIfNeeded()
 
@@ -294,19 +297,20 @@ struct ViewStructureTests {
 
         guard let control = search(host) else { Issue.record("the switch is not the segmented control of the system"); return }
 
-        #expect(control.segmentCount == 2, "the switch offers the two faces of the panel")
+        #expect(control.segmentCount == 3, "the switch offers the faces of the panel")
+        #expect(control.label(forSegment: 2) == "Curiosity")
         #expect(control.segmentDistribution == .fillEqually, "and shares one width between them")
 
         let lyrics = control.width(forSegment: 0), listed = control.width(forSegment: 1)
-        #expect(lyrics == listed, "no half carries a width of its own: both take what the control is given (\(lyrics) and \(listed))")
+        #expect(lyrics == listed && control.width(forSegment: 2) == listed, "no part carries a width of its own: both take what the control is given (\(lyrics) and \(listed))")
         #expect(control.frame.width > 280, "and the control takes the width of the box under it, not the width of its labels: \(control.frame.width)")
         #expect(control.frame.height < 40, "the switch stays one row at the top of what it was offered, and the box keeps the rest: \(control.frame.height) of 300")
 
-        control.selectedSegment = 1
+        control.selectedSegment = 2
         guard let action = control.action, let target = control.target else { Issue.record("a press has nothing to answer it"); return }
         #expect(target.responds(to: action), "the press has a door to go through")
         target.perform(action, with: control)
-        #expect(picked == .similar, "and carries the tab that was chosen")
+        #expect(picked == .curiosity, "and carries the tab that was chosen")
     }
 
     /// The corner holds the two actions of the lyrics and nothing else, and both

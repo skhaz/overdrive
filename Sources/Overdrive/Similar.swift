@@ -8,8 +8,13 @@ import Foundation
 final class Similar {
     /// Which half of the lyrics panel shows. The lyrics are the default.
     nonisolated enum Tab: String {
-        case lyrics, similar
+        case lyrics, similar, curiosity
     }
+
+    private nonisolated static let alone: [Tab] = [.lyrics]
+    private nonisolated static let social: [Tab] = [.lyrics, .similar]
+    private nonisolated static let curious: [Tab] = [.lyrics, .curiosity]
+    private nonisolated static let every: [Tab] = [.lyrics, .similar, .curiosity]
 
     /// The tab shows the ten artists the service ranks most similar.
     nonisolated static let top = 10
@@ -55,17 +60,33 @@ final class Similar {
         return nil
     }
     @ObservationIgnored private let lastFM: LastFM
+    @ObservationIgnored private let curiosity: Curiosity?
     @ObservationIgnored private var shown = ""
     @ObservationIgnored private var artist = ""
     @ObservationIgnored private var filled = ""
     @ObservationIgnored private var task: Task<Void, Never>?
 
-    init(lastFM: LastFM) {
+    init(lastFM: LastFM, curiosity: Curiosity? = nil) {
         self.lastFM = lastFM
+        self.curiosity = curiosity
     }
 
     /// The tabs only exist with an account: without one the panel is only the lyrics.
     var available: Bool { !lastFM.user.isEmpty }
+
+    /// The faces the switch offers. The panel draws on every tick of the song,
+    /// so each list is built once.
+    var tabs: [Tab] {
+        switch (available, curiosity?.available == true) {
+        case (false, false): Self.alone
+        case (true, false): Self.social
+        case (false, true): Self.curious
+        case (true, true): Self.every
+        }
+    }
+
+    /// The face that shows: a tab whose account or key left falls back to the lyrics.
+    var face: Tab { tabs.contains(tab) ? tab : .lyrics }
 
     /// The song the panel shows. A new song of the same artist keeps the tab;
     /// a new artist takes the panel back to the lyrics and drops the list.
@@ -74,7 +95,7 @@ final class Similar {
         let folded = Fuzzy.fold(track.artist)
         guard folded != shown else { return }
 
-        if tab == .similar { Log.similar.info("tab", metadata: ["to": "\(Tab.lyrics)", "reason": "artist", "artist": "\(track.artist)"]) }
+        if tab != .lyrics { Log.similar.info("tab", metadata: ["to": "\(Tab.lyrics)", "reason": "artist", "artist": "\(track.artist)"]) }
 
         task?.cancel()
         task = nil
@@ -84,6 +105,7 @@ final class Similar {
         artists = []
         filled = ""
         loading = false
+        curiosity?.show(track)
     }
 
     func select(_ tab: Tab) {
@@ -91,10 +113,14 @@ final class Similar {
         guard tab != .similar || available else {
             return Log.similar.debug("select ignored", metadata: ["reason": "no account"])
         }
+        guard tab != .curiosity || curiosity?.available == true else {
+            return Log.similar.debug("select ignored", metadata: ["reason": "no key"])
+        }
 
         Log.similar.info("tab", metadata: ["to": "\(tab)", "artist": "\(artist)"])
         self.tab = tab
         if tab == .similar { load() }
+        if tab == .curiosity { curiosity?.load() }
     }
 
     /// Ask the service again for the artist that shows.

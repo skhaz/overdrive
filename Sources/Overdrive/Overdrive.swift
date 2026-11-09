@@ -101,7 +101,8 @@ struct Overdrive: App {
         player.resets = { [weak infinity] reason in infinity?.stopped(reason) }
         let likes = Likes(file: { Likes.file(in: library.folders.first) }, folder: { library.folders.first })
         let loves = Loves(library: library, lastFM: lastFM, likes: likes)
-        let similar = Similar(lastFM: lastFM)
+        let curiosity = Curiosity()
+        let similar = Similar(lastFM: lastFM, curiosity: curiosity)
         library.loaded = { [unowned library] complete in
             player.restore(complete: complete) { library.track($0) }
             guard complete else { return }
@@ -142,7 +143,7 @@ struct Overdrive: App {
             return event
         }
 
-        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, infinity: infinity, bans: bans, likes: likes, loves: loves, similar: similar)
+        return (termination: termination, rightClick: rightClick, lastFM: lastFM, library: library, player: player, youTube: youTube, discovery: discovery, infinity: infinity, bans: bans, likes: likes, loves: loves, similar: similar, curiosity: curiosity)
     }()
 
     @NSApplicationDelegateAdaptor private var delegate: Delegate
@@ -157,6 +158,7 @@ struct Overdrive: App {
     @State private var infinity = Overdrive.shared.infinity
     @State private var bans = Overdrive.shared.bans
     @State private var similar = Overdrive.shared.similar
+    @State private var curiosity = Overdrive.shared.curiosity
 
     var body: some Scene {
         Window("Overdrive", id: "main") {
@@ -171,6 +173,7 @@ struct Overdrive: App {
                 .environment(youTube)
                 .environment(lastFM)
                 .environment(similar)
+                .environment(curiosity)
                 .modifier(Reopen(delegate: delegate))
         }
         .defaultWindowPlacement { _, context in
@@ -297,6 +300,7 @@ struct Overdrive: App {
                 .environment(library)
                 .environment(player)
                 .environment(lastFM)
+                .environment(curiosity)
                 .environment(loves)
                 .environment(youTube)
         }

@@ -450,7 +450,6 @@ struct LyricsView: View {
     @Environment(Lyrics.self) private var lyrics
     @Environment(Player.self) private var player
     @Environment(Similar.self) private var similar
-    @Environment(LastFM.self) private var lastFM
     @State private var editing = false {
         didSet { if editing != oldValue { Log.lyrics.info("editing", metadata: ["on": "\(editing)"]) } }
     }
@@ -470,11 +469,11 @@ struct LyricsView: View {
         asking = true
     }
 
-    /// The two faces of the panel in one native switch, each one half of the
-    /// width of the box under it. The choice goes through `Similar.select`, the
-    /// one door that logs the tab and asks the service for the list.
-    private var switcher: some View {
-        PanelSwitch(tab: similar.tab) { similar.select($0) }
+    /// The faces of the panel in one native switch, equal parts of the width
+    /// of the box under it. The choice goes through `Similar.select`, the one
+    /// door that logs the tab and asks the service for the list.
+    private func switcher(_ tabs: [Similar.Tab]) -> some View {
+        PanelSwitch(tabs: tabs, tab: similar.face) { similar.select($0) }
             .frame(maxWidth: .infinity)
     }
 
@@ -515,16 +514,19 @@ struct LyricsView: View {
             let lines = lyrics.synced
             let live = player.current == track
             let current = live ? LRC.index(at: player.position, in: lines) : nil
-            let tabs = !lastFM.user.isEmpty
+            let tabs = similar.tabs
+            let face = similar.face
 
             VStack(alignment: .leading, spacing: 8) {
                 // No name here: the bar under the window already shows the song.
-                if tabs {
-                    switcher
+                if tabs.count > 1 {
+                    switcher(tabs)
                 }
 
-                if tabs, similar.tab == .similar {
+                if face == .similar {
                     SimilarArtists()
+                } else if face == .curiosity {
+                    CuriosityFacts()
                 } else {
                     Group {
                         if !editing, !lines.isEmpty {
@@ -566,8 +568,8 @@ struct LyricsView: View {
     }
 }
 
-/// The two faces of the panel in the segmented control of the system, cut in two
-/// equal halves over the box under them. The width is set here and not by
+/// The faces of the panel in the segmented control of the system, cut in equal
+/// parts over the box under them. The width is set here and not by
 /// SwiftUI: the picker of the framework gives every segment the width of its own
 /// label, so "Lyrics" and "Similar" come out uneven and the row stops short of
 /// the box. The press carries the tab to `Similar.select`, the one door that
@@ -575,27 +577,48 @@ struct LyricsView: View {
 struct PanelSwitch: NSViewRepresentable {
     nonisolated static let lyrics = "Lyrics"
     nonisolated static let similar = "Similar"
+    nonisolated static let curiosity = "Curiosity"
 
+    let tabs: [Similar.Tab]
     let tab: Similar.Tab
     let select: (Similar.Tab) -> Void
 
-    nonisolated static func index(_ tab: Similar.Tab) -> Int { tab == .similar ? 1 : 0 }
+    nonisolated static func index(_ tab: Similar.Tab, in tabs: [Similar.Tab]) -> Int { tabs.firstIndex(of: tab) ?? 0 }
 
-    func makeCoordinator() -> Coordinator { Coordinator(select: select) }
+    nonisolated static func label(_ tab: Similar.Tab) -> String {
+        switch tab {
+        case .lyrics: lyrics
+        case .similar: similar
+        case .curiosity: curiosity
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(tabs: tabs, select: select) }
+
+    private func name(_ control: NSSegmentedControl) {
+        control.segmentCount = tabs.count
+        for (segment, tab) in tabs.enumerated() { control.setLabel(Self.label(tab), forSegment: segment) }
+        control.setAccessibilityLabel(tabs.map(Self.label).joined(separator: " or "))
+    }
 
     func makeNSView(context: Context) -> NSSegmentedControl {
-        let control = NSSegmentedControl(labels: [Self.lyrics, Self.similar], trackingMode: .selectOne, target: context.coordinator, action: #selector(Coordinator.choose(_:)))
+        let control = NSSegmentedControl(labels: tabs.map(Self.label), trackingMode: .selectOne, target: context.coordinator, action: #selector(Coordinator.choose(_:)))
         control.segmentDistribution = .fillEqually
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        control.setAccessibilityLabel("\(Self.lyrics) or \(Self.similar)")
-        control.selectedSegment = Self.index(tab)
+        name(control)
+        control.selectedSegment = Self.index(tab, in: tabs)
         return control
     }
 
     func updateNSView(_ control: NSSegmentedControl, context: Context) {
         context.coordinator.select = select
 
-        let index = Self.index(tab)
+        if context.coordinator.tabs != tabs {
+            context.coordinator.tabs = tabs
+            name(control)
+        }
+
+        let index = Self.index(tab, in: tabs)
         guard control.selectedSegment != index else { return }
 
         // The model moved on its own: a new artist takes the panel back to the
@@ -610,13 +633,57 @@ struct PanelSwitch: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject {
+        var tabs: [Similar.Tab]
         var select: (Similar.Tab) -> Void
 
-        init(select: @escaping (Similar.Tab) -> Void) { self.select = select }
+        init(tabs: [Similar.Tab], select: @escaping (Similar.Tab) -> Void) {
+            self.tabs = tabs
+            self.select = select
+        }
 
         @objc func choose(_ control: NSSegmentedControl) {
-            select(control.selectedSegment == 1 ? .similar : .lyrics)
+            guard tabs.indices.contains(control.selectedSegment) else { return }
+
+            select(tabs[control.selectedSegment])
         }
+    }
+}
+
+/// The Curiosity tab: the facts about the artist that shows, as bullet points.
+struct CuriosityFacts: View {
+    @Environment(Curiosity.self) private var curiosity
+
+    var body: some View {
+        Group {
+            if curiosity.facts.isEmpty {
+                VStack(spacing: 10) {
+                    if curiosity.loading {
+                        ProgressView()
+                        Text("Loading curiosities").foregroundStyle(.secondary)
+                    } else {
+                        Text(curiosity.note).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button("Retry", action: curiosity.reload)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(8)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(curiosity.facts, id: \.self) { fact in
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(verbatim: "•")
+                                Text(verbatim: fact).textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding(10)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 
@@ -2975,6 +3042,8 @@ struct SettingsView: View {
     @Environment(LastFM.self) private var lastFM
     @Environment(Loves.self) private var loves
     @Environment(YouTube.self) private var youTube
+    @Environment(Curiosity.self) private var curiosity
+    @State private var openRouter = ""
     @State private var username = ""
     @State private var password = ""
 
@@ -3033,6 +3102,24 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Last.fm")
+            }
+
+            SwiftUI.Section {
+                if curiosity.available {
+                    LabeledContent("API Key", value: "Saved")
+                    Button("Remove", action: curiosity.remove)
+                        .buttonStyle(PressableButtonStyle(isDestructive: true))
+                } else {
+                    SecureField("API Key", text: $openRouter)
+                    Button("Save") {
+                        curiosity.save(openRouter)
+                        openRouter = ""
+                    }
+                    .buttonStyle(PressableButtonStyle(isProminent: true))
+                    .disabled(openRouter.allSatisfy(\.isWhitespace))
+                }
+            } header: {
+                Text("OpenRouter")
             }
 
             SwiftUI.Section {

@@ -16,6 +16,7 @@ nonisolated enum Log {
     static let persist = make("persist")
     static let lyrics = make("lyrics")
     static let similar = make("similar")
+    static let curiosity = make("curiosity")
     static let lastFM = make("lastfm")
     static let youTube = make("youtube")
     static let loudness = make("loudness")

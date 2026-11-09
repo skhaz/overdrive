@@ -132,6 +132,10 @@ final class Records: @unchecked Sendable {
         lock.withLock { items.append(object) }
     }
 
+    func contains(_ text: String) -> Bool {
+        lock.withLock { items.contains { "\($0)".contains(text) } }
+    }
+
     func find(_ label: String, _ message: String, _ key: String? = nil, _ value: String? = nil) -> Bool {
         lock.withLock {
             items.contains { item in
@@ -165,6 +169,7 @@ final class Records: @unchecked Sendable {
             "Library.swift": ["folder unreadable", "watch failed", "watch", "scan requested", "rows missing", "reader unavailable", "choose cancelled", "reread", "covers to make", "covers saved", "cover image changed", "sync full scan", "edits", "album ids moved", "search"],
             "LastFM.swift": ["connected", "connect failed", "http failed", "flush stopped", "flush split", "scrobble isolated", "scrobble response invalid", "scrobble skipped", "settle", "now playing", "artist page", "open artist", "album page", "open album", "open profile", "similar artists", "artist info", "artist info limited"],
             "Similar.swift": ["tab", "select ignored", "reload ignored", "load", "loaded", "load ignored", "load dropped", "filled", "lane", "open artist", "open ignored", "copy name", "artist artwork"],
+            "Curiosity.swift": ["key saved", "key removed", "key ignored", "load", "loaded", "load ignored", "load dropped", "load failed"],
             "Player.swift": ["tags refreshed", "restore partial", "give up", "no gain", "no mix", "gain deferred", "stale item event", "position jump", "muted", "reorder", "requeue", "spectrum", "random ignored", "counted", "append", "append ignored"],
             "Plays.swift": ["load skipped", "load", "saved", "save failed", "flush skipped", "counts carried", "bump"],
             "Discovery.swift": ["discovery", "discovery ignored", "discovery stopped", "discovery empty", "discovery result", "discovery superseded", "discovery banned", "discovery note", "task waiting", "artists drawn", "artist drawn"],
