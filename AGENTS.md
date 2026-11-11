@@ -26,7 +26,8 @@ Commit each change when it is complete. Do not ask first. Run `swift test` only 
 
 | Location | Files |
 | --- | --- |
-| `~/Library/Application Support/Overdrive` | `Session`, `Scrobbles`, `lastfm`, `Videos`, `Drafts`, `Loves`, `openrouter` (`.plist`) |
+| `/private/tmp/Overdrive` | `Session.plist` (gone after a restart) |
+| `~/Library/Application Support/Overdrive` | `Scrobbles`, `lastfm`, `Videos`, `Drafts`, `Loves`, `openrouter` (`.plist`) |
 | Root of each music folder | `Cache.sqlite`, `Loudness.plist` |
 | Root of the first music folder | `Plays.plist`, `Likes.plist`, `Bans.plist`, `Playlists/` |
 | Next to each song | `.lyrics` (kept by the user), `.cache.lyrics` (cache) |

@@ -31,7 +31,7 @@ final class Player {
         let lyrics: Bool?
     }
 
-    private nonisolated static let session = URL.applicationSupportDirectory.appending(path: "Overdrive/Session.plist")
+    private nonisolated static let session = URL(filePath: "/private/tmp/Overdrive/Session.plist")
     static let saved = Persist.read(Session.self, from: session)
 
     private(set) var queue: [Track] = [] { didSet { revision += 1; buffer?() } }

@@ -65,6 +65,7 @@ struct PlayerRestoreTests {
         #expect(stop.contains("save()"))
         #expect(source.contains("guard current != nil else { return play(tracks) }"), "Add to Up Next after the list ends adds to it, it does not replace it")
         #expect(source.contains("guard restored || Player.saved == nil else {"), "nothing writes the session before the saved one is back or the user plays something new")
+        #expect(source.contains("static let session = URL(filePath: \"/private/tmp/Overdrive/Session.plist\")"), "the session lives in the temporary folder, so it never travels with the dotfiles")
         #expect(source.contains("if repeatMode != oldValue { Log.player.info(\"repeat\", metadata: [\"mode\": \"\\(repeatMode)\"]); save() }"))
     }
 }
