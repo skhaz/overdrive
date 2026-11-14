@@ -776,6 +776,27 @@ final class Library {
         hold(folded: artist, folded: title) ?? Discovery.loved(title, songs(folded: artist))
     }
 
+    func resetPlays(_ tracks: [Track]) {
+        let removed = plays.reset(tracks)
+        guard !removed.isEmpty else { return }
+
+        var artists: [String: String] = [:]
+        for track in tracks { artists[Plays.key(track)] = Fuzzy.fold(track.artist) }
+
+        for (key, count) in removed {
+            guard playedKeys.remove(key) != nil, let artist = artists[key] else { continue }
+            let left = bandTotals[artist, default: 0] - count
+            if left > 0 {
+                bandTotals[artist] = left
+            } else if bandTotals.removeValue(forKey: artist) != nil {
+                bands -= 1
+            }
+        }
+
+        neverPlayed = max(total - playedKeys.count, 0)
+        played = playedKeys.count
+    }
+
     private func songPlayed(_ track: Track) {
         guard lookup[track.url.path] != nil else { return }
 

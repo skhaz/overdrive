@@ -148,6 +148,35 @@ final class Plays {
         onPlay?(track)
     }
 
+    /// Removes the counts of the songs and writes the file at once. A failed
+    /// write changes nothing. Returns the plays each removed key held.
+    @discardableResult
+    func reset(_ tracks: [Track]) -> [String: Int] {
+        let keys = Set(tracks.lazy.map(Self.key)).filter { slots[$0] != nil }
+        guard !keys.isEmpty else { return [:] }
+        guard let url = target, let root, FileManager.default.fileExists(atPath: root.path) else {
+            Log.plays.warning("reset skipped", metadata: ["reason": "folder missing", "songs": "\(keys.count)"])
+            return [:]
+        }
+
+        var merged = Self.merged(counts, pending)
+        var removed: [String: Int] = [:]
+        for key in keys { removed[key] = merged.removeValue(forKey: key) }
+        guard let data = Persist.encode(merged, for: url), Persist.write(data, to: url) else {
+            Log.plays.error("reset failed", metadata: ["file": "\(url.path)", "songs": "\(keys.count)"])
+            return [:]
+        }
+
+        counts = merged
+        pending = [:]
+        ranked.removeAll { keys.contains($0.key) }
+        slots.removeAll(keepingCapacity: true)
+        for (slot, entry) in ranked.enumerated() { slots[entry.key] = slot }
+        revision += 1
+        Log.plays.info("reset", metadata: ["file": "\(url.path)", "songs": "\(keys.count)", "plays": "\(removed.values.reduce(0, +))"])
+        return removed
+    }
+
     func rebind(_ folder: URL?) {
         let carried = flush() ? [:] : pending
         pending = [:]

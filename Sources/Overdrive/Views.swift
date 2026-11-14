@@ -333,6 +333,7 @@ extension Double {
 struct TrackMenu: View {
     let tracks: [Track]
     var exclude: String?
+    @Environment(Library.self) private var library
     @Environment(Player.self) private var player
     @Environment(Playlists.self) private var playlists
     @Environment(Likes.self) private var likes
@@ -349,6 +350,9 @@ struct TrackMenu: View {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
 
             BanMenu(tracks: tracks)
+
+            Button("Reset Play Count", systemImage: "arrow.counterclockwise") { library.resetPlays(tracks) }
+                .disabled(!tracks.contains { library.plays.count($0) > 0 })
 
             if tracks.count == 1 {
                 Button("Watch Video on YouTube") { youTube.watch(tracks[0]) }

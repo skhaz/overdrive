@@ -442,4 +442,61 @@ extension PlaysTests {
         Persist.flush()
         #expect(Persist.read([String: Int].self, from: file) == ["One.mp3\u{1F}Album\u{1F}Artist": 1], "the next save writes the play the failed one could not")
     }
+
+    @Test func aResetRemovesTheCountsAndWritesTheFileAtOnce() throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let one = track("/m/One.mp3"), two = track("/m/Two.mp3"), three = track("/m/Three.mp3")
+        let plays = Plays(root: root)
+        for _ in 0..<3 { plays.bump(one) }
+        plays.flush()
+        plays.bump(one)
+        plays.bump(two)
+        plays.bump(three)
+        let revision = plays.revision
+
+        let removed = plays.reset([one, two])
+
+        #expect(removed == [Plays.key(one): 4, Plays.key(two): 1], "the reset reports the saved and the pending plays")
+        #expect(plays.count(one) == 0 && plays.count(two) == 0)
+        #expect(!plays.played(Plays.key(one)), "a reset song is a song never played")
+        #expect(plays.count(three) == 1, "other songs keep their plays")
+        #expect(plays.rank(5) { _ in true } == [Plays.key(three)], "the order drops the reset songs")
+        #expect(plays.revision > revision, "the screens follow the reset")
+        #expect(Persist.read([String: Int].self, from: Plays.file(in: root)) == [Plays.key(three): 1], "the file changes at once")
+
+        plays.bump(one)
+        #expect(plays.rank(5) { _ in true } == [Plays.key(one), Plays.key(three)], "a play after the reset counts from zero")
+        #expect(plays.reset([track("/m/Never.mp3")]).isEmpty, "a song without plays changes nothing")
+    }
+
+    @Test func aResetThatCannotWriteChangesNothing() throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let song = track("/m/One.mp3")
+        let plays = Plays(root: root)
+        plays.bump(song)
+        try FileManager.default.createDirectory(at: Plays.file(in: root).appending(path: "blocker"), withIntermediateDirectories: true)
+
+        #expect(plays.reset([song]).isEmpty)
+        #expect(plays.count(song) == 1, "a failed write keeps the last good state")
+        #expect(plays.rank(5) { _ in true } == [Plays.key(song)])
+    }
+
+    @Test func aResetWithoutTheFolderChangesNothing() {
+        let song = track("/m/One.mp3")
+        let plays = Plays(root: URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)"))
+        plays.bump(song)
+
+        #expect(plays.reset([song]).isEmpty)
+        #expect(plays.count(song) == 1)
+    }
+
+    @Test func theSongMenuResetsThePlayCount() throws {
+        let views = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "Sources/Overdrive/Views.swift"), encoding: .utf8)
+
+        #expect(views.contains("Button(\"Reset Play Count\", systemImage: \"arrow.counterclockwise\") { library.resetPlays(tracks) }"))
+    }
 }
